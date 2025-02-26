@@ -1,0 +1,225 @@
+#!/bin/bash
+# -------------------------------------------------------------------
+# modorganizer2-helper.sh
+# Combined script with Debian/Ubuntu/Mint support
+# -------------------------------------------------------------------
+
+# Common variables
+declare -a game_array
+protontricks_cmd=""
+selected_appid=""
+selected_name=""
+
+# Dependency checks
+check_dependencies() {
+    # Check for protontricks (native or Flatpak)
+    if ! command -v protontricks &> /dev/null && \
+       ! flatpak list --app --columns=application | grep -q com.github.Matoking.protontricks; then
+        echo "Error: protontricks is not installed. Install it with:"
+        echo "  Native: sudo apt install protontricks"
+        echo "  Flatpak: flatpak install com.github.Matoking.protontricks"
+        exit 1
+    fi
+
+    # Set protontricks command
+    if command -v protontricks &> /dev/null; then
+        protontricks_cmd="protontricks"
+    else
+        protontricks_cmd="flatpak run com.github.Matoking.protontricks"
+    fi
+}
+
+check_flatpak_steam() {
+    if flatpak list --app --columns=application | grep -q 'com.valvesoftware.Steam'; then
+        echo "ERROR: Detected Steam installed via Flatpak."
+        echo "This script doesn't support Flatpak Steam installations."
+        exit 1
+    fi
+}
+
+get_steam_root() {
+    # Check all possible Steam roots
+    local candidates=(
+        "$HOME/.local/share/Steam"
+        "$HOME/.steam/steam"
+        "$HOME/.steam/debian-installation"
+        "/usr/local/steam"
+        "/usr/share/steam"
+    )
+
+    for candidate in "${candidates[@]}"; do
+        if [ -d "$candidate/steamapps" ]; then
+            echo "$candidate"
+            return
+        fi
+    done
+
+    echo "Error: Could not find Steam installation in:" >&2
+    printf "  - %s\n" "${candidates[@]}" >&2
+    exit 1
+}
+
+get_non_steam_games() {
+    echo "Fetching non-Steam games..."
+    games=$($protontricks_cmd --list | grep "Non-Steam shortcut:" | sed -E 's/.*Non-Steam shortcut: (.*) \(([0-9]+)\)/\2:\1/')
+
+    if [ -z "$games" ]; then
+        echo "No non-Steam games found!"
+        exit 1
+    fi
+
+    IFS=$'\n' read -d '' -ra game_array <<< "$games"
+}
+
+select_game() {
+    echo "Non-Steam Games:"
+    for i in "${!game_array[@]}"; do
+        IFS=':' read -r appid name <<< "${game_array[$i]}"
+        printf "%2d. %s (AppID: %s)\n" $((i+1)) "$name" "$appid"
+    done
+
+    while true; do
+        read -rp "Select a game by number: " choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#game_array[@]}" ]; then
+            selected_game="${game_array[$((choice-1))]}"
+            IFS=':' read -r selected_appid selected_name <<< "$selected_game"
+            break
+        else
+            echo "Invalid choice. Try again."
+        fi
+    done
+}
+
+# NXM Handler Functions
+find_proton_path() {
+    local steam_root=$(get_steam_root)
+    local steam_paths=("$steam_root")
+
+    # Check libraryfolders.vdf for additional paths
+    libraryfolders="$steam_root/steamapps/libraryfolders.vdf"
+    if [ -f "$libraryfolders" ]; then
+        while read -r line; do
+            [[ "$line" == *\"path\"* ]] && steam_paths+=("$(echo "$line" | awk -F'"' '{print $4}')")
+        done < "$libraryfolders"
+    fi
+
+    # Search for Proton Experimental
+    for path in "${steam_paths[@]}"; do
+        proton_candidate="$path/steamapps/common/Proton - Experimental/proton"
+        if [ -f "$proton_candidate" ]; then
+            echo "$proton_candidate"
+            return
+        fi
+    done
+
+    echo "Error: Proton - Experimental not found in:" >&2
+    printf "  - %s\n" "${steam_paths[@]/%//steamapps/common/Proton - Experimental/proton}" >&2
+    exit 1
+}
+
+register_mime_handler() {
+    echo -n "Registering nxm:// handler... "
+    if xdg-mime default modorganizer2-nxm-handler.desktop x-scheme-handler/nxm 2>/dev/null ; then
+        echo "Success (via xdg-mime)"
+    else
+        local mimeapps="$HOME/.config/mimeapps.list"
+        [ -f "$mimeapps" ] || touch "$mimeapps"
+        sed -i '/x-scheme-handler\/nxm/d' "$mimeapps"
+        echo "x-scheme-handler/nxm=modorganizer2-nxm-handler.desktop" >> "$mimeapps"
+        update-desktop-database "$HOME/.local/share/applications"
+        echo "Manual registration complete!"
+    fi
+}
+
+setup_nxm_handler() {
+    echo -e "\n=== NXM Link Handler Setup ==="
+    check_flatpak_steam
+    local steam_root=$(get_steam_root)
+    local proton_path=$(find_proton_path)
+
+    while true; do
+        read -rp "Enter FULL path to nxmhandler.exe: " nxmhandler_path
+        [ -f "$nxmhandler_path" ] && break
+        echo "File not found! Try again."
+    done
+
+    steam_compat_data_path="$steam_root/steamapps/compatdata/$selected_appid"
+    desktop_file="$HOME/.local/share/applications/modorganizer2-nxm-handler.desktop"
+
+    cat << EOF > "$desktop_file"
+[Desktop Entry]
+Type=Application
+Categories=Game;
+Exec=bash -c 'env "STEAM_COMPAT_CLIENT_INSTALL_PATH=$steam_root" "STEAM_COMPAT_DATA_PATH=$steam_compat_data_path" "$proton_path" run "$nxmhandler_path" "%u"'
+Name=Mod Organizer 2 NXM Handler
+MimeType=x-scheme-handler/nxm;
+NoDisplay=true
+EOF
+
+    chmod +x "$desktop_file"
+    register_mime_handler
+    echo -e "\nNXM Handler setup complete!"
+}
+
+# Proton Tricks Functions
+install_proton_dependencies() {
+    echo -e "\n=== Proton Dependency Installation ==="
+    components=(
+        fontsmooth=rgb xact xact_x64 vcrun2022 dotnet6
+        dotnet7 dotnet8 d3dcompiler_47 d3dx11_43
+        d3dcompiler_43 d3dx9_43 d3dx9
+    )
+
+    echo "Installing components for $selected_name (AppID: $selected_appid)..."
+    echo "This may take several minutes..."
+
+    if $protontricks_cmd --no-bwrap "$selected_appid" -q "${components[@]}"; then
+        echo "Successfully installed components!"
+    else
+        echo "Error: Failed to install components."
+        exit 1
+    fi
+}
+
+# Main menu
+main_menu() {
+    echo -e "\n=== Mod Organizer 2 Linux Helper ==="
+    echo "1. Setup NXM Link Handler"
+    echo "2. Install Proton Dependencies"
+    echo "3. Exit"
+
+    while true; do
+        read -rp "Select an option (1-3): " choice
+        case $choice in
+            1)
+                check_dependencies
+                get_non_steam_games
+                select_game
+                setup_nxm_handler
+                return
+                ;;
+            2)
+                check_dependencies
+                get_non_steam_games
+                select_game
+                install_proton_dependencies
+                return
+                ;;
+            3)
+                exit 0
+                ;;
+            *)
+                echo "Invalid option. Try again."
+                ;;
+        esac
+    done
+}
+
+# Initialization
+while true; do
+    main_menu
+    read -rp "Would you like to perform another action? (y/n) " continue
+    [[ "$continue" =~ ^[Yy] ]] || break
+done
+
+echo -e "\nAll operations completed successfully!"
