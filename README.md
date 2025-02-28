@@ -2,4 +2,6 @@ Script I made with deepseek that should work for all distros that setup mod mana
 
 The script can be ran with: bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/Linux-MO2-Helper/refs/heads/main/mo2helper.sh)
 
+Testing script: bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/Linux-MO2-Helper/refs/heads/main/mo2helpertesting.sh)
+
 You can find me in the wabbajack discord in the unofficial-linux-help channel until I make a discord or something. Wabbajack server: https://discord.gg/wabbajack
