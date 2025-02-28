@@ -1,7 +1,7 @@
 #!/bin/bash
 # -------------------------------------------------------------------
 # modorganizer2-helper.sh
-# Updated script with merged options and automatic dependency installation along with FNV support (NO MORE STL MAYBE?)
+# Complete unified script with FNV fixes and Proton initialization
 # -------------------------------------------------------------------
 
 # Common variables
@@ -242,9 +242,15 @@ configure_fnv_launch() {
         fi
     done
 
+
     # Create validated launch script
     local launch_script="$HOME/.local/bin/fnv-mo2-launcher"
-    local compat_dir="$library_path/steamapps/compatdata/$selected_appid"
+
+    # Ensure directory exists
+    mkdir -p "$(dirname "$launch_script")" || {
+        echo "Error: Failed to create directory for launcher script!"
+        exit 1
+    }
 
     cat << EOF > "$launch_script"
 #!/bin/bash
@@ -293,6 +299,33 @@ Icon=steam_icon_$selected_appid
 Categories=Game;
 Terminal=false
 EOF
+
+    read -rp "Would you like to associate NXM links for Fallout New Vegas? (y/n) " associate_nxm
+    if [[ "$associate_nxm" =~ ^[Yy] ]]; then
+        echo -e "\n=== NXM Handler Setup for Fallout New Vegas ==="
+        while true; do
+            read -rp "Enter FULL path to nxmhandler.exe: " nxmhandler_path
+            [ -f "$nxmhandler_path" ] && break
+            echo "File not found! Try again."
+        done
+
+        # Use the CORRECT library path where FNV was found
+        steam_compat_data_path="$library_path/steamapps/compatdata/$selected_appid"
+        desktop_file="$HOME/.local/share/applications/modorganizer2-nxm-handler.desktop"
+
+        cat << EOF > "$desktop_file"
+[Desktop Entry]
+Type=Application
+Categories=Game;
+Exec=bash -c 'env "STEAM_COMPAT_CLIENT_INSTALL_PATH=$steam_root" "STEAM_COMPAT_DATA_PATH=$steam_compat_data_path" "$proton_path" run "$nxmhandler_path" "%u"'
+Name=Mod Organizer 2 NXM Handler (FNV)
+MimeType=x-scheme-handler/nxm;
+NoDisplay=true
+EOF
+
+        chmod +x "$desktop_file"
+        register_mime_handler
+    fi
 
     echo -e "\n=== Final Fixes Required ==="
     echo "1. In Steam Launch Options:"
