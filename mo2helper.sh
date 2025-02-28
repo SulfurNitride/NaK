@@ -177,14 +177,15 @@ install_proton_dependencies() {
     components=(
         fontsmooth=rgb xact xact_x64 vcrun2022 dotnet6
         dotnet7 dotnet8 d3dcompiler_47 d3dx11_43
-        d3dcompiler_43 d3dx9_43 d3dx9 dwrite=native vkd3d
+        d3dcompiler_43 d3dx9_43 d3dx9 vkd3d
     )
 
     echo "Installing components for $selected_name (AppID: $selected_appid)..."
     echo "This may take several minutes..."
 
     if $protontricks_cmd --no-bwrap "$selected_appid" -q "${components[@]}"; then
-        echo "Successfully installed components!"
+        echo "Successfully installed components!
+        Modlists like Baldur's Gate 3 require this in the launch options of the non steam game (MO2) 'WINEDLLOVERRIDES="DWrite.dll=n,b" %command%'"
     else
         echo "Error: Failed to install components."
         exit 1
