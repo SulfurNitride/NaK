@@ -1,7 +1,7 @@
 #!/bin/bash
 # -------------------------------------------------------------------
 # modorganizer2-helper.sh
-# Combined script with Debian/Ubuntu/Mint support
+# Complete unified script with FNV fixes and Proton initialization
 # -------------------------------------------------------------------
 
 # Common variables
@@ -12,7 +12,6 @@ selected_name=""
 
 # Dependency checks
 check_dependencies() {
-    # Check for protontricks (native or Flatpak)
     if ! command -v protontricks &> /dev/null && \
        ! flatpak list --app --columns=application | grep -q com.github.Matoking.protontricks; then
         echo "Error: protontricks is not installed. Install it with:"
@@ -21,7 +20,6 @@ check_dependencies() {
         exit 1
     fi
 
-    # Set protontricks command
     if command -v protontricks &> /dev/null; then
         protontricks_cmd="protontricks"
     else
@@ -38,7 +36,6 @@ check_flatpak_steam() {
 }
 
 get_steam_root() {
-    # Check all possible Steam roots
     local candidates=(
         "$HOME/.local/share/Steam"
         "$HOME/.steam/steam"
@@ -61,11 +58,28 @@ get_steam_root() {
 
 get_non_steam_games() {
     echo "Fetching non-Steam games..."
-    games=$($protontricks_cmd --list | grep "Non-Steam shortcut:" | sed -E 's/.*Non-Steam shortcut: (.*) \(([0-9]+)\)/\2:\1/')
+    games=$($protontricks_cmd --list | grep -E "Non-Steam shortcut:|^[0-9]+" | awk '
+        /Non-Steam shortcut:/ {
+            split($0, a, /: /);
+            match(a[2], /(.*) \(([0-9]+)\)/, matches);
+            if (matches[2] != "") {
+                printf "%s:%s\n", matches[2], matches[1]
+            }
+        }
+        /^[0-9]+/ {
+            if ($1 == "22380") {
+                printf "22380:Fallout New Vegas (Steam)\n"
+            }
+        }
+    ')
 
     if [ -z "$games" ]; then
         echo "No non-Steam games found!"
         exit 1
+    fi
+
+    if ! grep -q "22380:" <<< "$games"; then
+        games+=$'\n22380:Fallout New Vegas (Steam)'
     fi
 
     IFS=$'\n' read -d '' -ra game_array <<< "$games"
@@ -90,12 +104,10 @@ select_game() {
     done
 }
 
-# NXM Handler Functions
 find_proton_path() {
     local steam_root=$(get_steam_root)
     local steam_paths=("$steam_root")
 
-    # Check libraryfolders.vdf for additional paths
     libraryfolders="$steam_root/steamapps/libraryfolders.vdf"
     if [ -f "$libraryfolders" ]; then
         while read -r line; do
@@ -103,7 +115,6 @@ find_proton_path() {
         done < "$libraryfolders"
     fi
 
-    # Search for Proton Experimental
     for path in "${steam_paths[@]}"; do
         proton_candidate="$path/steamapps/common/Proton - Experimental/proton"
         if [ -f "$proton_candidate" ]; then
@@ -161,7 +172,6 @@ EOF
     echo -e "\nNXM Handler setup complete!"
 }
 
-# Proton Tricks Functions
 install_proton_dependencies() {
     echo -e "\n=== Proton Dependency Installation ==="
     components=(
@@ -181,11 +191,179 @@ install_proton_dependencies() {
     fi
 }
 
-# Main menu
+configure_fnv_launch() {
+    echo -e "\n=== Fallout New Vegas MO2 Launcher Setup ==="
+    selected_appid="22380"
+    selected_name="Fallout New Vegas (Steam)"
+
+    # Prompt for Proton dependencies
+    read -rp "Would you like to install Proton dependencies for $selected_name? (y/n) " dep_choice
+    if [[ "$dep_choice" =~ ^[Yy] ]]; then
+        install_proton_dependencies
+    fi
+
+    local steam_root=$(get_steam_root)
+    local proton_path=$(find_proton_path)
+
+    # Multi-library game detection
+    local game_path
+    local library_path
+    local steam_paths=("$steam_root")
+    libraryfolders="$steam_root/steamapps/libraryfolders.vdf"
+
+    if [ -f "$libraryfolders" ]; then
+        while read -r line; do
+            [[ "$line" == *\"path\"* ]] && steam_paths+=("$(echo "$line" | awk -F'"' '{print $4}')")
+        done < "$libraryfolders"
+    fi
+
+    # Find game installation and its library path
+    for path in "${steam_paths[@]}"; do
+        candidate="$path/steamapps/common/Fallout New Vegas"
+        if [ -f "$candidate/FalloutNV.exe" ]; then
+            game_path="$candidate"
+            library_path="${candidate%/steamapps/common/Fallout New Vegas*}"
+            break
+        fi
+    done
+
+    if [ -z "$game_path" ]; then
+        echo "Error: Fallout New Vegas installation not found in:"
+        printf "  - %s/steamapps/common/Fallout New Vegas\n" "${steam_paths[@]}"
+        return 1
+    fi
+
+    # MO2 path validation
+    local mo2_path
+    while true; do
+        read -rp "Enter FULL path to ModOrganizer.exe: " mo2_path
+        mo2_path=$(realpath "$mo2_path")
+        if [ -f "$mo2_path" ]; then
+            break
+        else
+            echo "Error: ModOrganizer.exe not found at: $mo2_path"
+        fi
+    done
+
+    if [ -z "$library_path" ]; then
+        echo "ERROR: Failed to find Steam library path for Fallout New Vegas!"
+        exit 1
+    fi
+
+    compat_dir="$library_path/steamapps/compatdata/$selected_appid"
+
+    # Define launch_script FIRST
+    local launch_script="$HOME/.local/bin/fnv-mo2-launcher"
+
+    # THEN create its directory
+    mkdir -p "$(dirname "$launch_script")" || {
+        echo "Error: Failed to create directory for launcher script!"
+        exit 1
+    }
+
+    # Add compatibility directory verification
+    if [ ! -d "$compat_dir" ]; then
+        echo "WARNING: Proton prefix not found at: $compat_dir"
+        echo "A new prefix will be created on first launch."
+    fi
+
+    cat << EOF > "$launch_script"
+#!/bin/bash
+# Force-resolve paths at launch time
+STEAM_ROOT=\$(get_steam_root)
+export STEAM_COMPAT_DATA_PATH="$compat_dir"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="\$STEAM_ROOT"
+export WINEPREFIX="\$STEAM_COMPAT_DATA_PATH/pfx"
+
+# Fix permissions for Steam runtime binaries
+find "\$STEAM_RUNTIME" -name "steam-launch-wrapper" -exec chmod +x {} \;
+
+# Wine path translation workaround
+export WINEESYNC=1
+export WINEFSYNC=1
+export WINEDEBUG=-all
+export WINEARCH=win64
+
+# Proton initialization
+validate_paths() {
+    PROTON_PATH="$proton_path"
+    if [ ! -f "\$PROTON_PATH" ]; then
+        echo "ERROR: Proton missing at \$PROTON_PATH!"
+        exit 1
+    fi
+
+    MO2_PATH="$mo2_path"
+    if [ ! -f "\$MO2_PATH" ]; then
+        echo "ERROR: ModOrganizer.exe missing at \$MO2_PATH!"
+        exit 1
+    fi
+}
+
+# Create prefix if missing
+if [ ! -d "\$STEAM_COMPAT_DATA_PATH" ]; then
+    echo "Initializing Proton prefix..."
+    mkdir -p "\$STEAM_COMPAT_DATA_PATH"
+    "$proton_path" run notepad.exe &>/dev/null
+    sleep 5
+fi
+
+validate_paths
+
+# Launch command
+cd "\$(dirname "\$MO2_PATH")"
+"\$PROTON_PATH" run ./ModOrganizer.exe
+EOF
+
+    chmod +x "$launch_script"
+
+    # Create desktop entry
+    local desktop_file="$HOME/.local/share/applications/mo2-fnv.desktop"
+    cat << EOF > "$desktop_file"
+[Desktop Entry]
+Type=Application
+Name=MO2 - Fallout New Vegas
+Exec=env STEAM_COMPAT_MOUNTS="/mnt:/home" $launch_script
+Icon=steam_icon_$selected_appid
+Categories=Game;
+Terminal=false
+EOF
+
+    read -rp "Would you like to associate NXM links for Fallout New Vegas? (y/n) " associate_nxm
+    if [[ "$associate_nxm" =~ ^[Yy] ]]; then
+        echo -e "\n=== NXM Handler Setup for Fallout New Vegas ==="
+        while true; do
+            read -rp "Enter FULL path to nxmhandler.exe: " nxmhandler_path
+            [ -f "$nxmhandler_path" ] && break
+            echo "File not found! Try again."
+        done
+
+        # Use the CORRECT library path where FNV was found
+        steam_compat_data_path="$library_path/steamapps/compatdata/$selected_appid"
+        desktop_file="$HOME/.local/share/applications/modorganizer2-nxm-handler.desktop"
+
+        cat << EOF > "$desktop_file"
+[Desktop Entry]
+Type=Application
+Categories=Game;
+Exec=bash -c 'env "STEAM_COMPAT_CLIENT_INSTALL_PATH=$steam_root" "STEAM_COMPAT_DATA_PATH=$steam_compat_data_path" "$proton_path" run "$nxmhandler_path" "%u"'
+Name=Mod Organizer 2 NXM Handler (FNV)
+MimeType=x-scheme-handler/nxm;
+NoDisplay=true
+EOF
+
+        chmod +x "$desktop_file"
+        register_mime_handler
+    fi
+
+    echo -e "\n=== Final Fixes Required ==="
+    echo "1. In Steam Launch Options:"
+    echo "   \"$launch_script\" %command%"
+}
+
 main_menu() {
     echo -e "\n=== Mod Organizer 2 Linux Helper ==="
-    echo "1. Setup NXM Link Handler"
-    echo "2. Install Proton Dependencies"
+    echo "1. Setup NXM Link Handler and Install Dependencies"
+    echo "2. Configure Fallout New Vegas MO2 Launch and Install Dependencies"
     echo "3. Exit"
 
     while true; do
@@ -196,13 +374,15 @@ main_menu() {
                 get_non_steam_games
                 select_game
                 setup_nxm_handler
+                read -rp "Would you like to install Proton dependencies for $selected_name? (y/n) " dep_choice
+                if [[ "$dep_choice" =~ ^[Yy] ]]; then
+                    install_proton_dependencies
+                fi
                 return
                 ;;
             2)
                 check_dependencies
-                get_non_steam_games
-                select_game
-                install_proton_dependencies
+                configure_fnv_launch  # Now includes dependency installation prompt
                 return
                 ;;
             3)
@@ -215,7 +395,6 @@ main_menu() {
     done
 }
 
-# Initialization
 while true; do
     main_menu
     read -rp "Would you like to perform another action? (y/n) " continue
