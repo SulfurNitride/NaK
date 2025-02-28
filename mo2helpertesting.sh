@@ -177,7 +177,7 @@ install_proton_dependencies() {
     components=(
         fontsmooth=rgb xact xact_x64 vcrun2022 dotnet6
         dotnet7 dotnet8 d3dcompiler_47 d3dx11_43
-        d3dcompiler_43 d3dx9_43 d3dx9
+        d3dcompiler_43 d3dx9_43 d3dx9 dlls=dwrite
     )
 
     echo "Installing components for $selected_name (AppID: $selected_appid)..."
@@ -196,8 +196,11 @@ configure_fnv_launch() {
     selected_appid="22380"
     selected_name="Fallout New Vegas (Steam)"
 
-    # Install Proton dependencies first
-    install_proton_dependencies
+    # Prompt for Proton dependencies
+    read -rp "Would you like to install Proton dependencies for $selected_name? (y/n) " dep_choice
+    if [[ "$dep_choice" =~ ^[Yy] ]]; then
+        install_proton_dependencies
+    fi
 
     local steam_root=$(get_steam_root)
     local proton_path=$(find_proton_path)
@@ -371,12 +374,15 @@ main_menu() {
                 get_non_steam_games
                 select_game
                 setup_nxm_handler
-                install_proton_dependencies  # Automatically install after NXM setup
+                read -rp "Would you like to install Proton dependencies for $selected_name? (y/n) " dep_choice
+                if [[ "$dep_choice" =~ ^[Yy] ]]; then
+                    install_proton_dependencies
+                fi
                 return
                 ;;
             2)
                 check_dependencies
-                configure_fnv_launch  # Now includes dependency installation
+                configure_fnv_launch  # Now includes dependency installation prompt
                 return
                 ;;
             3)
