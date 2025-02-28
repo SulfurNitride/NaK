@@ -242,20 +242,34 @@ configure_fnv_launch() {
         fi
     done
 
+    if [ -z "$library_path" ]; then
+        echo "ERROR: Failed to find Steam library path for Fallout New Vegas!"
+        exit 1
+    fi
 
-    # Create validated launch script
+    compat_dir="$library_path/steamapps/compatdata/$selected_appid"
+
+    # Define launch_script FIRST
     local launch_script="$HOME/.local/bin/fnv-mo2-launcher"
 
-    # Ensure directory exists
+    # THEN create its directory
     mkdir -p "$(dirname "$launch_script")" || {
         echo "Error: Failed to create directory for launcher script!"
         exit 1
     }
 
+    # Add compatibility directory verification
+    if [ ! -d "$compat_dir" ]; then
+        echo "WARNING: Proton prefix not found at: $compat_dir"
+        echo "A new prefix will be created on first launch."
+    fi
+
     cat << EOF > "$launch_script"
 #!/bin/bash
+# Force-resolve paths at launch time
+STEAM_ROOT=\$(get_steam_root)
 export STEAM_COMPAT_DATA_PATH="$compat_dir"
-export STEAM_COMPAT_CLIENT_INSTALL_PATH="$steam_root"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="\$STEAM_ROOT"
 export WINEPREFIX="\$STEAM_COMPAT_DATA_PATH/pfx"
 
 # Fix permissions for Steam runtime binaries
@@ -269,8 +283,17 @@ export WINEARCH=win64
 
 # Proton initialization
 validate_paths() {
-    [ ! -f "$proton_path" ] && { echo "ERROR: Proton missing!"; exit 1; }
-    [ ! -f "$mo2_path" ] && { echo "ERROR: MO2 missing!"; exit 1; }
+    PROTON_PATH="$proton_path"
+    if [ ! -f "\$PROTON_PATH" ]; then
+        echo "ERROR: Proton missing at \$PROTON_PATH!"
+        exit 1
+    fi
+
+    MO2_PATH="$mo2_path"
+    if [ ! -f "\$MO2_PATH" ]; then
+        echo "ERROR: ModOrganizer.exe missing at \$MO2_PATH!"
+        exit 1
+    fi
 }
 
 # Create prefix if missing
@@ -281,9 +304,11 @@ if [ ! -d "\$STEAM_COMPAT_DATA_PATH" ]; then
     sleep 5
 fi
 
-# Launch MO2 with direct Steam integration
-cd "$(dirname "$mo2_path")"
-"$proton_path" run ./ModOrganizer.exe
+validate_paths
+
+# Launch command
+cd "\$(dirname "\$MO2_PATH")"
+"\$PROTON_PATH" run ./ModOrganizer.exe
 EOF
 
     chmod +x "$launch_script"
