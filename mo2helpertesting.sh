@@ -177,8 +177,7 @@ install_proton_dependencies() {
     components=(
         fontsmooth=rgb xact xact_x64 vcrun2022 dotnet6
         dotnet7 dotnet8 d3dcompiler_47 d3dx11_43
-        d3dcompiler_43 d3dx9_43 d3dx9
-        dll_override=dwrite=native  # Native override for dwrite.dll
+        d3dcompiler_43 d3dx9_43 d3dx9 dwrite=native
     )
 
     echo "Installing components for $selected_name (AppID: $selected_appid)..."
