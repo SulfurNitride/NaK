@@ -1,7 +1,7 @@
 #!/bin/bash
 # -------------------------------------------------------------------
 # modorganizer2-helper.sh
-# Complete unified script with FNV fixes and Proton initialization
+# Updated script with merged options and automatic dependency installation along with FNV support (NO MORE STL MAYBE?)
 # -------------------------------------------------------------------
 
 # Common variables
