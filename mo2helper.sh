@@ -210,7 +210,7 @@ find_fnv_compatdata() {
 
 main_menu() {
     echo -e "\n=== Mod Organizer 2 Linux Helper ==="
-    echo "1. Setup NXM Link Handler and Install Dependencies"
+    echo "1. Setup NXM Link Handler and/or Install Dependencies"
     echo "2. Exit"
 
     while true; do
@@ -220,22 +220,34 @@ main_menu() {
                 check_dependencies
                 get_non_steam_games
                 select_game
-                setup_nxm_handler
+
+                # Ask about Proton Dependencies
                 read -rp "Would you like to install Proton dependencies for $selected_name? (y/n) " dep_choice
                 if [[ "$dep_choice" =~ ^[Yy] ]]; then
                     install_proton_dependencies
+                    # Ask about NXM Handling after Proton
+                    read -rp "Would you like to set up NXM Handling now? (y/n) " nxm_choice
+                    if [[ "$nxm_choice" =~ ^[Yy] ]]; then
+                        setup_nxm_handler
+                    fi
+                else
+                    # Ask about NXM Handling if Proton was skipped
+                    read -rp "Would you like to set up NXM Handling? (y/n) " nxm_choice
+                    if [[ "$nxm_choice" =~ ^[Yy] ]]; then
+                        setup_nxm_handler
+                        # Ask about Proton Dependencies after NXM
+                        read -rp "Would you like to install Proton dependencies for $selected_name now? (y/n) " dep_choice
+                        if [[ "$dep_choice" =~ ^[Yy] ]]; then
+                            install_proton_dependencies
+                        fi
+                    fi
                 fi
 
-                # -------------------------------
-                # Display ADVICE (not requirements)
-                # -------------------------------
+                # Display advice regardless of choices
                 echo -e "\n\033[1;33m=== Optional Game-Specific Advice ===\033[0m"
-
-                # Baldur's Gate 3 (always shown)
                 echo -e "\nFor Baldur's Gate 3 modlists, add this to Steam launch options:"
                 echo "WINEDLLOVERRIDES=\"DWrite.dll=n,b\" %command%"
 
-                # Fallout New Vegas (only if compatdata exists)
                 fnv_compatdata=$(find_fnv_compatdata)
                 if [ -n "$fnv_compatdata" ]; then
                     echo -e "\nFor Fallout New Vegas modlists, add this to Steam launch options:"
