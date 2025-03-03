@@ -207,7 +207,6 @@ find_fnv_compatdata() {
     echo ""
     return 1
 }
-
 main_menu() {
     echo -e "\n=== Mod Organizer 2 Linux Helper ==="
     echo "1. Setup NXM Link Handler and/or Install Dependencies"
@@ -221,27 +220,33 @@ main_menu() {
                 get_non_steam_games
                 select_game
 
-                # Ask about Proton Dependencies
-                read -rp "Would you like to install Proton dependencies for $selected_name? (y/n) " dep_choice
-                if [[ "$dep_choice" =~ ^[Yy] ]]; then
-                    install_proton_dependencies
-                    # Ask about NXM Handling after Proton
-                    read -rp "Would you like to set up NXM Handling now? (y/n) " nxm_choice
-                    if [[ "$nxm_choice" =~ ^[Yy] ]]; then
-                        setup_nxm_handler
-                    fi
-                else
-                    # Ask about NXM Handling if Proton was skipped
-                    read -rp "Would you like to set up NXM Handling? (y/n) " nxm_choice
-                    if [[ "$nxm_choice" =~ ^[Yy] ]]; then
-                        setup_nxm_handler
-                        # Ask about Proton Dependencies after NXM
-                        read -rp "Would you like to install Proton dependencies for $selected_name now? (y/n) " dep_choice
-                        if [[ "$dep_choice" =~ ^[Yy] ]]; then
-                            install_proton_dependencies
-                        fi
-                    fi
-                fi
+                # New submenu for actions
+                action_submenu() {
+                    while true; do
+                        echo -e "\n=== Action Selection for $selected_name ==="
+                        echo "1. Install Proton dependencies"
+                        echo "2. Setup NXM handling"
+                        echo "3. Proceed to advice"
+                        read -rp "Select an option (1-3): " sub_choice
+
+                        case "$sub_choice" in
+                            1)
+                                install_proton_dependencies
+                                ;;
+                            2)
+                                setup_nxm_handler
+                                ;;
+                            3)
+                                break
+                                ;;
+                            *)
+                                echo "Invalid option. Try again."
+                                ;;
+                        esac
+                    done
+                }
+
+                action_submenu
 
                 # Display advice regardless of choices
                 echo -e "\n\033[1;33m=== Optional Game-Specific Advice ===\033[0m"
