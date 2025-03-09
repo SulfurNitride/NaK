@@ -54,7 +54,7 @@ check_dependencies() {
     if ! command_exists protontricks && \
        ! flatpak list --app --columns=application 2>/dev/null | grep -q com.github.Matoking.protontricks; then
         show_error "Protontricks is not installed. Install it with:
-- Native: sudo apt install protontricks
+Please don't install it with APT or PIPX as there are errors associated with it!
 - Flatpak: flatpak install com.github.Matoking.protontricks"
     fi
 
