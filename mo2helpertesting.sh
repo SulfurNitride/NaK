@@ -17,7 +17,10 @@ protontricks_cmd=""
 selected_appid=""
 selected_name=""
 selected_scaling="96"  # Default scaling value
-show_advice=true  # Whether to show game-specific advice
+show_advice=true
+color_green="\033[38;2;0;255;0m"   # Green for success messages# Whether to show game-specific advice
+color_yellow="\033[38;2;255;255;0m"   # Yellow for warnings
+color_red="\033[38;2;255;0;0m"        # Red for errors
 
 # Function to log messages
 log() {
@@ -335,6 +338,154 @@ EOF
     log "NXM Handler setup complete"
 }
 
+find_game_directory() {
+    local game_name="$1"
+    local steam_root=$(get_steam_root)
+    local steam_paths=("$steam_root")
+
+    # Get additional library paths from libraryfolders.vdf
+    local libraryfolders="$steam_root/steamapps/libraryfolders.vdf"
+    if [ -f "$libraryfolders" ]; then
+        while read -r line; do
+            [[ "$line" == *\"path\"* ]] && steam_paths+=("$(echo "$line" | awk -F'"' '{print $4}')")
+        done < "$libraryfolders"
+    fi
+
+    # Search through all steam libraries
+    for path in "${steam_paths[@]}"; do
+        local candidate="$path/steamapps/common/$game_name"
+        if [ -d "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+log_hoolamike() {
+    local message="$1"
+    # Only log to main log file for important messages
+    echo "[$(date +%T)] Hoolamike: $message" >> "$log_file"
+}
+
+# Use this function for hoolamike execution specifically
+run_hoolamike() {
+    local command="$1"
+    local summary_log="$HOME/hoolamike_summary.log"
+    local temp_log="/tmp/hoolamike_output.tmp"
+
+    echo "[$(date)] Starting hoolamike $command" > "$summary_log"
+
+    # Spinner animation function
+    spinner() {
+        local pid=$1
+        local delay=0.15
+        local spinstr='|/-\'
+        while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+            local temp=${spinstr#?}
+            printf " [%c]  " "$spinstr"
+            local spinstr=$temp${spinstr%"$temp"}
+            sleep $delay
+            printf "\b\b\b\b\b\b"
+        done
+        printf "    \b\b\b\b"
+    }
+
+    # Start the Hoolamike process in background
+    echo -n "Processing Tale of Two Wastelands...  "
+    ./hoolamike "$command" > "$temp_log" 2>&1 &
+    local pid=$!
+
+    # Start the spinner
+    spinner $pid &
+    local spinner_pid=$!
+
+    # Wait for completion and capture exit status
+    wait $pid
+    local exit_status=$?
+
+    # Stop the spinner
+    kill $spinner_pid >/dev/null 2>&1
+    echo -e "\n"
+
+    # Filter the output and save to summary log
+    grep -v "handling_asset\|voice\|sound\|textures\|\[OK\]\|updated templated value\|variable_found\|resolve_variable\|MAGICALLY\|hoolamike::extensions" "$temp_log" >> "$summary_log"
+
+    # Error handling
+    if [ $exit_status -ne 0 ]; then
+        echo "---- Last 20 lines of raw output ----" >> "$summary_log"
+        tail -n 20 "$temp_log" >> "$summary_log"
+        error_exit "Hoolamike execution failed with status $exit_status. Check $summary_log for details."
+    fi
+
+    echo "[$(date)] Completed hoolamike $command" >> "$summary_log"
+    log_hoolamike "Execution completed for $command. See $summary_log for details."
+
+    rm -f "$temp_log"
+    return 0
+}
+
+generate_hoolamike_config() {
+    log "Generating hoolamike.yaml config"
+    local config_path="$HOME/Hoolamike/hoolamike.yaml"
+
+    # Try to find game directories
+    local fallout3_dir=$(find_game_directory "Fallout 3 goty")
+    local fnv_dir=$(find_game_directory "Fallout New Vegas")
+
+    # Find Fallout New Vegas compatdata
+    local steam_root=$(get_steam_root)
+    local fnv_compatdata=$(find_game_compatdata "22380" "$steam_root")
+    local userprofile_path=""
+
+    if [ -n "$fnv_compatdata" ]; then
+        userprofile_path="${fnv_compatdata}/pfx/drive_c/users/steamuser/Documents/My Games/FalloutNV/"
+        log "Found FNV compatdata userprofile path: $userprofile_path"
+    else
+        log "FNV compatdata not found"
+    fi
+
+    # Create default config with found paths
+    cat > "$config_path" << EOF
+# Auto-generated hoolamike.yaml
+# Edit paths if not detected correctly
+
+downloaders:
+  downloads_directory: "$HOME/Downloads"
+  nexus:
+    api_key: "YOUR_API_KEY_HERE"
+
+installation:
+  wabbajack_file_path: "./wabbajack"
+  installation_path: "$HOME/ModdedGames"
+
+games:
+  Fallout3:
+    root_directory: "${fallout3_dir:-/path/to/Fallout 3 goty}"
+  FalloutNewVegas:
+    root_directory: "${fnv_dir:-/path/to/Fallout New Vegas}"
+
+fixup:
+  game_resolution: 2560x1440
+
+extras:
+  tale_of_two_wastelands:
+    path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
+    variables:
+      DESTINATION: "./TTW_Output"
+      USERPROFILE: "${userprofile_path:-/path/to/steamapps/compatdata/22380/pfx/drive_c/users/steamuser/Documents/My Games/FalloutNV/}"
+EOF
+
+    log "hoolamike.yaml created at $config_path"
+    echo -e "\nGenerated hoolamike.yaml with detected paths:"
+    echo "Fallout 3: ${fallout3_dir:-Not found}"
+    echo "Fallout NV: ${fnv_dir:-Not found}"
+    echo "FNV User Profile: ${userprofile_path:-Not found}"
+    echo -e "\nEdit the file to complete configuration:"
+    echo "nano $config_path"
+}
+
 install_proton_dependencies() {
     log "Installing dependencies for $selected_name (AppID: $selected_appid)"
     echo -e "\n=== Proton Dependency Installation ==="
@@ -449,7 +600,6 @@ generate_advice() {
         log "Skipped Enderal advice (no compatdata found)"
     fi
 
-    # DPI scaling advice section removed since it's redundant
 }
 
 action_submenu() {
@@ -486,14 +636,164 @@ action_submenu() {
     done
 }
 
+# New functions for hoolamike integration
+check_download_dependencies() {
+    log "Checking download dependencies"
+
+    local missing_deps=()
+
+    if ! command_exists curl; then
+        missing_deps+=("curl")
+    fi
+
+    if ! command_exists jq; then
+        missing_deps+=("jq")
+    fi
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo "Missing required dependencies: ${missing_deps[*]}"
+        echo "Please install them with:"
+        echo "sudo apt install ${missing_deps[*]}"
+        log "Missing dependencies: ${missing_deps[*]}"
+        return 1
+    fi
+
+    return 0
+}
+
+download_hoolamike() {
+    log "Starting hoolamike download"
+    echo -e "\n=== Download Hoolamike ==="
+
+    # Check for dependencies
+    if ! check_download_dependencies; then
+        error_exit "Required dependencies missing for download"
+    fi
+
+    # Create directory in home folder
+    local hoolamike_dir="$HOME/Hoolamike"
+    mkdir -p "$hoolamike_dir"
+
+    echo "Fetching latest release information from GitHub..."
+    log "Fetching latest release info from GitHub"
+
+    # Get latest release info
+    local release_info
+    if ! release_info=$(curl -s https://api.github.com/repos/Niedzwiedzw/hoolamike/releases/latest); then
+        log "Failed to fetch release information"
+        error_exit "Failed to fetch release information from GitHub. Check your internet connection."
+    fi
+
+    # Extract download URL for the binary
+    local download_url
+    download_url=$(echo "$release_info" | jq -r '.assets[] | select(.name | test("hoolamike.*linux"; "i")) | .browser_download_url')
+
+    if [ -z "$download_url" ]; then
+        log "No suitable asset found in the latest release"
+        error_exit "No suitable asset found in the latest release. Please check https://github.com/Niedzwiedzw/hoolamike manually."
+    fi
+
+    local filename=$(basename "$download_url")
+    local version=$(echo "$release_info" | jq -r .tag_name)
+
+    echo "Found latest version: $version"
+    echo "Downloading and extracting to $hoolamike_dir..."
+    log "Downloading version $version from $download_url"
+
+    # Download and extract directly to target directory
+    if ! (cd "$hoolamike_dir" && curl -L "$download_url" | tar -xz); then
+        log "Failed to download or extract file"
+        error_exit "Failed to download or extract hoolamike. Check your internet connection."
+    fi
+
+    # Generate config file
+    generate_hoolamike_config
+
+    echo -e "\n${color_yellow}=== REQUIRED MANUAL STEP ===${color_reset}"
+    echo -e "You need to download the TTW MPI file:"
+    echo -e "1. Open in browser: ${color_cmd}https://mod.pub/ttw/133/files${color_reset}"
+    echo -e "2. Download the latest 'TTW_*.7z' file"
+    echo -e "3. Extract the .mpi file from the archive"
+    echo -e "4. Copy the .mpi file to: ${color_cmd}$hoolamike_dir/${color_reset}"
+    echo -e "\nWaiting for MPI file... (Press Ctrl+C to cancel)"
+
+    # Wait for MPI file with timeout
+    local wait_time=0
+    local timeout=600  # 10 minutes
+    while [ $wait_time -lt $timeout ]; do
+        # Check for any .mpi file
+        if ls "$hoolamike_dir"/*.mpi >/dev/null 2>&1; then
+            mpi_file=$(ls "$hoolamike_dir"/*.mpi | head -n1)
+            log "Found MPI file: $mpi_file"
+            echo -e "\n${color_green}Detected MPI file: $(basename "$mpi_file")${color_reset}"
+            break
+        fi
+
+        # Show progress every 15 seconds
+        if (( wait_time % 15 == 0 )); then
+            echo -n "."
+        fi
+
+        sleep 1
+        ((wait_time++))
+    done
+
+    # Run hoolamike commands
+    echo -e "\n=== Running Hoolamike Setup ==="
+    log "Starting hoolamike execution"
+
+    (
+        cd "$hoolamike_dir" || error_exit "Failed to enter Hoolamike directory"
+
+        echo "Increasing file limit..."
+        if ! ulimit -n 64556 >> "$log_file" 2>&1; then
+            error_exit "Failed to set ulimit. You might need to run this as root."
+        fi
+
+        echo "Starting Tale of Two Wastelands installation... (This can take up to 3 hours at most.)"
+        log_hoolamike "Executing: tale-of-two-wastelands"
+        run_hoolamike "tale-of-two-wastelands"  # <--- This is the only call needed
+    )
+
+    echo -e "\n${color_green}Hoolamike setup completed successfully!${color_reset}"
+    echo "You can now configure your mod setup in:"
+    echo -e "  ${color_cmd}$hoolamike_dir/hoolamike.yaml${color_reset}"
+    log "Hoolamike execution completed"
+
+    # New section for FNV dependencies
+    echo -e "\n=== Installing Fallout New Vegas Dependencies ==="
+    echo -e "${color_yellow}Note: These are game-specific dependencies and do not include MO2 components.${color_reset}"
+
+    # Set up for AppID 22380
+    selected_appid="22380"
+    selected_name="Fallout New Vegas"
+
+    # Custom dependency list
+    components=(
+        fontsmooth=rgb
+        xact
+        xact_x64
+        d3dx9_43
+        d3dx9
+        vcrun2022
+    )
+
+    check_dependencies
+
+    # Install using existing function
+    install_proton_dependencies
+}
+
 main_menu() {
     log "Displaying main menu"
-    echo -e "\n=== Mod Organizer 2 Linux Helper ==="
+    echo -e "
+=== Mod Organizer 2 Linux Helper ==="
     echo "1. Setup NXM Link Handler and/or Install Dependencies"
-    echo "2. Exit"
-
+    echo "2. Download and Install Hoolamike For TTW (INCLUDES FNV DEPENDENCIES)"
+    echo "3. Install Fallout New Vegas Proton Dependencies (THIS IS NEEDED IF YOU PLAN TO MOD FNV!)"
+    echo "4. Exit"
     while true; do
-        read -rp "Select an option (1-2): " choice
+        read -rp "Select an option (1-4): " choice
         case $choice in
             1)
                 log "Option 1 selected: Setup/Install"
@@ -505,7 +805,18 @@ main_menu() {
                 return
                 ;;
             2)
-                log "Option 2 selected: Exit"
+                log "Option 2 selected: Download Hoolamike"
+                download_hoolamike
+                return
+                ;;
+            3)
+                log "Option 3 selected: FNV Dependencies"
+                check_dependencies
+                install_fnv_dependencies
+                return
+                ;;
+            4)
+                log "Option 4 selected: Exit"
                 exit 0
                 ;;
             *)
@@ -514,6 +825,21 @@ main_menu() {
                 ;;
         esac
     done
+}
+
+install_fnv_dependencies() {
+    log "Installing Fallout New Vegas specific dependencies "
+    selected_appid="22380"
+    selected_name="Fallout New Vegas"
+    components=(
+        fontsmooth=rgb
+        xact
+        xact_x64
+        d3dx9_43
+        d3dx9
+        vcrun2022
+    )
+    install_proton_dependencies
 }
 
 # Main script starts here
