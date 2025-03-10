@@ -719,7 +719,7 @@ download_hoolamike() {
 
     # Wait for MPI file with timeout
     local wait_time=0
-    local timeout=600  # 10 minutes
+    local timeout=60000  # 1000 minutes
     while [ $wait_time -lt $timeout ]; do
         # Check for any .mpi file
         if ls "$hoolamike_dir"/*.mpi >/dev/null 2>&1; then
