@@ -4,4 +4,7 @@ The script can be ran with: bash <(curl -s https://raw.githubusercontent.com/Sul
 
 Testing script: bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/Linux-MO2-Helper/refs/heads/main/mo2helpertesting.sh)
 
+Hoolamike GitHub: https://github.com/Niedzwiedzw/hoolamike
+Hoolamike Discord: https://discord.gg/xYHjpKX3YP
+
 You can find me in the wabbajack discord in the unofficial-linux-help channel until I make a discord or something. Wabbajack server: https://discord.gg/wabbajack
