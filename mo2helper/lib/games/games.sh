@@ -14,7 +14,7 @@ generate_advice() {
     fnv_compatdata=$(find_game_compatdata "22380" "$steam_root")
     enderal_compatdata=$(find_game_compatdata "976620" "$steam_root")
 
-    print_section "Game-Specific Launch Options"
+    print_section "Game-Specific Launch Options And Game Dependencies:"
 
     # BG3 advice
     if [ -n "$bg3_compatdata" ]; then
@@ -33,7 +33,7 @@ generate_advice() {
         log_info "Provided FNV advice (found compatdata)"
 
         # Offer to set up FNV
-        echo -e "\nWould you like to set up Fallout New Vegas for Mod Organizer 2?"
+        echo -e "\nWould you like to set up Fallout New Vegas dependencies? (Choose yes if modding)"
         if confirm_action "Set up FNV?"; then
             fnv_menu
         fi
@@ -49,7 +49,7 @@ generate_advice() {
         log_info "Provided Enderal advice (found compatdata)"
 
         # Offer to set up Enderal
-        echo -e "\nWould you like to set up Enderal for Mod Organizer 2?"
+        echo -e "\nWould you like to set up Enderal for dependencies? (Choose yes if modding)"
         if confirm_action "Set up Enderal?"; then
             enderal_menu
         fi
