@@ -188,24 +188,28 @@ mo2_setup_menu() {
             1)
                 check_dependencies
                 get_non_steam_games
-                select_game
-                install_proton_dependencies
-                pause "Basic dependencies installation complete!"
+                if select_game; then
+                    install_proton_dependencies
+                    pause "Basic dependencies installation complete!"
+                fi
                 ;;
             2)
                 check_dependencies
                 get_non_steam_games
-                select_game
-                setup_nxm_handler
-                pause "NXM handler configured successfully!"
+                if select_game; then
+                    if setup_nxm_handler; then
+                        pause "NXM handler configured successfully!"
+                    fi
+                fi
                 ;;
             3)
                 check_dependencies
                 get_non_steam_games
-                select_game
-                select_dpi_scaling
-                apply_dpi_scaling
-                pause "DPI scaling applied successfully!"
+                if select_game; then
+                    select_dpi_scaling
+                    apply_dpi_scaling
+                    pause "DPI scaling applied successfully!"
+                fi
                 ;;
             4) return ;;
         esac
