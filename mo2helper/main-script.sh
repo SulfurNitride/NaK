@@ -23,7 +23,7 @@ source "$LIB_DIR/core.sh"
 source "$LIB_DIR/proton.sh"
 
 # Source game modules
-source "$LIB_DIR/games/common.sh"
+source "$LIB_DIR/games/games.sh"
 source "$LIB_DIR/games/fallout.sh"
 source "$LIB_DIR/games/enderal.sh"
 source "$LIB_DIR/games/bg3.sh"
