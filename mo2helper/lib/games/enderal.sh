@@ -21,7 +21,7 @@ enderal_menu() {
         log_info "Displayed Enderal launch options"
 
         # Offer to install Enderal dependencies
-        echo -e "\nWould you like to install Enderal specific dependencies for Mod Organizer 2?"
+        echo -e "\nWould you like to install Enderal specific dependencies for modding?"
         if confirm_action "Install dependencies?"; then
             # Set components for Enderal before installing
             components=(
