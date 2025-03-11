@@ -2,8 +2,6 @@ Script I made with deepseek and claude that should work for all distros that set
 
 The script can be ran with: bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/Linux-MO2-Helper/refs/heads/main/mo2helper.sh)
 
-Testing script: bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/Linux-MO2-Helper/refs/heads/main/mo2helpertesting.sh)
-
 Hoolamike GitHub: https://github.com/Niedzwiedzw/hoolamike
 
 Hoolamike Discord: https://discord.gg/xYHjpKX3YP
