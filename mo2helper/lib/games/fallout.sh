@@ -21,7 +21,7 @@ fnv_menu() {
         log_info "Displayed FNV launch options"
 
         # Offer to install FNV dependencies
-        echo -e "\nWould you like to install Fallout New Vegas specific dependencies for Mod Organizer 2?"
+        echo -e "\nWould you like to install Fallout New Vegas specific dependencies for modding?"
         if confirm_action "Install dependencies?"; then
             install_fnv_dependencies
         fi
