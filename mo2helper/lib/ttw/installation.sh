@@ -91,9 +91,43 @@ ttw_installation_menu() {
 }
 
 # Check if TTW is already installed
+# Check if TTW is already installed
 check_ttw_installation() {
-    log_info "TTW installation check disabled"
-    return 1  # Always return 'not installed'
+    log_info "Checking TTW installation status"
+    
+    # Get hoolamike directory
+    local hoolamike_dir="$HOME/Hoolamike"
+    
+    # Check for TTW output directory (as specified in hoolamike.yaml)
+    if [ -f "$hoolamike_dir/hoolamike.yaml" ]; then
+        # Extract the TTW output path from the yaml file
+        local ttw_output=$(grep "DESTINATION" "$hoolamike_dir/hoolamike.yaml" | awk -F'"' '{print $2}')
+        
+        # If not found, use default path
+        if [ -z "$ttw_output" ]; then
+            ttw_output="$hoolamike_dir/TTW_Output"
+        fi
+        
+        # Check if the directory exists and contains TTW files
+        if [ -d "$ttw_output" ] && [ -f "$ttw_output/TTW_Data.esm" ]; then
+            log_info "Found TTW installation at $ttw_output"
+            return 0  # TTW is installed
+        fi
+    fi
+    
+    # Check for TTW in FalloutNV data directory
+    local steam_root=$(get_steam_root)
+    local fnv_dir=$(find_game_directory "Fallout New Vegas" "$steam_root")
+    
+    if [ -n "$fnv_dir" ] && [ -d "$fnv_dir/Data" ]; then
+        if [ -f "$fnv_dir/Data/TTW_Data.esm" ]; then
+            log_info "Found TTW installation in FNV Data directory"
+            return 0  # TTW is installed
+        fi
+    fi
+    
+    log_info "TTW installation not found"
+    return 1  # Not installed
 }
 
 # View TTW documentation
