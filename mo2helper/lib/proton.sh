@@ -71,14 +71,22 @@ setup_nxm_handler() {
     fi
 
     while true; do
-        read -rp "Enter FULL path to nxmhandler.exe: " nxmhandler_path
-        if [ -f "$nxmhandler_path" ]; then
-            log_info "Selected nxmhandler.exe: $nxmhandler_path"
-            break
-        fi
-        echo -e "${color_red}File not found!${color_reset} Try again."
-        log_warning "Invalid path: $nxmhandler_path"
-    done
+    read -rp "Enter FULL path to nxmhandler.exe (or 'b' to go back): " nxmhandler_path
+
+    # Check if user wants to go back
+    if [[ "$nxmhandler_path" == "b" || "$nxmhandler_path" == "B" ]]; then
+        log_info "User cancelled NXM handler setup"
+        return 1
+    fi
+
+    if [ -f "$nxmhandler_path" ]; then
+        log_info "Selected nxmhandler.exe: $nxmhandler_path"
+        break
+    fi
+
+    echo -e "${color_red}File not found!${color_reset} Try again or enter 'b' to go back."
+    log_warning "Invalid path: $nxmhandler_path"
+done
 
     steam_compat_data_path="$steam_root/steamapps/compatdata/$selected_appid"
     desktop_file="$HOME/.local/share/applications/modorganizer2-nxm-handler.desktop"
