@@ -92,39 +92,8 @@ ttw_installation_menu() {
 
 # Check if TTW is already installed
 check_ttw_installation() {
-    log_info "Checking for TTW installation"
-
-    # Define possible locations where TTW might be installed
-    local ttw_locations=(
-        "$HOME/ModdedGames/TTW_Output"                # Default location from hoolamike
-        "$HOME/Hoolamike/TTW_Output"                  # Alt location in Hoolamike dir
-        "$HOME/TTW_Output"                            # Possible user location
-    )
-
-    # Look for common TTW marker files/folders
-    for location in "${ttw_locations[@]}"; do
-        if [ -d "$location" ]; then
-            # Check for TTW-specific files that would indicate installation
-            if [ -f "$location/TTW_install_complete.txt" ] ||
-               [ -d "$location/TaleOfTwoWastelands - Textures.bsa" ] ||
-               [ -f "$location/Data/TTW.esm" ]; then
-                log_info "Found TTW installation at: $location"
-                return 0  # Found TTW
-            fi
-        fi
-    done
-
-    # Check for TTW mods in Fallout New Vegas folder
-    local steam_root=$(get_steam_root)
-    local fnv_dir=$(find_game_directory "Fallout New Vegas" "$steam_root")
-
-    if [ -n "$fnv_dir" ] && [ -f "$fnv_dir/Data/TTW.esm" ]; then
-        log_info "Found TTW installed directly in Fallout New Vegas directory"
-        return 0  # Found TTW
-    fi
-
-    log_info "No TTW installation detected"
-    return 1  # TTW not found
+    log_info "TTW installation check disabled"
+    return 1  # Always return 'not installed'
 }
 
 # View TTW documentation
