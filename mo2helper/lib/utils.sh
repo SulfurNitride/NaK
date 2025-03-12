@@ -119,17 +119,19 @@ check_download_dependencies() {
 
 # Get non-Steam games
 get_non_steam_games() {
+    local force_refresh=${1:-false}
     print_section "Fetching Non-Steam Games"
-    log_info "Fetching non-Steam games"
+    log_info "Fetching non-Steam games (force_refresh=$force_refresh)"
 
-    # Check for cached games
-    if [ "$(get_config "auto_detect_games" "true")" == "true" ]; then
+    # Check for cached games - only use if not forcing refresh
+    if [ "$force_refresh" = false ] && [ "$(get_config "auto_detect_games" "true")" == "true" ]; then
         local cached_games=$(get_config "detected_games" "")
         if [ -n "$cached_games" ]; then
             log_info "Using cached game list"
             IFS=';' read -ra game_array <<< "$cached_games"
             if [ ${#game_array[@]} -gt 0 ]; then
                 echo "Found ${#game_array[@]} cached non-Steam games."
+                echo -e "${color_desc}(Use 'Refresh Game List' option to scan for new games)${color_reset}"
                 return 0
             fi
         fi
@@ -179,6 +181,24 @@ get_non_steam_games() {
 
     echo "Found ${#game_array[@]} non-Steam games."
     return 0
+}
+
+refresh_game_list() {
+    print_section "Refreshing Game List"
+    log_info "User requested game list refresh"
+    
+    echo -e "Scanning for new non-Steam games..."
+    echo -e "${color_yellow}This will overwrite the cached game list.${color_reset}"
+    
+    if confirm_action "Continue with refresh?"; then
+        get_non_steam_games true  # Force refresh
+        echo -e "\n${color_green}Game list refreshed successfully!${color_reset}"
+        pause "Press any key to continue..."
+        return 0
+    else
+        echo -e "Refresh canceled."
+        return 1
+    fi
 }
 
 # Modified select_game function to allow choosing different games
