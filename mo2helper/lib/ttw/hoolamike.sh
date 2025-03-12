@@ -315,8 +315,8 @@ fix_modorganizer_paths() {
         # Replace // with Z:/
         sed 's|//|Z:/|g' "$ini_file" > "$tmp_file"
         
-        # Replace /\ with Z:\\ (using awk for better handling of backslashes)
-        awk '{gsub(/\/\\/,"Z:\\\\"); print}' "$tmp_file" > "$ini_file"
+        # Replace /\\ with Z:\\ (using awk for better handling of backslashes)
+        awk '{gsub(/\/\\\\/,"Z:\\\\"); print}' "$tmp_file" > "$ini_file"
         
         echo -e "${color_green}✓ Fixed paths in: $ini_file${color_reset}"
         log_info "Fixed paths in: $ini_file"
