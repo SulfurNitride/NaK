@@ -115,6 +115,23 @@ download_hoolamike() {
 
     # Create directory in home folder
     local hoolamike_dir="$HOME/Hoolamike"
+    
+    # Check if Hoolamike is already installed
+    if [ -d "$hoolamike_dir" ]; then
+        echo -e "${color_yellow}Hoolamike is already installed at $hoolamike_dir${color_reset}"
+        echo -e "Would you like to update to the latest version? This will delete the existing installation."
+        if confirm_action "Update Hoolamike?"; then
+            echo -e "${color_blue}Removing existing installation...${color_reset}"
+            rm -rf "$hoolamike_dir"
+            log_info "Removed existing Hoolamike installation for update"
+        else
+            echo -e "Update canceled."
+            log_info "User canceled Hoolamike update"
+            return 0
+        fi
+    fi
+    
+    # Create the directory (needed again in case it was deleted)
     mkdir -p "$hoolamike_dir"
 
     echo -e "Fetching latest release information from GitHub..."
@@ -190,7 +207,6 @@ download_hoolamike() {
 
     return 0
 }
-
 # Execute Hoolamike with a specific command
 run_hoolamike() {
     local command="$1"
