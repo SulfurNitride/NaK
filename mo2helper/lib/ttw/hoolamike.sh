@@ -230,7 +230,7 @@ run_hoolamike() {
     # Increase file limit for better performance
     if ! ulimit -n 64556 > /dev/null 2>&1; then
         log_warning "Failed to set ulimit. Performance may be affected."
-    fi
+    }
     
     # Run directly (no pipes) to preserve interactive terminal environment
     # This is the key - we're executing hoolamike directly, not through any pipes
@@ -251,8 +251,81 @@ run_hoolamike() {
 
     log_info "Hoolamike execution completed for $command."
 
+    # Fix ModOrganizer.ini paths after installation
+    if [ "$command" == "install" ] || [[ "$command" == wabbajack* ]]; then
+        fix_modorganizer_paths
+    fi
+
     echo -e "\n${color_green}Hoolamike $command completed successfully!${color_reset}"
 
+    return 0
+}
+
+# Function to fix path formats in ModOrganizer.ini
+fix_modorganizer_paths() {
+    print_section "Fixing ModOrganizer Paths"
+    echo -e "Checking for ModOrganizer.ini to fix path formats..."
+    log_info "Searching for ModOrganizer.ini to fix Windows paths"
+    
+    # Get installation path from config file
+    local config_file="$HOME/Hoolamike/hoolamike.yaml"
+    local install_path=$(grep -A2 "installation:" "$config_file" | grep "installation_path:" | sed -E 's/.*"([^"]+)".*/\1/')
+    
+    if [ -z "$install_path" ]; then
+        echo -e "${color_yellow}Could not determine installation path from config.${color_reset}"
+        log_warning "Failed to determine installation path from hoolamike.yaml"
+        
+        # Ask user for path
+        read -rp "Enter the modlist installation path: " install_path
+        if [ -z "$install_path" ]; then
+            echo -e "${color_yellow}No path provided. Skipping path fix.${color_reset}"
+            log_warning "User did not provide installation path. Skipping path fix."
+            return 1
+        fi
+    fi
+    
+    # Expand tilde if present
+    install_path="${install_path/#\~/$HOME}"
+    log_info "Installation path: $install_path"
+    
+    # Find all ModOrganizer.ini files recursively in the installation path
+    local mo_ini_files=($(find "$install_path" -name "ModOrganizer.ini" 2>/dev/null))
+    
+    if [ ${#mo_ini_files[@]} -eq 0 ]; then
+        echo -e "${color_yellow}No ModOrganizer.ini files found in $install_path${color_reset}"
+        log_warning "No ModOrganizer.ini files found in $install_path"
+        return 1
+    fi
+    
+    echo -e "Found ${#mo_ini_files[@]} ModOrganizer.ini files to process."
+    log_info "Found ${#mo_ini_files[@]} ModOrganizer.ini files to process"
+    
+    for ini_file in "${mo_ini_files[@]}"; do
+        echo -e "Processing: ${color_blue}$ini_file${color_reset}"
+        log_info "Processing file: $ini_file"
+        
+        # Create a backup of the original file
+        cp "$ini_file" "${ini_file}.bak"
+        log_info "Created backup: ${ini_file}.bak"
+        
+        # Create a temporary file for processing
+        local tmp_file=$(mktemp)
+        TEMP_FILES+=("$tmp_file")
+        
+        # Replace // with Z:/
+        sed 's|//|Z:/|g' "$ini_file" > "$tmp_file"
+        
+        # Replace /\ with Z:\\ (using awk for better handling of backslashes)
+        awk '{gsub(/\/\\/,"Z:\\\\"); print}' "$tmp_file" > "$ini_file"
+        
+        echo -e "${color_green}✓ Fixed paths in: $ini_file${color_reset}"
+        log_info "Fixed paths in: $ini_file"
+    done
+    
+    echo -e "\n${color_green}Path fixing completed successfully!${color_reset}"
+    echo -e "${color_yellow}Note:${color_reset} If you encounter any issues with the game, you can restore the original files from the .bak backups."
+    log_info "Path fixing completed successfully"
+    
     return 0
 }
 # Install a Wabbajack modlist
