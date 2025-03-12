@@ -642,7 +642,7 @@ run_custom_hoolamike_command() {
     case $choice in
         1) command="" ;;
         2) 
-            read -rp "Enter path to Wabbajack file: " wj_path
+            read_with_tab_completion "Enter path to Wabbajack file" "" "wj_path"
             command="wabbajack \"$wj_path\""
             ;;
         3) command="tale-of-two-wastelands" ;;
