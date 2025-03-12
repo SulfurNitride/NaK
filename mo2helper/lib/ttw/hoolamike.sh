@@ -202,7 +202,7 @@ download_hoolamike() {
 
     return 0
 }
-# Execute Hoolamike with a specific command
+# Execute Hoolamike with a specific command showing direct terminal output
 run_hoolamike() {
     local command="$1"
     local summary_log="$HOME/hoolamike_summary.log"
@@ -231,37 +231,27 @@ run_hoolamike() {
     if ! ulimit -n 64556 > /dev/null 2>&1; then
         log_warning "Failed to set ulimit. Performance may be affected."
     fi
-
-    # Try to find a way to preserve colored output
-    if command_exists unbuffer; then
-        # Use unbuffer (from expect) to preserve colors and terminal control
-        unbuffer ./hoolamike "$command" 2>&1 | tee -a "$summary_log"
-        exit_status=${PIPESTATUS[0]}
-    elif command_exists stdbuf; then
-        # Use stdbuf as a fallback
-        stdbuf -o0 -e0 ./hoolamike "$command" 2>&1 | tee -a "$summary_log"
-        exit_status=${PIPESTATUS[0]}
-    else
-        # Direct execution as last resort
-        ./hoolamike "$command" 2>&1 | tee -a "$summary_log"
-        exit_status=${PIPESTATUS[0]}
-    fi
+    
+    # Run directly (no pipes) to preserve interactive terminal environment
+    # This is the key - we're executing hoolamike directly, not through any pipes
+    ./hoolamike "$command"
+    local exit_status=$?
+    
+    # Append final status to summary log
+    echo "[$(date)] Hoolamike $command completed with status $exit_status" >> "$summary_log"
 
     # Return to original directory
     cd - > /dev/null
 
     # Error handling
     if [ $exit_status -ne 0 ]; then
-        echo "[$(date)] Hoolamike $command failed with status $exit_status" >> "$summary_log"
-        handle_error "Hoolamike execution failed with status $exit_status. Check $summary_log for details." false
+        handle_error "Hoolamike execution failed with status $exit_status. Check terminal output for details." false
         return 1
     fi
 
-    echo "[$(date)] Completed hoolamike $command successfully" >> "$summary_log"
-    log_info "Hoolamike execution completed for $command. See $summary_log for details."
+    log_info "Hoolamike execution completed for $command."
 
     echo -e "\n${color_green}Hoolamike $command completed successfully!${color_reset}"
-    echo -e "A summary log is available at: $summary_log"
 
     return 0
 }
