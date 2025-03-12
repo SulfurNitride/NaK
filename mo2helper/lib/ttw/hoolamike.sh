@@ -360,22 +360,19 @@ install_wabbajack_modlist() {
     # Ask for Wabbajack file
     local wabbajack_path=""
     while true; do
-        read -rp "Enter path to Wabbajack file (.wabbajack): " wabbajack_path
-        
-        # Expand tilde if present
-        wabbajack_path="${wabbajack_path/#\~/$HOME}"
-        
-        if [ -f "$wabbajack_path" ]; then
-            log_info "Selected Wabbajack file: $wabbajack_path"
-            break
-        else
-            echo -e "${color_yellow}File not found: $wabbajack_path${color_reset}"
-            if ! confirm_action "Try again?"; then
-                log_info "User cancelled Wabbajack installation"
-                return 1
-            fi
+    read_with_tab_completion "Enter path to Wabbajack file (.wabbajack)" "" "wabbajack_path"
+    
+    if [ -f "$wabbajack_path" ]; then
+        log_info "Selected Wabbajack file: $wabbajack_path"
+        break
+    else
+        echo -e "${color_yellow}File not found: $wabbajack_path${color_reset}"
+        if ! confirm_action "Try again?"; then
+            log_info "User cancelled Wabbajack installation"
+            return 1
         fi
-    done
+    fi
+done
 
     
     # Get modlist name from the filename for better user experience
