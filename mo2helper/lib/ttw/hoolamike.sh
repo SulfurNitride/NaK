@@ -13,9 +13,17 @@ generate_hoolamike_config() {
     local steam_root=$(get_steam_root)
     local fallout3_dir=$(find_game_directory "Fallout 3 goty" "$steam_root")
     local fnv_dir=$(find_game_directory "Fallout New Vegas" "$steam_root")
+    
+    # Find additional game directories
+    local enderal_dir=$(find_game_directory "Enderal Special Edition" "$steam_root")
+    local skyrim_se_dir=$(find_game_directory "Skyrim Special Edition" "$steam_root")
+    local fallout4_dir=$(find_game_directory "Fallout 4" "$steam_root")
+    local starfield_dir=$(find_game_directory "Starfield" "$steam_root")
+    local oblivion_dir=$(find_game_directory "Oblivion" "$steam_root")
+    local bg3_dir=$(find_game_directory "Baldur's Gate 3" "$steam_root")
 
     # Find Fallout New Vegas compatdata
-    local fnv_compatdata=$(find_game_compatdata "22380" "$steam_root")
+    local fnv_compatdata=$(find_fnv_compatdata)
     local userprofile_path=""
 
     if [ -n "$fnv_compatdata" ]; then
@@ -44,6 +52,18 @@ games:
     root_directory: "${fallout3_dir:-/path/to/Fallout 3 goty}"
   FalloutNewVegas:
     root_directory: "${fnv_dir:-/path/to/Fallout New Vegas}"
+  EnderalSpecialEdition:
+    root_directory: "${enderal_dir:-/path/to/Enderal Special Edition}"
+  SkyrimSpecialEdition:
+    root_directory: "${skyrim_se_dir:-/path/to/Skyrim Special Edition}"
+  Fallout4:
+    root_directory: "${fallout4_dir:-/path/to/Fallout 4}"
+  Starfield:
+    root_directory: "${starfield_dir:-/path/to/Starfield}"
+  Oblivion:
+    root_directory: "${oblivion_dir:-/path/to/Oblivion}"
+  BaldursGate3:
+    root_directory: "${bg3_dir:-/path/to/Baldur's Gate 3}"
 
 fixup:
   game_resolution: 2560x1440
@@ -60,6 +80,12 @@ EOF
     echo -e "\n${color_green}Generated hoolamike.yaml with detected paths:${color_reset}"
     echo -e "Fallout 3: ${fallout3_dir:-Not found}"
     echo -e "Fallout NV: ${fnv_dir:-Not found}"
+    echo -e "Enderal Special Edition: ${enderal_dir:-Not found}"
+    echo -e "Skyrim Special Edition: ${skyrim_se_dir:-Not found}"
+    echo -e "Fallout 4: ${fallout4_dir:-Not found}"
+    echo -e "Starfield: ${starfield_dir:-Not found}"
+    echo -e "Oblivion: ${oblivion_dir:-Not found}"
+    echo -e "Baldur's Gate 3: ${bg3_dir:-Not found}"
     echo -e "FNV User Profile: ${userprofile_path:-Not found}"
     echo -e "\n${color_yellow}Edit the file to complete configuration:${color_reset}"
     echo -e "${color_blue}nano $config_path${color_reset}"
