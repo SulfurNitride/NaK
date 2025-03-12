@@ -152,7 +152,8 @@ main_menu() {
 
         display_menu "Main Menu" \
             "Mod Organizer Setup" "Set up MO2 with Proton, NXM handler, and dependencies" \
-            "TTW Installation" "Download and set up Tale of Two Wastelands tools" \
+            "Tale of Two Wastelands" "TTW-specific installation and tools" \
+            "Hoolamike Tools" "Wabbajack and other modlist installations" \
             "Game-Specific Info" "Fallout NV, Enderal, BG3 Info Here!" \
             "Exit" "Quit the application"
 
@@ -161,14 +162,84 @@ main_menu() {
         case $choice in
             1) mo2_setup_menu ;;
             2) ttw_installation_menu ;;
-            3) game_specific_menu ;;
-            4)
+            3) hoolamike_tools_menu ;;
+            4) game_specific_menu ;;
+            5)
                 log_info "User exited application"
                 echo -e "\n${color_green}Thank you for using the MO2 Helper!${color_reset}"
                 exit 0
                 ;;
         esac
     done
+}
+
+# Hoolamike general tools menu
+hoolamike_tools_menu() {
+    while true; {
+        print_header
+
+        # Check if Hoolamike is installed
+        local hoolamike_installed=false
+        if [ -f "$HOME/Hoolamike/hoolamike" ]; then
+            hoolamike_installed=true
+        fi
+
+        # Status indicator
+        local hoolamike_status="${color_red}Not Installed${color_reset}"
+        if $hoolamike_installed; then
+            hoolamike_status="${color_green}Installed${color_reset}"
+        fi
+
+        echo -e "Hoolamike: $hoolamike_status"
+
+        display_menu "Hoolamike Mod Tools" \
+            "Download/Update Hoolamike" "Download or update the Hoolamike tool" \
+            "Install Wabbajack Modlist" "Install a Wabbajack modlist using Hoolamike" \
+            "Configure Hoolamike" "Manage Hoolamike settings and game paths" \
+            "Run Custom Command" "Execute a custom Hoolamike command" \
+            "Back to Main Menu" "Return to the main menu"
+
+        local choice=$?
+
+        case $choice in
+            1)
+                if $hoolamike_installed; then
+                    echo -e "\n${color_yellow}Hoolamike is already installed.${color_reset}"
+                    if confirm_action "Re-download and reinstall?"; then
+                        download_hoolamike
+                    fi
+                else
+                    download_hoolamike
+                fi
+                ;;
+            2)
+                if ! $hoolamike_installed; then
+                    handle_error "Hoolamike is not installed. Please install it first." false
+                else
+                    # Implement Wabbajack modlist installation function
+                    install_wabbajack_modlist
+                fi
+                pause "Press any key to continue..."
+                ;;
+            3)
+                if ! $hoolamike_installed; then
+                    handle_error "Hoolamike is not installed. Please install it first." false
+                else
+                    # Implement Hoolamike configuration editing
+                    edit_hoolamike_config
+                fi
+                ;;
+            4)
+                if ! $hoolamike_installed; then
+                    handle_error "Hoolamike is not installed. Please install it first." false
+                else
+                    # Implement custom command execution
+                    run_custom_hoolamike_command
+                fi
+                ;;
+            5) return ;;
+        esac
+    }
 }
 
 # MO2 setup submenu
