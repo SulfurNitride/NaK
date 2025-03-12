@@ -101,6 +101,7 @@ EOF
     echo -e "\n${color_yellow}Edit the file to complete configuration:${color_reset}"
     echo -e "${color_blue}nano $config_path${color_reset}"
 }
+
 # Download and install Hoolamike
 download_hoolamike() {
     log_info "Starting hoolamike download"
@@ -198,12 +199,6 @@ download_hoolamike() {
     echo -e "\n${color_green}Hoolamike setup completed!${color_reset}"
     echo -e "You can now configure your mod setup in:"
     echo -e "${color_blue}$hoolamike_dir/hoolamike.yaml${color_reset}"
-
-    # Ask user if they want to install FNV dependencies
-    echo -e "\nWould you like to install Fallout New Vegas Proton dependencies now?"
-    if confirm_action "Install FNV dependencies?"; then
-        install_fnv_dependencies
-    fi
 
     return 0
 }
