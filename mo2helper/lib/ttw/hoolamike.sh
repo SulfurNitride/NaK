@@ -288,3 +288,338 @@ run_hoolamike() {
 
     return 0
 }
+
+# Install a Wabbajack modlist
+install_wabbajack_modlist() {
+    print_section "Install Wabbajack Modlist"
+    
+    local hoolamike_dir="$HOME/Hoolamike"
+    local config_file="$hoolamike_dir/hoolamike.yaml"
+    
+    # Check if Hoolamike is installed
+    if [ ! -f "$hoolamike_dir/hoolamike" ]; then
+        handle_error "Hoolamike is not installed. Please install it first." false
+        return 1
+    fi
+    
+    # Check if config file exists
+    if [ ! -f "$config_file" ]; then
+        handle_error "Hoolamike configuration file not found. Please run 'Download/Update Hoolamike' first." false
+        return 1
+    fi
+    
+    log_info "Starting Wabbajack modlist installation setup"
+    
+    # Ask for Wabbajack file
+    local wabbajack_path=""
+    while true; do
+        read -rp "Enter path to Wabbajack file (.wabbajack): " wabbajack_path
+        
+        # Expand tilde if present
+        wabbajack_path="${wabbajack_path/#\~/$HOME}"
+        
+        if [ -f "$wabbajack_path" ]; then
+            log_info "Selected Wabbajack file: $wabbajack_path"
+            break
+        else
+            echo -e "${color_yellow}File not found: $wabbajack_path${color_reset}"
+            if ! confirm_action "Try again?"; then
+                log_info "User cancelled Wabbajack installation"
+                return 1
+            fi
+        fi
+    done
+    
+    # Get modlist name from the filename for better user experience
+    local modlist_name=$(basename "$wabbajack_path" .wabbajack)
+    echo -e "Installing modlist: ${color_green}$modlist_name${color_reset}"
+    
+    # Get downloads directory
+    local current_downloads_dir=$(grep -A2 "downloaders:" "$config_file" | grep "downloads_directory:" | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$current_downloads_dir" ] || [[ "$current_downloads_dir" == *"YOUR"* ]]; then
+        current_downloads_dir="$HOME/Downloads"
+    fi
+    
+    echo -e "\n${color_header}Downloads Directory${color_reset}"
+    echo -e "This is where mod files will be downloaded from Nexus/other sources."
+    read -rp "Enter downloads directory [default: $current_downloads_dir]: " input
+    if [ -n "$input" ]; then
+        downloads_dir="${input/#\~/$HOME}"
+    else
+        downloads_dir="$current_downloads_dir"
+    fi
+    
+    # Create downloads directory if it doesn't exist
+    if [ ! -d "$downloads_dir" ]; then
+        echo -e "${color_yellow}Downloads directory does not exist.${color_reset}"
+        if confirm_action "Create directory?"; then
+            mkdir -p "$downloads_dir"
+            log_info "Created downloads directory: $downloads_dir"
+        fi
+    fi
+    
+    # Get installation path
+    local current_install_path=$(grep -A2 "installation:" "$config_file" | grep "installation_path:" | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$current_install_path" ] || [[ "$current_install_path" == *"YOUR"* ]]; then
+        current_install_path="$HOME/ModdedGames/$modlist_name"
+    fi
+    
+    echo -e "\n${color_header}Installation Path${color_reset}"
+    echo -e "This is where the modded game will be installed."
+    read -rp "Enter installation path [default: $current_install_path]: " input
+    if [ -n "$input" ]; then
+        install_path="${input/#\~/$HOME}"
+    else
+        install_path="$current_install_path"
+    fi
+    
+    # Create installation directory if it doesn't exist
+    if [ ! -d "$install_path" ]; then
+        echo -e "${color_yellow}Installation directory does not exist.${color_reset}"
+        if confirm_action "Create directory?"; then
+            mkdir -p "$install_path"
+            log_info "Created installation directory: $install_path"
+        fi
+    fi
+    
+    # Get Nexus API key
+    local current_api_key=$(grep -A3 "downloaders:" "$config_file" | grep "api_key:" | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$current_api_key" ] || [ "$current_api_key" == "YOUR_API_KEY_HERE" ]; then
+        echo -e "\n${color_header}Nexus API Key${color_reset}"
+        echo -e "${color_yellow}A Nexus Mods API key is required for automatic downloads.${color_reset}"
+        echo -e "You can get one from: ${color_blue}https://www.nexusmods.com/users/myaccount?tab=api${color_reset}"
+        read -rp "Enter Nexus API key: " api_key
+        
+        if [ -z "$api_key" ]; then
+            echo -e "${color_yellow}No API key provided. You may need to download mods manually.${color_reset}"
+            if ! confirm_action "Continue without API key?"; then
+                log_info "User cancelled Wabbajack installation due to missing API key"
+                return 1
+            fi
+            api_key="YOUR_API_KEY_HERE"
+        fi
+    else
+        echo -e "\n${color_header}Nexus API Key${color_reset}"
+        echo -e "Nexus API key found in configuration."
+        if confirm_action "Use existing API key?"; then
+            echo -e "Using existing API key."
+            api_key="$current_api_key"
+        else
+            read -rp "Enter new Nexus API key: " api_key
+            if [ -z "$api_key" ]; then
+                api_key="$current_api_key"  # Keep existing if nothing entered
+            fi
+        fi
+    fi
+    
+    # Get game resolution
+    local current_resolution=$(grep -A1 "fixup:" "$config_file" | grep "game_resolution:" | awk '{print $2}')
+    if [ -z "$current_resolution" ]; then
+        current_resolution="1920x1080"
+    fi
+    
+    echo -e "\n${color_header}Game Resolution${color_reset}"
+    echo -e "This sets the resolution for the modded game."
+    echo -e "Common resolutions: 1920x1080 (1080p), 2560x1440 (1440p), 3840x2160 (4K)"
+    read -rp "Enter game resolution [default: $current_resolution]: " input
+    if [ -n "$input" ]; then
+        game_resolution="$input"
+    else
+        game_resolution="$current_resolution"
+    fi
+    
+    # Summarize changes
+    echo -e "\n${color_header}Configuration Summary${color_reset}"
+    echo -e "Wabbajack file: ${color_green}$wabbajack_path${color_reset}"
+    echo -e "Downloads directory: ${color_green}$downloads_dir${color_reset}"
+    echo -e "Installation path: ${color_green}$install_path${color_reset}"
+    echo -e "Game resolution: ${color_green}$game_resolution${color_reset}"
+    
+    if ! confirm_action "Apply these settings and start installation?"; then
+        echo -e "\n${color_yellow}Installation canceled.${color_reset}"
+        log_info "User cancelled Wabbajack installation after configuration"
+        return 1
+    fi
+    
+    # Update the configuration file
+    log_info "Updating Hoolamike configuration for Wabbajack installation"
+    echo -e "\n${color_blue}Updating configuration...${color_reset}"
+    
+    # Create a backup of the original config
+    cp "$config_file" "${config_file}.wabbajack-bak"
+    log_info "Backed up original config to ${config_file}.wabbajack-bak"
+    
+    # Update the config file with sed (safer than rewriting the whole file)
+    # Update downloads directory
+    sed -i "s|downloads_directory:.*|downloads_directory: \"$downloads_dir\"|" "$config_file"
+    
+    # Update Nexus API key
+    sed -i "s|api_key:.*|api_key: \"$api_key\"|" "$config_file"
+    
+    # Update Wabbajack file path
+    sed -i "s|wabbajack_file_path:.*|wabbajack_file_path: \"$wabbajack_path\"|" "$config_file"
+    
+    # Update installation path
+    sed -i "s|installation_path:.*|installation_path: \"$install_path\"|" "$config_file"
+    
+    # Update game resolution - ensure the fixup section exists
+    if grep -q "fixup:" "$config_file"; then
+        sed -i "/fixup:/,/^[a-z]/ s|game_resolution:.*|game_resolution: $game_resolution|" "$config_file"
+    else
+        # Add fixup section if it doesn't exist
+        echo -e "\nfixup:\n  game_resolution: $game_resolution" >> "$config_file"
+    fi
+    
+    log_info "Hoolamike configuration updated for Wabbajack installation"
+    
+    # Run the installation
+    echo -e "\n${color_yellow}This process may take a long time depending on the modlist size.${color_reset}"
+    echo -e "Large modlists can take several hours and need a stable internet connection."
+    
+    if confirm_action "Start Wabbajack installation now?"; then
+        run_hoolamike "wabbajack"
+        
+        # Check if installation succeeded
+        if [ $? -eq 0 ]; then
+            echo -e "\n${color_green}Wabbajack modlist installation completed!${color_reset}"
+            echo -e "You can now launch the game through Mod Organizer 2."
+            echo -e "\n${color_yellow}Important:${color_reset} Some modlists may require additional setup."
+            echo -e "Check the modlist documentation for any post-installation steps."
+        else
+            echo -e "\n${color_red}Wabbajack installation failed.${color_reset}"
+            echo -e "Check the logs for more information."
+        fi
+    else
+        echo -e "\nYou can run the installation later by selecting this option again."
+        echo -e "Your configuration has been saved."
+    fi
+    
+    return 0
+}
+
+# Function to help users edit their hoolamike.yaml config directly
+edit_hoolamike_config() {
+    print_section "Edit Hoolamike Configuration"
+    
+    local hoolamike_dir="$HOME/Hoolamike"
+    local config_file="$hoolamike_dir/hoolamike.yaml"
+    
+    # Check if Hoolamike is installed
+    if [ ! -f "$hoolamike_dir/hoolamike" ]; then
+        handle_error "Hoolamike is not installed. Please install it first." false
+        return 1
+    fi
+    
+    # Check if config file exists
+    if [ ! -f "$config_file" ]; then
+        handle_error "Hoolamike configuration file not found." false
+        return 1
+    fi
+    
+    # Detect available text editors
+    local editors=()
+    local editor_cmds=("nano" "vim" "vi" "emacs" "gedit" "kate" "mousepad" "pluma")
+    
+    for cmd in "${editor_cmds[@]}"; do
+        if command_exists "$cmd"; then
+            editors+=("$cmd")
+        fi
+    done
+    
+    if [ ${#editors[@]} -eq 0 ]; then
+        handle_error "No text editor found. Please install nano: sudo apt install nano" false
+        return 1
+    fi
+    
+    # Default to first available editor
+    local editor="${editors[0]}"
+    
+    # If more than one editor is available, let user choose
+    if [ ${#editors[@]} -gt 1 ]; then
+        echo -e "Available text editors:"
+        for i in "${!editors[@]}"; do
+            echo -e "$((i+1)). ${editors[$i]}"
+        done
+        
+        while true; do
+            read -rp "Select editor (1-${#editors[@]}) [default: 1]: " choice
+            
+            if [ -z "$choice" ]; then
+                choice=1
+                break
+            elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#editors[@]}" ]; then
+                break
+            else
+                echo -e "${color_yellow}Invalid choice. Please try again.${color_reset}"
+            fi
+        done
+        
+        editor="${editors[$((choice-1))]}"
+    fi
+    
+    echo -e "Opening configuration file with $editor..."
+    log_info "Editing hoolamike.yaml with $editor"
+    
+    # Create a backup before editing
+    cp "$config_file" "${config_file}.edit-bak"
+    
+    # Open the file in the selected editor
+    $editor "$config_file"
+    
+    echo -e "\n${color_green}Configuration file updated.${color_reset}"
+    echo -e "You can now use Hoolamike with the updated configuration."
+    
+    return 0
+}
+
+# Function to run custom Hoolamike commands
+run_custom_hoolamike_command() {
+    print_section "Run Custom Hoolamike Command"
+    
+    local hoolamike_dir="$HOME/Hoolamike"
+    
+    # Check if Hoolamike is installed
+    if [ ! -f "$hoolamike_dir/hoolamike" ]; then
+        handle_error "Hoolamike is not installed. Please install it first." false
+        return 1
+    fi
+    
+    echo -e "${color_header}Available Hoolamike Commands:${color_reset}"
+    echo -e "1. hoolamike - Show help"
+    echo -e "2. hoolamike wabbajack [file.wabbajack] - Install a Wabbajack modlist"
+    echo -e "3. hoolamike tale-of-two-wastelands - Install TTW"
+    echo -e "4. hoolamike version - Show version"
+    echo -e "5. Other custom command"
+    
+    read -rp "Select a command (1-5): " choice
+    
+    local command=""
+    case $choice in
+        1) command="" ;;
+        2) 
+            read -rp "Enter path to Wabbajack file: " wj_path
+            command="wabbajack \"$wj_path\""
+            ;;
+        3) command="tale-of-two-wastelands" ;;
+        4) command="version" ;;
+        5)
+            read -rp "Enter custom command: " command
+            ;;
+        *)
+            echo -e "${color_yellow}Invalid choice.${color_reset}"
+            return 1
+            ;;
+    esac
+    
+    echo -e "\nRunning: ${color_blue}hoolamike $command${color_reset}"
+    if confirm_action "Execute this command?"; then
+        run_hoolamike "$command"
+        
+        echo -e "\n${color_green}Command execution completed.${color_reset}"
+        pause "Press any key to continue..."
+    else
+        echo -e "\n${color_yellow}Command cancelled.${color_reset}"
+    fi
+    
+    return 0
+}
