@@ -252,9 +252,17 @@ run_hoolamike() {
 
     local pid=$!
 
-    # Show spinner while waiting
-    echo -e "\n${color_header}Processing Tale of Two Wastelands...${color_reset}"
-    spinner $pid "Installing TTW components (this will take a long time)"
+    # Show appropriate message based on command
+    if [[ "$command" == "tale-of-two-wastelands" ]]; then
+        echo -e "\n${color_header}Processing Tale of Two Wastelands...${color_reset}"
+        spinner $pid "Installing TTW components (this will take a long time)"
+    elif [[ "$command" == "wabbajack"* ]]; then
+        echo -e "\n${color_header}Processing Wabbajack Installation...${color_reset}"
+        spinner $pid "Installing Wabbajack modlist (this will take a long time)"
+    else
+        echo -e "\n${color_header}Processing Hoolamike Command...${color_reset}"
+        spinner $pid "Executing Hoolamike command (this may take some time)"
+    fi
 
     # Check exit status
     local exit_status=1
