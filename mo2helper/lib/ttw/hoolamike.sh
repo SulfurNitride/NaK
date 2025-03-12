@@ -230,7 +230,7 @@ run_hoolamike() {
     # Increase file limit for better performance
     if ! ulimit -n 64556 > /dev/null 2>&1; then
         log_warning "Failed to set ulimit. Performance may be affected."
-    }
+    fi
     
     # Run directly (no pipes) to preserve interactive terminal environment
     # This is the key - we're executing hoolamike directly, not through any pipes
