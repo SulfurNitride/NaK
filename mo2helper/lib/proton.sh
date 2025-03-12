@@ -70,8 +70,8 @@ setup_nxm_handler() {
         return 1
     fi
 
-    while true; do
-    read -rp "Enter FULL path to nxmhandler.exe (or 'b' to go back): " nxmhandler_path
+   while true; do
+    read_with_tab_completion "Enter FULL path to nxmhandler.exe (or 'b' to go back)" "" "nxmhandler_path"
 
     # Check if user wants to go back
     if [[ "$nxmhandler_path" == "b" || "$nxmhandler_path" == "B" ]]; then
