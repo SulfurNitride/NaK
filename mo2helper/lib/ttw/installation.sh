@@ -37,7 +37,7 @@ ttw_installation_menu() {
 
         display_menu "Tale of Two Wastelands Setup" \
             "Automated TTW Setup" "Complete automated installation (all steps at once)" \
-            "Download Hoolamike" "Download and setup Hoolamike for TTW installation" \
+            "Download/Update Hoolamike" "Download or update Hoolamike and configure for TTW installation" \
             "Install FNV Dependencies" "Install Fallout New Vegas Proton dependencies" \
             "Run TTW Installation" "Execute TTW installation with Hoolamike" \
             "View TTW Documentation" "View TTW installation guides and documentation" \
