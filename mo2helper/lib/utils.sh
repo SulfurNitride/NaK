@@ -75,6 +75,22 @@ find_bg3_compatdata() {
     find_game_compatdata "1086940" "$(get_steam_root)"
 }
 
+find_skyrim_se_compatdata() {
+    find_game_compatdata "489830" "$(get_steam_root)"
+}
+
+find_fallout4_compatdata() {
+    find_game_compatdata "377160" "$(get_steam_root)"
+}
+
+find_starfield_compatdata() {
+    find_game_compatdata "1716740" "$(get_steam_root)"
+}
+
+find_oblivion_compatdata() {
+    find_game_compatdata "22330" "$(get_steam_root)"
+}
+
 # Check for dependencies needed for downloading
 check_download_dependencies() {
     log_info "Checking download dependencies"
