@@ -218,46 +218,67 @@ run_hoolamike() {
     print_section "Running Hoolamike"
     echo -e "Starting ${color_blue}$command${color_reset} operation with Hoolamike"
     echo -e "${color_yellow}This may take a very long time (up to several hours)${color_reset}"
+    echo -e "Showing live output below - this helps you track progress:"
 
     # Set start time for summary log
     echo "[$(date)] Starting hoolamike $command" > "$summary_log"
 
-    # Start progress tracking
-    local tracker=$(start_progress_tracking "Hoolamike $command" 3600)  # Estimate 1 hour
+    # Create a named pipe for real-time output
+    local pipe=$(mktemp -u)
+    mkfifo "$pipe"
+    TEMP_FILES+=("$pipe")
+
+    # Start a background process to read from the pipe and display filtered output
+    (
+        # Use a simple prefix for output lines to make them stand out
+        while read -r line; do
+            # Filter for the most informative lines and color them appropriately
+            if [[ "$line" == *"GiB"*"MiB/s"*"ELAPSED"* ]]; then
+                # Lines with download progress
+                echo -e "${color_blue}→ $line${color_reset}"
+            elif [[ "$line" == *"Installing"* ]] || [[ "$line" == *"Extracting"* ]]; then
+                # Lines with installation info
+                echo -e "${color_green}→ $line${color_reset}"
+            elif [[ "$line" == *"ERROR"* ]] || [[ "$line" == *"Failed"* ]]; then
+                # Error messages
+                echo -e "${color_red}→ $line${color_reset}"
+            elif [[ "$line" == *"Processing"* ]] || [[ "$line" == *"Copying"* ]]; then
+                # Processing messages
+                echo -e "${color_yellow}→ $line${color_reset}"
+            elif [[ ! "$line" == *"handling_asset"* ]] && [[ ! "$line" == *"resolve_variable"* ]]; then
+                # Other informative lines (excluding very verbose ones)
+                echo "→ $line"
+            fi
+        done < "$pipe" &
+    )
 
     # Create a unique ID for this run
     local run_id="hoolamike_$(date +%s)"
 
-    # Start Hoolamike in the background
+    # Start Hoolamike in the background and redirect output to both temp_log and the pipe
     (
         cd "$HOME/Hoolamike" || {
             log_error "Failed to enter Hoolamike directory"
             return 1
         }
 
-        # Increase file limit
+        # Increase file limit for better performance
         if ! ulimit -n 64556 > /dev/null 2>&1; then
             log_warning "Failed to set ulimit. Performance may be affected."
         fi
 
-        # Execute Hoolamike
-        ./hoolamike "$command" > "$temp_log" 2>&1
+        # Execute Hoolamike and tee output to both the temp log and the pipe
+        ./hoolamike "$command" 2>&1 | tee "$temp_log" > "$pipe"
         echo "HOOLAMIKE_EXIT_CODE=$?" > "/tmp/${run_id}.exit"
     ) &
 
     local pid=$!
 
-    # Show appropriate message based on command
-    if [[ "$command" == "tale-of-two-wastelands" ]]; then
-        echo -e "\n${color_header}Processing Tale of Two Wastelands...${color_reset}"
-        spinner $pid "Installing TTW components (this will take a long time)"
-    elif [[ "$command" == "wabbajack"* ]]; then
-        echo -e "\n${color_header}Processing Wabbajack Installation...${color_reset}"
-        spinner $pid "Installing Wabbajack modlist (this will take a long time)"
-    else
-        echo -e "\n${color_header}Processing Hoolamike Command...${color_reset}"
-        spinner $pid "Executing Hoolamike command (this may take some time)"
-    fi
+    # Wait for the process to complete
+    wait $pid
+
+    # Clean up pipe
+    rm -f "$pipe"
 
     # Check exit status
     local exit_status=1
@@ -274,8 +295,6 @@ run_hoolamike() {
     echo "---- Last 20 lines of output ----" >> "$summary_log"
     tail -n 20 "$temp_log" >> "$summary_log"
 
-    end_progress_tracking "$tracker" true
-
     # Error handling
     if [ $exit_status -ne 0 ]; then
         echo "[$(date)] Hoolamike $command failed with status $exit_status" >> "$summary_log"
@@ -291,7 +310,6 @@ run_hoolamike() {
 
     return 0
 }
-
 # Install a Wabbajack modlist
 install_wabbajack_modlist() {
     print_section "Install Wabbajack Modlist"
