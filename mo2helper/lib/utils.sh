@@ -4,6 +4,34 @@
 # Utility functions for MO2 Helper
 # -------------------------------------------------------------------
 
+# Function to get user input with path tab-completion
+read_with_tab_completion() {
+    local prompt="$1"
+    local default_value="${2:-}"
+    local var_name="$3"
+    
+    # If there's a default value, show it in the prompt
+    if [ -n "$default_value" ]; then
+        prompt="$prompt [default: $default_value]: "
+    else
+        prompt="$prompt: "
+    fi
+    
+    # Use Bash's readline capabilities for tab completion
+    read -e -p "$prompt" input_value
+    
+    # If input is empty and default exists, use default
+    if [ -z "$input_value" ] && [ -n "$default_value" ]; then
+        input_value="$default_value"
+    fi
+    
+    # Expand tilde if present
+    input_value="${input_value/#\~/$HOME}"
+    
+    # Set the result in the provided variable name using indirect reference
+    eval "$var_name=\"$input_value\""
+}
+
 # Find a specific game directory in Steam libraries
 find_game_directory() {
     local game_name="$1"
