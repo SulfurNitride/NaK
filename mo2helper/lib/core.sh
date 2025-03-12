@@ -216,7 +216,6 @@ hoolamike_tools_menu() {
                 if ! $hoolamike_installed; then
                     handle_error "Hoolamike is not installed. Please install it first." false
                 else
-                    # Implement Wabbajack modlist installation function
                     install_wabbajack_modlist
                 fi
                 pause "Press any key to continue..."
@@ -225,7 +224,6 @@ hoolamike_tools_menu() {
                 if ! $hoolamike_installed; then
                     handle_error "Hoolamike is not installed. Please install it first." false
                 else
-                    # Implement Hoolamike configuration editing
                     edit_hoolamike_config
                 fi
                 ;;
@@ -233,7 +231,6 @@ hoolamike_tools_menu() {
                 if ! $hoolamike_installed; then
                     handle_error "Hoolamike is not installed. Please install it first." false
                 else
-                    # Implement custom command execution
                     run_custom_hoolamike_command
                 fi
                 ;;
