@@ -20,7 +20,7 @@ generate_hoolamike_config() {
     local fallout4_dir=$(find_game_directory "Fallout 4" "$steam_root")
     local starfield_dir=$(find_game_directory "Starfield" "$steam_root")
     local oblivion_dir=$(find_game_directory "Oblivion" "$steam_root")
-    local bg3_dir=$(find_game_directory "Baldur's Gate 3" "$steam_root")
+    local bg3_dir=$(find_game_directory "Baldurs Gate 3" "$steam_root")
 
     # Find Fallout New Vegas compatdata
     local fnv_compatdata=$(find_fnv_compatdata)
