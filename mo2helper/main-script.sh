@@ -32,6 +32,10 @@ source "$LIB_DIR/games/bg3.sh"
 source "$LIB_DIR/ttw/hoolamike.sh"
 source "$LIB_DIR/ttw/installation.sh"
 
+# Source hoolamike general modules
+mkdir -p "$LIB_DIR/hoolamike"
+source "$LIB_DIR/hoolamike/general.sh"
+
 # ===== SCRIPT INITIALIZATION ======
 
 # Initialize
