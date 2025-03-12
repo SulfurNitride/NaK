@@ -6,7 +6,7 @@
 # -------------------------------------------------------------------
 
 # Script metadata
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.2.5"
 SCRIPT_DATE="$(date +%Y-%m-%d)"
 
 # Define script directory to find modules
@@ -19,7 +19,6 @@ source "$LIB_DIR/config.sh"
 source "$LIB_DIR/error.sh"
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/ui.sh"
-source "$LIB_DIR/core.sh"
 source "$LIB_DIR/proton.sh"
 
 # Source game modules
@@ -32,9 +31,7 @@ source "$LIB_DIR/games/bg3.sh"
 source "$LIB_DIR/ttw/hoolamike.sh"
 source "$LIB_DIR/ttw/installation.sh"
 
-# Note: We removed the reference to the non-existent general.sh file
-# since we integrated those functions directly into lib/ttw/hoolamike.sh
-
+source "$LIB_DIR/core.sh"
 # ===== SCRIPT INITIALIZATION ======
 
 # Initialize
