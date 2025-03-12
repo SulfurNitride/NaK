@@ -195,8 +195,6 @@ hoolamike_tools_menu() {
         display_menu "Hoolamike Mod Tools" \
             "Download/Update Hoolamike" "Download or update the Hoolamike tool" \
             "Install Wabbajack Modlist" "Install a Wabbajack modlist using Hoolamike" \
-            "Configure Hoolamike" "Manage Hoolamike settings and game paths" \
-            "Run Custom Command" "Execute a custom Hoolamike command" \
             "Back to Main Menu" "Return to the main menu"
 
         local choice=$?
@@ -220,21 +218,7 @@ hoolamike_tools_menu() {
                 fi
                 pause "Press any key to continue..."
                 ;;
-            3)
-                if ! $hoolamike_installed; then
-                    handle_error "Hoolamike is not installed. Please install it first." false
-                else
-                    edit_hoolamike_config
-                fi
-                ;;
-            4)
-                if ! $hoolamike_installed; then
-                    handle_error "Hoolamike is not installed. Please install it first." false
-                else
-                    run_custom_hoolamike_command
-                fi
-                ;;
-            5) return ;;
+            3) return ;;
         esac
     done
 }
