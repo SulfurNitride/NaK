@@ -175,7 +175,7 @@ main_menu() {
 
 # Hoolamike general tools menu
 hoolamike_tools_menu() {
-    while true; {
+    while true; do
         print_header
 
         # Check if Hoolamike is installed
@@ -236,8 +236,9 @@ hoolamike_tools_menu() {
                 ;;
             5) return ;;
         esac
-    }
+    done
 }
+
 
 # MO2 setup submenu
 mo2_setup_menu() {
