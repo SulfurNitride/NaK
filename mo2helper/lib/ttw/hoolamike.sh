@@ -206,8 +206,6 @@ download_hoolamike() {
 run_hoolamike() {
     local command="$1"
     local summary_log="$HOME/hoolamike_summary.log"
-    local temp_log=$(mktemp)
-    TEMP_FILES+=("$temp_log")
 
     # Check if hoolamike exists
     if [ ! -f "$HOME/Hoolamike/hoolamike" ]; then
@@ -223,84 +221,30 @@ run_hoolamike() {
     # Set start time for summary log
     echo "[$(date)] Starting hoolamike $command" > "$summary_log"
 
-    # Create a named pipe for real-time output
-    local pipe=$(mktemp -u)
-    mkfifo "$pipe"
-    TEMP_FILES+=("$pipe")
-
-    # Start a background process to read from the pipe and display filtered output
-    (
-        # Use a simple prefix for output lines to make them stand out
-        while read -r line; do
-            # Filter for the most informative lines and color them appropriately
-            if [[ "$line" == *"GiB"*"MiB/s"*"ELAPSED"* ]]; then
-                # Lines with download progress
-                echo -e "${color_blue}→ $line${color_reset}"
-            elif [[ "$line" == *"Installing"* ]] || [[ "$line" == *"Extracting"* ]]; then
-                # Lines with installation info
-                echo -e "${color_green}→ $line${color_reset}"
-            elif [[ "$line" == *"ERROR"* ]] || [[ "$line" == *"Failed"* ]]; then
-                # Error messages
-                echo -e "${color_red}→ $line${color_reset}"
-            elif [[ "$line" == *"Processing"* ]] || [[ "$line" == *"Copying"* ]]; then
-                # Processing messages
-                echo -e "${color_yellow}→ $line${color_reset}"
-            elif [[ ! "$line" == *"handling_asset"* ]] && [[ ! "$line" == *"resolve_variable"* ]]; then
-                # Other informative lines (excluding very verbose ones)
-                echo "→ $line"
-            fi
-        done < "$pipe" &
-    )
-
-    # Create a unique ID for this run
-    local run_id="hoolamike_$(date +%s)"
-
-    # Start Hoolamike in the background and redirect output to both temp_log and the pipe
-    (
-        cd "$HOME/Hoolamike" || {
-            log_error "Failed to enter Hoolamike directory"
-            return 1
-        }
-
-        # Increase file limit for better performance
-        if ! ulimit -n 64556 > /dev/null 2>&1; then
-            log_warning "Failed to set ulimit. Performance may be affected."
-        fi
-
-        # Execute Hoolamike and tee output to both the temp log and the pipe
-        ./hoolamike "$command" 2>&1 | tee "$temp_log" > "$pipe"
-        echo "HOOLAMIKE_EXIT_CODE=$?" > "/tmp/${run_id}.exit"
-    ) &
-
-    local pid=$!
-
-    # Wait for the process to complete
-    wait $pid
-
-    # Clean up pipe
-    rm -f "$pipe"
-
-    # Check exit status
-    local exit_status=1
-    if [ -f "/tmp/${run_id}.exit" ]; then
-        source "/tmp/${run_id}.exit"
-        exit_status=$HOOLAMIKE_EXIT_CODE
-        rm -f "/tmp/${run_id}.exit"
+    # Change directory to Hoolamike
+    cd "$HOME/Hoolamike" || {
+        log_error "Failed to enter Hoolamike directory"
+        return 1
+    }
+    
+    # Increase file limit for better performance
+    if ! ulimit -n 64556 > /dev/null 2>&1; then
+        log_warning "Failed to set ulimit. Performance may be affected."
     fi
 
-    # Generate a summary log after completion
-    if command_exists script; then
-        # The output was directed to the terminal by script, so we need to log separately
-        echo "[$(date)] Hoolamike $command completed with status $exit_status" >> "$summary_log"
+    # Try to find a way to preserve colored output
+    if command_exists unbuffer; then
+        # Use unbuffer (from expect) to preserve colors and terminal control
+        unbuffer ./hoolamike "$command" 2>&1 | tee -a "$summary_log"
+        exit_status=${PIPESTATUS[0]}
+    elif command_exists stdbuf; then
+        # Use stdbuf as a fallback
+        stdbuf -o0 -e0 ./hoolamike "$command" 2>&1 | tee -a "$summary_log"
+        exit_status=${PIPESTATUS[0]}
     else
-        # Filter the output if we captured it to temp_log
-        if [ -f "$temp_log" ]; then
-            grep -v "handling_asset\|voice\|sound\|textures\|\[OK\]\|updated templated value\|variable_found\|resolve_variable\|MAGICALLY\|hoolamike::extensions" "$temp_log" >> "$summary_log"
-            
-            # Add the last few lines for debugging
-            echo "---- Last 20 lines of output ----" >> "$summary_log"
-            tail -n 20 "$temp_log" >> "$summary_log"
-        fi
+        # Direct execution as last resort
+        ./hoolamike "$command" 2>&1 | tee -a "$summary_log"
+        exit_status=${PIPESTATUS[0]}
     fi
 
     # Return to original directory
