@@ -485,7 +485,7 @@ install_wabbajack_modlist() {
     echo -e "Large modlists can take several hours and need a stable internet connection."
     
     if confirm_action "Start Wabbajack installation now?"; then
-        run_hoolamike "wabbajack"
+        run_hoolamike "install"
         
         # Check if installation succeeded
         if [ $? -eq 0 ]; then
