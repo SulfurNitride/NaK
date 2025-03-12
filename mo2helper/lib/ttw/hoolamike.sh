@@ -50,7 +50,7 @@ generate_hoolamike_config() {
 # Edit paths if not detected correctly
 
 downloaders:
-  downloads_directory: "$HOME/Downloads"
+  downloads_directory: "$HOME/Hoolamike/Mod_Downloads"
   nexus:
     api_key: "YOUR_API_KEY_HERE"
 
