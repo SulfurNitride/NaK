@@ -203,7 +203,6 @@ download_hoolamike() {
     return 0
 }
 # Execute Hoolamike with a specific command
-# Execute Hoolamike with a specific command and show live output
 run_hoolamike() {
     local command="$1"
     local summary_log="$HOME/hoolamike_summary.log"
