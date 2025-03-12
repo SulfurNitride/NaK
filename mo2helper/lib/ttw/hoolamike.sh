@@ -33,6 +33,17 @@ generate_hoolamike_config() {
         log_warning "FNV compatdata not found"
     fi
 
+    # Set fallback paths
+    local fallout3_fallback="/path/to/Fallout 3 goty"
+    local fnv_fallback="/path/to/Fallout New Vegas"
+    local enderal_fallback="/path/to/Enderal Special Edition"
+    local skyrimse_fallback="/path/to/Skyrim Special Edition"
+    local fallout4_fallback="/path/to/Fallout 4"
+    local starfield_fallback="/path/to/Starfield"
+    local oblivion_fallback="/path/to/Oblivion"
+    local bg3_fallback="/path/to/Baldur's Gate 3"
+    local userprofile_fallback="/path/to/steamapps/compatdata/22380/pfx/drive_c/users/steamuser/Documents/My Games/FalloutNV/"
+
     # Create default config with found paths
     cat > "$config_path" << EOF
 # Auto-generated hoolamike.yaml
@@ -49,21 +60,21 @@ installation:
 
 games:
   Fallout3:
-    root_directory: "${fallout3_dir:-/path/to/Fallout 3 goty}"
+    root_directory: "${fallout3_dir:-$fallout3_fallback}"
   FalloutNewVegas:
-    root_directory: "${fnv_dir:-/path/to/Fallout New Vegas}"
+    root_directory: "${fnv_dir:-$fnv_fallback}"
   EnderalSpecialEdition:
-    root_directory: "${enderal_dir:-/path/to/Enderal Special Edition}"
+    root_directory: "${enderal_dir:-$enderal_fallback}"
   SkyrimSpecialEdition:
-    root_directory: "${skyrim_se_dir:-/path/to/Skyrim Special Edition}"
+    root_directory: "${skyrim_se_dir:-$skyrimse_fallback}"
   Fallout4:
-    root_directory: "${fallout4_dir:-/path/to/Fallout 4}"
+    root_directory: "${fallout4_dir:-$fallout4_fallback}"
   Starfield:
-    root_directory: "${starfield_dir:-/path/to/Starfield}"
+    root_directory: "${starfield_dir:-$starfield_fallback}"
   Oblivion:
-    root_directory: "${oblivion_dir:-/path/to/Oblivion}"
+    root_directory: "${oblivion_dir:-$oblivion_fallback}"
   BaldursGate3:
-    root_directory: "${bg3_dir:-/path/to/Baldur's Gate 3}"
+    root_directory: "${bg3_dir:-$bg3_fallback}"
 
 fixup:
   game_resolution: 2560x1440
@@ -73,7 +84,7 @@ extras:
     path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
     variables:
       DESTINATION: "./TTW_Output"
-      USERPROFILE: "${userprofile_path:-/path/to/steamapps/compatdata/22380/pfx/drive_c/users/steamuser/Documents/My Games/FalloutNV/}"
+      USERPROFILE: "${userprofile_path:-$userprofile_fallback}"
 EOF
 
     log_info "hoolamike.yaml created at $config_path"
@@ -90,7 +101,6 @@ EOF
     echo -e "\n${color_yellow}Edit the file to complete configuration:${color_reset}"
     echo -e "${color_blue}nano $config_path${color_reset}"
 }
-
 # Download and install Hoolamike
 download_hoolamike() {
     log_info "Starting hoolamike download"
