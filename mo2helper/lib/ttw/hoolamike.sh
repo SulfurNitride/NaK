@@ -387,7 +387,7 @@ done
     
     echo -e "\n${color_header}Downloads Directory${color_reset}"
     echo -e "This is where mod files will be downloaded from Nexus/other sources."
-    read -rp "Enter downloads directory [default: $current_downloads_dir]: " input
+    read_with_tab_completion "Enter downloads directory" "$current_downloads_dir" "downloads_dir"
     if [ -n "$input" ]; then
         downloads_dir="${input/#\~/$HOME}"
     else
@@ -411,7 +411,7 @@ done
     
     echo -e "\n${color_header}Installation Path${color_reset}"
     echo -e "This is where the modded game will be installed."
-    read -rp "Enter installation path [default: $current_install_path]: " input
+    read_with_tab_completion "Enter installation path" "$current_install_path" "install_path"
     if [ -n "$input" ]; then
         install_path="${input/#\~/$HOME}"
     else
