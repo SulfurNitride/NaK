@@ -313,6 +313,14 @@ install_wabbajack_modlist() {
     
     log_info "Starting Wabbajack modlist installation setup"
     
+    # Information about where to find Wabbajack files
+    echo -e "${color_header}Where to Find Wabbajack Modlists${color_reset}"
+    echo -e "Before continuing, you'll need a .wabbajack file. You can find these at:"
+    echo -e "1. ${color_blue}https://build.wabbajack.org/authored_files${color_reset} - Official Wabbajack modlist repository"
+    echo -e "2. ${color_blue}https://www.nexusmods.com/${color_reset} - Some modlist authors publish on Nexus Mods"
+    echo -e "3. Various Discord communities for specific modlists"
+    echo -e "\n${color_yellow}NOTE:${color_reset} Download the .wabbajack file first, then continue.\n"
+    
     # Ask for Wabbajack file
     local wabbajack_path=""
     while true; do
@@ -332,6 +340,7 @@ install_wabbajack_modlist() {
             fi
         fi
     done
+
     
     # Get modlist name from the filename for better user experience
     local modlist_name=$(basename "$wabbajack_path" .wabbajack)
