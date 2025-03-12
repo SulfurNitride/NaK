@@ -203,6 +203,7 @@ download_hoolamike() {
     return 0
 }
 # Execute Hoolamike with a specific command
+# Execute Hoolamike with a specific command and show live output
 run_hoolamike() {
     local command="$1"
     local summary_log="$HOME/hoolamike_summary.log"
@@ -288,12 +289,23 @@ run_hoolamike() {
         rm -f "/tmp/${run_id}.exit"
     fi
 
-    # Filter the output and save to summary log
-    grep -v "handling_asset\|voice\|sound\|textures\|\[OK\]\|updated templated value\|variable_found\|resolve_variable\|MAGICALLY\|hoolamike::extensions" "$temp_log" >> "$summary_log"
+    # Generate a summary log after completion
+    if command_exists script; then
+        # The output was directed to the terminal by script, so we need to log separately
+        echo "[$(date)] Hoolamike $command completed with status $exit_status" >> "$summary_log"
+    else
+        # Filter the output if we captured it to temp_log
+        if [ -f "$temp_log" ]; then
+            grep -v "handling_asset\|voice\|sound\|textures\|\[OK\]\|updated templated value\|variable_found\|resolve_variable\|MAGICALLY\|hoolamike::extensions" "$temp_log" >> "$summary_log"
+            
+            # Add the last few lines for debugging
+            echo "---- Last 20 lines of output ----" >> "$summary_log"
+            tail -n 20 "$temp_log" >> "$summary_log"
+        fi
+    fi
 
-    # Add the last few lines for debugging
-    echo "---- Last 20 lines of output ----" >> "$summary_log"
-    tail -n 20 "$temp_log" >> "$summary_log"
+    # Return to original directory
+    cd - > /dev/null
 
     # Error handling
     if [ $exit_status -ne 0 ]; then
