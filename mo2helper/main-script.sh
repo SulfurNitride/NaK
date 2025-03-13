@@ -20,6 +20,9 @@ source "$LIB_DIR/error.sh"
 source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/ui.sh"
 source "$LIB_DIR/proton.sh"
+source "$LIB_DIR/portablepython.sh"
+source "$LIB_DIR/vdf.sh"
+source "$LIB_DIR/mo2download.sh"
 
 # Source game modules
 source "$LIB_DIR/games/games.sh"
