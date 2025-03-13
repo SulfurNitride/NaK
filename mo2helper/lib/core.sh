@@ -230,6 +230,8 @@ mo2_setup_menu() {
         print_header
 
         display_menu "Mod Organizer 2 Setup" \
+            "Download Mod Organizer 2" "Download and install the latest version" \
+            "Set Up Existing Installation" "Configure an existing MO2 installation" \
             "Install Basic Dependencies" "Install common Proton components for MO2" \
             "Configure NXM Handler" "Set up Nexus Mod Manager link handling" \
             "DPI Scaling" "Configure DPI scaling for HiDPI displays" \
@@ -239,6 +241,14 @@ mo2_setup_menu() {
 
         case $choice in
             1)
+                download_mo2
+                pause "Press any key to continue..."
+                ;;
+            2)
+                setup_existing_mo2
+                pause "Press any key to continue..."
+                ;;
+            3)
                 check_dependencies
                 get_non_steam_games
                 if select_game; then
@@ -246,7 +256,7 @@ mo2_setup_menu() {
                     pause "Basic dependencies installation complete!"
                 fi
                 ;;
-            2)
+            4)
                 check_dependencies
                 get_non_steam_games
                 if select_game; then
@@ -255,7 +265,7 @@ mo2_setup_menu() {
                     fi
                 fi
                 ;;
-            3)
+            5)
                 check_dependencies
                 get_non_steam_games
                 if select_game; then
@@ -264,7 +274,7 @@ mo2_setup_menu() {
                     pause "DPI scaling applied successfully!"
                 fi
                 ;;
-            4) return ;;
+            6) return ;;
         esac
     done
 }
