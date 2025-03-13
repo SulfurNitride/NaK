@@ -177,6 +177,7 @@ select_dpi_scaling() {
     done
 }
 
+
 # Function to apply DPI scaling to selected game
 apply_dpi_scaling() {
     log_info "Applying DPI scaling ($selected_scaling) to game: $selected_name (AppID: $selected_appid)"
@@ -209,26 +210,35 @@ apply_dpi_scaling() {
 
     update_progress "$tracker" 5 20
 
-    # Registry file path
-    local reg_file=$(mktemp)
-    TEMP_FILES+=("$reg_file")
+    # Create a Windows batch script to apply registry changes silently
+    local batch_file=$(mktemp --suffix=.bat)
+    TEMP_FILES+=("$batch_file")
 
-    # Create registry file content
-    cat > "$reg_file" << EOF
-Windows Registry Editor Version 5.00
-
-[HKEY_CURRENT_USER\Control Panel\Desktop]
-"LogPixels"=dword:$(printf "%08x" $selected_scaling)
-
-[HKEY_CURRENT_USER\Software\Wine\X11 Driver]
-"LogPixels"=$selected_scaling
-EOF
+    # Write Windows commands to the batch file
+    echo "@echo off" > "$batch_file"
+    echo "reg add \"HKCU\\Control Panel\\Desktop\" /v LogPixels /t REG_DWORD /d $selected_scaling /f" >> "$batch_file"
+    echo "reg add \"HKCU\\Software\\Wine\\X11 Driver\" /v LogPixels /t REG_DWORD /d $selected_scaling /f" >> "$batch_file"
+    echo "exit 0" >> "$batch_file"
 
     update_progress "$tracker" 10 20
 
-    # Apply registry changes
-    WINEPREFIX="$prefix_path" wine regedit "$reg_file" &>/dev/null
+    # Copy the batch file to the prefix
+    local win_batch_file="$prefix_path/drive_c/temp_dpi.bat"
+    mkdir -p "$prefix_path/drive_c/" 2>/dev/null
+    cp "$batch_file" "$win_batch_file"
+    chmod +x "$win_batch_file"
+
+    log_info "Created batch file: $win_batch_file"
+
+    # Run the batch file with a plain WINEPREFIX call (no GUI)
+    echo -e "Applying registry changes silently..."
+    log_info "Running batch file to set registry keys"
+
+    WINEPREFIX="$prefix_path" wine cmd /c "C:\\temp_dpi.bat" > /dev/null 2>&1
     local result=$?
+
+    # Clean up temporary batch file in the prefix
+    rm -f "$win_batch_file" 2>/dev/null
 
     update_progress "$tracker" 20 20
 
@@ -244,7 +254,6 @@ EOF
     if $show_advice; then
         echo -e "\n${color_header}Tip:${color_reset} If text is too small or too large, try different scaling values."
         echo -e "     For most modern monitors, a value between 120-144 works well."
-        echo -e "Press any button to continue"
     fi
 
     end_progress_tracking "$tracker" true
