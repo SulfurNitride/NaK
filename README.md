@@ -8,5 +8,7 @@ Hoolamike Discord: https://discord.gg/xYHjpKX3YP
 
 You can find me in the wabbajack discord in the unofficial-linux-help channel until I make a discord or something. Wabbajack server: https://discord.gg/wabbajack
 
+My YT: www.youtube.com/@sulfurnitride
+
 
 ![image](https://github.com/user-attachments/assets/66e18b60-a5ef-43e9-8751-51bc6afa1e4d)
