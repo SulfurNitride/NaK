@@ -290,10 +290,14 @@ fix_modorganizer_paths() {
     log_info "Installation path: $install_path"
 
     # Find all ModOrganizer.ini files recursively in the installation path
-    local mo_ini_files=($(find "$install_path" -name "ModOrganizer.ini" 2>/dev/null))
+    # Using a while loop with find to properly handle paths with spaces
+    local mo_ini_files=()
+    while IFS= read -r -d $'\0' file; do
+        mo_ini_files+=("$file")
+    done < <(find "$install_path" -name "ModOrganizer.ini" -print0 2>/dev/null)
 
     if [ ${#mo_ini_files[@]} -eq 0 ]; then
-        echo -e "${color_yellow}No ModOrganizer.ini files found in $install_path${color_reset}"
+        echo -e "${color_yellow}No ModOrganizer.ini files found in \"$install_path\"${color_reset}"
         log_warning "No ModOrganizer.ini files found in $install_path"
         return 1
     fi
@@ -302,11 +306,11 @@ fix_modorganizer_paths() {
     log_info "Found ${#mo_ini_files[@]} ModOrganizer.ini files to process"
 
     for ini_file in "${mo_ini_files[@]}"; do
-        echo -e "Processing: ${color_blue}$ini_file${color_reset}"
+        echo -e "Processing: ${color_blue}\"$ini_file\"${color_reset}"
         log_info "Processing file: $ini_file"
 
         # Create a backup of the original file
-        cp "$ini_file" "${ini_file}.bak"
+        cp -- "$ini_file" "${ini_file}.bak"
         log_info "Created backup: ${ini_file}.bak"
 
         # Create a temporary file for processing
@@ -314,12 +318,12 @@ fix_modorganizer_paths() {
         TEMP_FILES+=("$tmp_file")
 
         # Replace // with Z:/
-        sed 's|//|Z:/|g' "$ini_file" > "$tmp_file"
+        sed 's|//|Z:/|g' -- "$ini_file" > "$tmp_file"
 
         # Replace /\\ with Z:\\ (using awk for better handling of backslashes)
         awk '{gsub(/\/\\\\/,"Z:\\\\"); print}' "$tmp_file" > "$ini_file"
 
-        echo -e "${color_green}✓ Fixed paths in: $ini_file${color_reset}"
+        echo -e "${color_green}✓ Fixed paths in: \"$ini_file\"${color_reset}"
         log_info "Fixed paths in: $ini_file"
     done
 
