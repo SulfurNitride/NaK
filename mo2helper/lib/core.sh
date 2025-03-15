@@ -367,13 +367,14 @@ check_system_compatibility() {
     echo -e "\n${color_green}Basic system compatibility check passed.${color_reset}"
 }
 
-# Placeholder for the show_about function
+# About function
 show_about() {
-    print_section "About MO2 Helper"
-    echo -e "Mod Organizer 2 Linux Helper"
+    print_section "About NaK"
+    echo -e "NaK (Na-K) - The Linux Modding Helper"
     echo -e "Version: $SCRIPT_VERSION"
     echo -e "Date: $SCRIPT_DATE"
-    echo -e "\nThis script helps manage Mod Organizer 2 installations on Linux."
+    echo -e "\nNaK is a powerful tool for managing Mod Organizer 2 installations on Linux."
+    echo -e "Project repository: https://github.com/SulfurNitride/NaK"
 }
 
 # Placeholder for the show_config_menu function
