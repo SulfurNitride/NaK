@@ -4,7 +4,7 @@
 # Configuration management for MO2 Helper
 # -------------------------------------------------------------------
 
-# Create default config if it doesn't exist
+# Function to create default config if it doesn't exist
 create_default_config() {
     mkdir -p "$CONFIG_DIR"
 
@@ -12,7 +12,7 @@ create_default_config() {
     if [ ! -f "$CONFIG_FILE" ]; then
         log_info "Creating default configuration file"
 
-        echo "# Mod Organizer 2 Helper Configuration" > "$CONFIG_FILE"
+        echo "# NaK Configuration" > "$CONFIG_FILE"
         echo "# Created: $(date)" >> "$CONFIG_FILE"
         echo "" >> "$CONFIG_FILE"
 
