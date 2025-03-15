@@ -28,7 +28,7 @@ color_desc="\033[0;37m"    # White for descriptions
 color_reset="\033[0m"
 
 # Config settings
-CONFIG_DIR="$HOME/.config/mo2helper"
+CONFIG_DIR="$HOME/.config/nak"
 CONFIG_FILE="$CONFIG_DIR/config.ini"
 DEFAULT_CONFIG=(
     "logging_level=0"                   # 0=INFO, 1=WARNING, 2=ERROR
@@ -45,7 +45,7 @@ DEFAULT_CONFIG=(
 
 # Log file settings
 log_dir="$HOME"
-log_file="$log_dir/mo2helper.log"
+log_file="$log_dir/nak.log"
 max_log_size=5242880  # 5MB
 max_log_files=5
 
