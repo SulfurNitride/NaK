@@ -194,7 +194,9 @@ hoolamike_tools_menu() {
 
         display_menu "Hoolamike Mod Tools" \
             "Download/Update Hoolamike" "Download or update the Hoolamike tool" \
-            "Install Wabbajack Modlist" "Install a Wabbajack modlist using Hoolamike" \
+            "Install Wabbajack Modlist (Premium)" "Install a Wabbajack modlist using Nexus Premium account" \
+            "Install Wabbajack Modlist (Non-Premium)" "Install with browser downloads (no Premium required)" \
+            "Edit Configuration" "Edit the Hoolamike configuration file" \
             "Back to Main Menu" "Return to the main menu"
 
         local choice=$?
@@ -218,7 +220,22 @@ hoolamike_tools_menu() {
                 fi
                 pause "Press any key to continue..."
                 ;;
-            3) return ;;
+            3)
+                if ! $hoolamike_installed; then
+                    handle_error "Hoolamike is not installed. Please install it first." false
+                else
+                    install_wabbajack_modlist_nonpremium
+                fi
+                pause "Press any key to continue..."
+                ;;
+            4)
+                if ! $hoolamike_installed; then
+                    handle_error "Hoolamike is not installed. Please install it first." false
+                else
+                    edit_hoolamike_config
+                fi
+                ;;
+            5) return ;;
         esac
     done
 }
