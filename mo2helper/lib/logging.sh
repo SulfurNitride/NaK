@@ -29,10 +29,9 @@ setup_logging() {
     fi
 
     # Create or append to log file
-    echo "MO2 Helper Log - $(date)" > "$log_file"
+    echo "NaK Log - $(date)" > "$log_file"
     echo "=============================" >> "$log_file"
 }
-
 # Log with level
 log() {
     local level=$1
