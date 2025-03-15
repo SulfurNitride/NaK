@@ -9,8 +9,8 @@ bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/ma
 Alternatively, you may run this script by downloading a local copy
 ```bash
 git clone https://github.com/SulfurNitride/NaK.git
-cd Linux-MO2-Helper
-bash ./mo2helper.sh
+cd NaK/
+bash ./nak-installer.sh
 ```
 
 Powered by Hoolamike [GitHub](https://github.com/Niedzwiedzw/hoolamike) | [Discord](https://discord.gg/xYHjpKX3YP)
