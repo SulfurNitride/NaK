@@ -166,7 +166,7 @@ main_menu() {
             4) game_specific_menu ;;
             5)
                 log_info "User exited application"
-                echo -e "\n${color_green}Thank you for using the MO2 Helper!${color_reset}"
+                echo -e "\n${color_green}Thank you for using NaK!${color_reset}"
                 exit 0
                 ;;
         esac
