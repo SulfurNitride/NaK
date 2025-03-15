@@ -50,7 +50,7 @@ echo -ne "${BLUE}Downloading files...${NC} "
 
 # Suppress all git output completely
 {
-    git clone -q https://github.com/SulfurNitride/Linux-MO2-Helper.git "$TMP_DIR" 2>/dev/null
+    git clone -q https://github.com/SulfurNitride/NaK.git "$TMP_DIR" 2>/dev/null
 } &
 GIT_PID=$!
 spinner $GIT_PID
