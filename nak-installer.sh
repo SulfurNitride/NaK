@@ -137,9 +137,6 @@ echo -ne "${BLUE}Setting up NaK...${NC} "
     installed_files=$(find "$INSTALL_DIR" -type f | wc -l)
     echo "$installed_files" > /tmp/nak_count.txt
 
-    # Debug final structure
-    echo "DEBUG: Installed files:"
-    find "$INSTALL_DIR" -type f | sort
 } #&>/tmp/nak_install.log
 
 INSTALL_PID=$!
