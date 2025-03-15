@@ -373,7 +373,7 @@ show_about() {
     echo -e "NaK (Na-K) - The Linux Modding Helper"
     echo -e "Version: $SCRIPT_VERSION"
     echo -e "Date: $SCRIPT_DATE"
-    echo -e "\nNaK is a powerful tool for managing Mod Organizer 2 installations on Linux."
+    echo -e "\nNaK is a powerful tool for managing modding tools on linux, like MO2, or Hoolamike."
     echo -e "Project repository: https://github.com/SulfurNitride/NaK"
 }
 
