@@ -10,6 +10,7 @@ Alternatively, you may run this script by downloading a local copy
 ```bash
 git clone https://github.com/SulfurNitride/NaK.git
 cd NaK/
+chmod +x ./nak-installer.sh 
 bash ./nak-installer.sh
 ```
 
