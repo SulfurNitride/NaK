@@ -5,10 +5,11 @@
 # -------------------------------------------------------------------
 
 # Clear screen and print header
+# Clear screen and print header
 print_header() {
     clear
     echo -e "${color_title}=====================================${color_reset}"
-    echo -e "${color_title}    Mod Organizer 2 Linux Helper    ${color_reset}"
+    echo -e "${color_title}     NaK - Linux Modding Helper     ${color_reset}"
     echo -e "${color_title}=====================================${color_reset}"
     echo -e "${color_desc}Version $SCRIPT_VERSION | $SCRIPT_DATE${color_reset}\n"
 }
