@@ -8,7 +8,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # Define install directory
-INSTALL_DIR="$HOME/mo2helper"
+INSTALL_DIR="$HOME/nak"
 
 # Progress spinner function
 spinner() {
@@ -25,11 +25,11 @@ spinner() {
     printf "\b\b\b   \b\b\b"
 }
 
-# Check if mo2helper directory already exists
+# Check if nak directory already exists
 if [ -d "$INSTALL_DIR" ]; then
-    echo -e "${YELLOW}MO2 Helper is already installed at $INSTALL_DIR${NC}"
+    echo -e "${YELLOW}NaK is already installed at $INSTALL_DIR${NC}"
     echo -e "Would you like to update to the latest version? This will delete the existing installation."
-    read -p "Update MO2 Helper? [y/N]: " update_response
+    read -p "Update NaK? [y/N]: " update_response
     if [[ "$update_response" =~ ^[Yy]$ ]]; then
         echo -e "${BLUE}Removing existing installation...${NC}"
         rm -rf "$INSTALL_DIR"
@@ -39,7 +39,7 @@ if [ -d "$INSTALL_DIR" ]; then
     fi
 fi
 
-echo -e "${BLUE}Installing MO2 Helper...${NC}"
+echo -e "${BLUE}Installing NaK...${NC}"
 
 # Create directories if they don't exist
 mkdir -p "$INSTALL_DIR/lib/games" "$INSTALL_DIR/lib/ttw" 2>/dev/null
@@ -57,11 +57,23 @@ spinner $GIT_PID
 echo -e "${GREEN}Done!${NC}"
 
 # Installation process
-echo -ne "${BLUE}Setting up MO2 Helper...${NC} "
+echo -ne "${BLUE}Setting up NaK...${NC} "
 
 {
-    # If structured correctly in mo2helper subdirectory (matches your paste)
-    if [ -d "$TMP_DIR/mo2helper" ] && [ -f "$TMP_DIR/mo2helper/main-script.sh" ]; then
+    # If structured correctly in nak subdirectory
+    if [ -d "$TMP_DIR/nak" ] && [ -f "$TMP_DIR/nak/main-script.sh" ]; then
+        # Copy main script
+        cp "$TMP_DIR/nak/main-script.sh" "$INSTALL_DIR/main-script.sh" 2>/dev/null
+
+        # Copy the library files
+        find "$TMP_DIR/nak/lib" -name "*.sh" -exec cp {} "$INSTALL_DIR/lib/" 2>/dev/null \;
+
+        # Copy game modules
+        find "$TMP_DIR/nak/lib/games" -name "*.sh" -exec cp {} "$INSTALL_DIR/lib/games/" 2>/dev/null \;
+
+        # Copy TTW modules
+        find "$TMP_DIR/nak/lib/ttw" -name "*.sh" -exec cp {} "$INSTALL_DIR/lib/ttw/" 2>/dev/null \;
+    elif [ -d "$TMP_DIR/mo2helper" ] && [ -f "$TMP_DIR/mo2helper/main-script.sh" ]; then
         # Copy main script
         cp "$TMP_DIR/mo2helper/main-script.sh" "$INSTALL_DIR/main-script.sh" 2>/dev/null
 
@@ -85,10 +97,10 @@ echo -ne "${BLUE}Setting up MO2 Helper...${NC} "
 
     # Make scripts executable
     chmod +x "$INSTALL_DIR"/*.sh 2>/dev/null
-    find "$INSTALL_DIR" -name "*.sh" -exec chmod +x {} \; 2>/dev/null
+    find "$INSTALL_DIR" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null
 
     # Count files installed for verification
-    find "$INSTALL_DIR" -type f | wc -l > /tmp/mo2helper_count.txt
+    find "$INSTALL_DIR" -type f | wc -l > /tmp/nak_count.txt
 } &>/dev/null
 
 INSTALL_PID=$!
@@ -97,29 +109,29 @@ spinner $INSTALL_PID
 # Check if installation succeeded
 if [ -f "$INSTALL_DIR/main-script.sh" ]; then
     echo -e "${GREEN}Done!${NC}"
-    INSTALLED_COUNT=$(cat /tmp/mo2helper_count.txt 2>/dev/null || echo "several")
-    echo -e "${GREEN}Successfully installed MO2 Helper with $INSTALLED_COUNT files.${NC}"
+    INSTALLED_COUNT=$(cat /tmp/nak_count.txt 2>/dev/null || echo "several")
+    echo -e "${GREEN}Successfully installed NaK with $INSTALLED_COUNT files.${NC}"
 else
     echo -e "${RED}Failed!${NC}"
     echo -e "${RED}Installation failed. Could not install required files.${NC}"
-    rm -f /tmp/mo2helper_count.txt
+    rm -f /tmp/nak_count.txt
     rm -rf "$TMP_DIR" 2>/dev/null
     exit 1
 fi
 
 # Clean up
-rm -f /tmp/mo2helper_count.txt
+rm -f /tmp/nak_count.txt
 rm -rf "$TMP_DIR" 2>/dev/null
 
 # Ask to run the script
-echo -e "Would you like to run MO2 Helper now?"
+echo -e "Would you like to run NaK now?"
 read -p "Run now? [Y/n]: " run_response
 if [[ "$run_response" =~ ^[Yy]$ ]] || [[ -z "$run_response" ]]; then
-    echo -e "${BLUE}Starting MO2 Helper...${NC}"
+    echo -e "${BLUE}Starting NaK...${NC}"
     exec "$INSTALL_DIR/main-script.sh"
 else
     echo -e "You can run the script later with: ${BLUE}$INSTALL_DIR/main-script.sh${NC}"
     if [[ "$response" =~ ^[Yy]$ ]]; then
-        echo -e "Or simply type: ${BLUE}mo2helper${NC}"
+        echo -e "Or simply type: ${BLUE}nak${NC}"
     fi
 fi
