@@ -65,7 +65,6 @@ echo -ne "${BLUE}Setting up NaK...${NC} "
 
     # Check for nak-files structure
     if [ -d "$TMP_DIR/nak-files" ] && [ -f "$TMP_DIR/nak-files/main-script.sh" ]; then
-        echo "DEBUG: Found structure in nak-files directory"
         # Copy main script
         cp "$TMP_DIR/nak-files/main-script.sh" "$INSTALL_DIR/main-script.sh" 2>/dev/null
 
@@ -76,7 +75,6 @@ echo -ne "${BLUE}Setting up NaK...${NC} "
         found_files=1
     # Check for mo2helper structure (legacy)
     elif [ -d "$TMP_DIR/mo2helper" ] && [ -f "$TMP_DIR/mo2helper/main-script.sh" ]; then
-        echo "DEBUG: Found structure in mo2helper directory"
         # Copy main script
         cp "$TMP_DIR/mo2helper/main-script.sh" "$INSTALL_DIR/main-script.sh" 2>/dev/null
 
@@ -87,7 +85,6 @@ echo -ne "${BLUE}Setting up NaK...${NC} "
         found_files=1
     # Check for files directly in root
     elif [ -f "$TMP_DIR/main-script.sh" ]; then
-        echo "DEBUG: Found structure in repository root"
         cp "$TMP_DIR/main-script.sh" "$INSTALL_DIR/main-script.sh" 2>/dev/null
 
         if [ -d "$TMP_DIR/lib" ]; then
@@ -99,7 +96,6 @@ echo -ne "${BLUE}Setting up NaK...${NC} "
 
     # Desperate search if no expected structure found
     if [ $found_files -eq 0 ]; then
-        echo "DEBUG: No standard structure found, searching for files..."
         # Find main script
         main_script=$(find "$TMP_DIR" -name "main-script.sh" | head -1)
         if [ -n "$main_script" ]; then
