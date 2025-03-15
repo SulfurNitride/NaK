@@ -1,12 +1,12 @@
 #!/bin/bash
 # -------------------------------------------------------------------
-# mo2helper.sh
+# nak.sh
 # Unified script with NXM handler, Proton setup, and TTW integration
 # Main entry point that sources all modules
 # -------------------------------------------------------------------
 
 # Script metadata
-SCRIPT_VERSION="1.2.5"
+SCRIPT_VERSION="1.3.0"
 SCRIPT_DATE="$(date +%Y-%m-%d)"
 
 # Define script directory to find modules
@@ -41,12 +41,12 @@ source "$LIB_DIR/core.sh"
 setup_logging
 create_default_config
 load_cached_values
-log_info "Starting MO2 Helper version $SCRIPT_VERSION"
+log_info "Starting NaK version $SCRIPT_VERSION"
 log_system_info
 
 # Welcome message
 print_header
-echo -e "Welcome to the Mod Organizer 2 Linux Helper!"
+echo -e "Welcome to NaK - The Mod Organizer 2 Linux Helper!"
 echo -e "This script will help you set up and configure Mod Organizer 2 for Linux."
 echo -e "\nPress any key to start..."
 read -n 1
