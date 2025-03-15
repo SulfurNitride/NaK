@@ -56,10 +56,6 @@ GIT_PID=$!
 spinner $GIT_PID
 echo -e "${GREEN}Done!${NC}"
 
-# Print debug information to help with troubleshooting
-echo "DEBUG: Repository structure:"
-find "$TMP_DIR" -name "*.sh" | sort
-
 # Installation process
 echo -ne "${BLUE}Setting up NaK...${NC} "
 
