@@ -2,7 +2,7 @@ A Bash script I made with DeepSeek and Claude that should work with all major Li
 
 The script can be run by piping directly to Bash
 ```sh
-bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/main/mo2helper.sh)
+bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/main/nak-installer.sh)
 ```
 Alternatively, you may run this script by downloading a local copy
 ```bash
