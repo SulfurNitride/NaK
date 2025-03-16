@@ -11,16 +11,34 @@ generate_hoolamike_config() {
 
     # Find game directories
     local steam_root=$(get_steam_root)
-    local fallout3_dir=$(find_game_directory "Fallout 3 goty" "$steam_root")
-    local fnv_dir=$(find_game_directory "Fallout New Vegas" "$steam_root")
 
-    # Find additional game directories
+    # Define placeholder for missing games - use empty string instead of path
+    local game_placeholder=""
+
+    # Find game directories - using empty strings for missing games
+    local fallout3_dir=$(find_game_directory "Fallout 3 goty" "$steam_root")
+    fallout3_dir=${fallout3_dir:-$game_placeholder}
+
+    local fnv_dir=$(find_game_directory "Fallout New Vegas" "$steam_root")
+    fnv_dir=${fnv_dir:-$game_placeholder}
+
     local enderal_dir=$(find_game_directory "Enderal Special Edition" "$steam_root")
+    enderal_dir=${enderal_dir:-$game_placeholder}
+
     local skyrim_se_dir=$(find_game_directory "Skyrim Special Edition" "$steam_root")
+    skyrim_se_dir=${skyrim_se_dir:-$game_placeholder}
+
     local fallout4_dir=$(find_game_directory "Fallout 4" "$steam_root")
+    fallout4_dir=${fallout4_dir:-$game_placeholder}
+
     local starfield_dir=$(find_game_directory "Starfield" "$steam_root")
+    starfield_dir=${starfield_dir:-$game_placeholder}
+
     local oblivion_dir=$(find_game_directory "Oblivion" "$steam_root")
+    oblivion_dir=${oblivion_dir:-$game_placeholder}
+
     local bg3_dir=$(find_game_directory "Baldurs Gate 3" "$steam_root")
+    bg3_dir=${bg3_dir:-$game_placeholder}
 
     # Find Fallout New Vegas compatdata
     local fnv_compatdata=$(find_fnv_compatdata)
@@ -33,16 +51,8 @@ generate_hoolamike_config() {
         log_warning "FNV compatdata not found"
     fi
 
-    # Set fallback paths
-    local fallout3_fallback="/path/to/Fallout 3 goty"
-    local fnv_fallback="/path/to/Fallout New Vegas"
-    local enderal_fallback="/path/to/Enderal Special Edition"
-    local skyrimse_fallback="/path/to/Skyrim Special Edition"
-    local fallout4_fallback="/path/to/Fallout 4"
-    local starfield_fallback="/path/to/Starfield"
-    local oblivion_fallback="/path/to/Oblivion"
-    local bg3_fallback="/path/to/Baldur's Gate 3"
-    local userprofile_fallback="/path/to/steamapps/compatdata/22380/pfx/drive_c/users/steamuser/Documents/My Games/FalloutNV/"
+    # Set fallback paths - using empty string for better compatibility
+    local userprofile_fallback=""
 
     # Create default config with found paths
     cat > "$config_path" << EOF
@@ -60,21 +70,21 @@ installation:
 
 games:
   Fallout3:
-    root_directory: "${fallout3_dir:-$fallout3_fallback}"
+    root_directory: "${fallout3_dir}"
   FalloutNewVegas:
-    root_directory: "${fnv_dir:-$fnv_fallback}"
+    root_directory: "${fnv_dir}"
   EnderalSpecialEdition:
-    root_directory: "${enderal_dir:-$enderal_fallback}"
+    root_directory: "${enderal_dir}"
   SkyrimSpecialEdition:
-    root_directory: "${skyrim_se_dir:-$skyrimse_fallback}"
+    root_directory: "${skyrim_se_dir}"
   Fallout4:
-    root_directory: "${fallout4_dir:-$fallout4_fallback}"
+    root_directory: "${fallout4_dir}"
   Starfield:
-    root_directory: "${starfield_dir:-$starfield_fallback}"
+    root_directory: "${starfield_dir}"
   Oblivion:
-    root_directory: "${oblivion_dir:-$oblivion_fallback}"
+    root_directory: "${oblivion_dir}"
   BaldursGate3:
-    root_directory: "${bg3_dir:-$bg3_fallback}"
+    root_directory: "${bg3_dir}"
 
 fixup:
   game_resolution: 2560x1440
@@ -262,365 +272,11 @@ run_hoolamike() {
     return 0
 }
 
-# Function to fix path formats in ModOrganizer.ini
-fix_modorganizer_paths() {
-    print_section "Fixing ModOrganizer Paths"
-    echo -e "Checking for ModOrganizer.ini to fix path formats..."
-    log_info "Searching for ModOrganizer.ini to fix Windows paths"
-
-    # Get installation path from config file
-    local config_file="$HOME/Hoolamike/hoolamike.yaml"
-    local install_path=$(grep -A2 "installation:" "$config_file" | grep "installation_path:" | sed -E 's/.*"([^"]+)".*/\1/')
-
-    if [ -z "$install_path" ]; then
-        echo -e "${color_yellow}Could not determine installation path from config.${color_reset}"
-        log_warning "Failed to determine installation path from hoolamike.yaml"
-
-        # Ask user for path
-        read -rp "Enter the modlist installation path: " install_path
-        if [ -z "$install_path" ]; then
-            echo -e "${color_yellow}No path provided. Skipping path fix.${color_reset}"
-            log_warning "User did not provide installation path. Skipping path fix."
-            return 1
-        fi
-    fi
-
-    # Expand tilde if present
-    install_path="${install_path/#\~/$HOME}"
-    log_info "Installation path: $install_path"
-
-    # Find all ModOrganizer.ini files recursively in the installation path
-    # Using a while loop with find to properly handle paths with spaces
-    local mo_ini_files=()
-    while IFS= read -r -d $'\0' file; do
-        mo_ini_files+=("$file")
-    done < <(find "$install_path" -name "ModOrganizer.ini" -print0 2>/dev/null)
-
-    if [ ${#mo_ini_files[@]} -eq 0 ]; then
-        echo -e "${color_yellow}No ModOrganizer.ini files found in \"$install_path\"${color_reset}"
-        log_warning "No ModOrganizer.ini files found in $install_path"
-        return 1
-    fi
-
-    echo -e "Found ${#mo_ini_files[@]} ModOrganizer.ini files to process."
-    log_info "Found ${#mo_ini_files[@]} ModOrganizer.ini files to process"
-
-    for ini_file in "${mo_ini_files[@]}"; do
-        echo -e "Processing: ${color_blue}\"$ini_file\"${color_reset}"
-        log_info "Processing file: $ini_file"
-
-        # Create a backup of the original file
-        cp -- "$ini_file" "${ini_file}.bak"
-        log_info "Created backup: ${ini_file}.bak"
-
-        # Create a temporary file for processing
-        local tmp_file=$(mktemp)
-        TEMP_FILES+=("$tmp_file")
-
-        # Replace // with Z:/
-        sed 's|//|Z:/|g' -- "$ini_file" > "$tmp_file"
-
-        # Replace /\\ with Z:\\ (using awk for better handling of backslashes)
-        awk '{gsub(/\/\\\\/,"Z:\\\\"); print}' "$tmp_file" > "$ini_file"
-
-        echo -e "${color_green}✓ Fixed paths in: \"$ini_file\"${color_reset}"
-        log_info "Fixed paths in: $ini_file"
-    done
-
-    echo -e "\n${color_green}Path fixing completed successfully!${color_reset}"
-    echo -e "${color_yellow}Note:${color_reset} If you encounter any issues with the game, you can restore the original files from the .bak backups."
-    log_info "Path fixing completed successfully"
-
-    return 0
-}
-
-# Install a Wabbajack modlist (Premium Option)
-install_wabbajack_modlist() {
-    print_section "Install Wabbajack Modlist (Premium Option)"
-    echo -e "${color_yellow}This option requires a Nexus Mods Premium account for automatic downloads.${color_reset}"
-    echo -e "If you don't have a premium account, please use the 'Non-Premium Installation' option instead.\n"
-
-    local hoolamike_dir="$HOME/Hoolamike"
-    local config_file="$hoolamike_dir/hoolamike.yaml"
-
-    # Check if Hoolamike is installed
-    if [ ! -f "$hoolamike_dir/hoolamike" ]; then
-        handle_error "Hoolamike is not installed. Please install it first." false
-        return 1
-    fi
-
-    # Check if config file exists
-    if [ ! -f "$config_file" ]; then
-        handle_error "Hoolamike configuration file not found. Please run 'Download/Update Hoolamike' first." false
-        return 1
-    fi
-
-    log_info "Starting Wabbajack premium modlist installation setup"
-
-    # Information about where to find Wabbajack files
-    echo -e "${color_header}Where to Find Wabbajack Modlists${color_reset}"
-    echo -e "Before continuing, you'll need a .wabbajack file. You can find these at:"
-    echo -e "1. ${color_blue}https://build.wabbajack.org/authored_files${color_reset} - Official Wabbajack modlist repository"
-    echo -e "2. ${color_blue}https://www.nexusmods.com/${color_reset} - Some modlist authors publish on Nexus Mods"
-    echo -e "3. Various Discord communities for specific modlists"
-    echo -e "\n${color_yellow}NOTE:${color_reset} Download the .wabbajack file first, then continue.\n"
-
-    # Ask for Wabbajack file
-    local wabbajack_path=""
-    while true; do
-        read_with_tab_completion "Enter path to Wabbajack file (.wabbajack)" "" "wabbajack_path"
-
-        if [ -f "$wabbajack_path" ]; then
-            log_info "Selected Wabbajack file: $wabbajack_path"
-            break
-        else
-            echo -e "${color_yellow}File not found: $wabbajack_path${color_reset}"
-            if ! confirm_action "Try again?"; then
-                log_info "User cancelled Wabbajack installation"
-                return 1
-            fi
-        fi
-    done
-
-    # Get modlist name from the filename for better user experience
-    local modlist_name=$(basename "$wabbajack_path" .wabbajack)
-    echo -e "Installing modlist: ${color_green}$modlist_name${color_reset}"
-
-    # Get downloads directory
-    local current_downloads_dir=$(grep -A2 "downloaders:" "$config_file" | grep "downloads_directory:" | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$current_downloads_dir" ] || [[ "$current_downloads_dir" == *"YOUR"* ]]; then
-        current_downloads_dir="$HOME/Downloads"
-    fi
-
-    echo -e "\n${color_header}Downloads Directory${color_reset}"
-    echo -e "This is where mod files will be downloaded from Nexus/other sources."
-    echo -e "Enter downloads directory [default: $current_downloads_dir]: "
-    read -r direct_downloads_dir
-    if [ -n "$direct_downloads_dir" ]; then
-        downloads_dir="${direct_downloads_dir/#\~/$HOME}"
-    else
-        downloads_dir="$current_downloads_dir"
-    fi
-    echo "DEBUG: Using downloads directory: $downloads_dir"
-
-    # Create downloads directory if it doesn't exist
-    if [ ! -d "$downloads_dir" ]; then
-        echo -e "${color_yellow}Downloads directory does not exist.${color_reset}"
-        if confirm_action "Create directory?"; then
-            mkdir -p "$downloads_dir"
-            log_info "Created downloads directory: $downloads_dir"
-        fi
-    fi
-
-    # Get installation path
-    local current_install_path=$(grep -A2 "installation:" "$config_file" | grep "installation_path:" | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$current_install_path" ] || [[ "$current_install_path" == *"YOUR"* ]]; then
-        current_install_path="$HOME/ModdedGames/$modlist_name"
-    fi
-
-    echo -e "\n${color_header}Installation Path${color_reset}"
-    echo -e "This is where the modded game will be installed."
-    echo -e "Enter installation path [default: $current_install_path]: "
-    read -r direct_install_path
-    if [ -n "$direct_install_path" ]; then
-        install_path="${direct_install_path/#\~/$HOME}"
-    else
-        install_path="$current_install_path"
-    fi
-    echo "DEBUG: Using installation path: $install_path"
-
-    # Create installation directory if it doesn't exist
-    if [ ! -d "$install_path" ]; then
-        echo -e "${color_yellow}Installation directory does not exist.${color_reset}"
-        if confirm_action "Create directory?"; then
-            mkdir -p "$install_path"
-            log_info "Created installation directory: $install_path"
-        fi
-    fi
-
-    # Get Nexus API key
-    local current_api_key=$(grep -A3 "downloaders:" "$config_file" | grep "api_key:" | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$current_api_key" ] || [ "$current_api_key" == "YOUR_API_KEY_HERE" ]; then
-        echo -e "\n${color_header}Nexus API Key${color_reset}"
-        echo -e "${color_yellow}A Nexus Mods API key is required for automatic downloads.${color_reset}"
-        echo -e "You can get one from: ${color_blue}https://www.nexusmods.com/users/myaccount?tab=api${color_reset}"
-        read -rp "Enter Nexus API key: " api_key
-
-        if [ -z "$api_key" ]; then
-            echo -e "${color_yellow}No API key provided. You may need to download mods manually.${color_reset}"
-            if ! confirm_action "Continue without API key?"; then
-                log_info "User cancelled Wabbajack installation due to missing API key"
-                return 1
-            fi
-            api_key="YOUR_API_KEY_HERE"
-        fi
-    else
-        echo -e "\n${color_header}Nexus API Key${color_reset}"
-        echo -e "Nexus API key found in configuration."
-        if confirm_action "Use existing API key?"; then
-            echo -e "Using existing API key."
-            api_key="$current_api_key"
-        else
-            read -rp "Enter new Nexus API key: " api_key
-            if [ -z "$api_key" ]; then
-                api_key="$current_api_key"  # Keep existing if nothing entered
-            fi
-        fi
-    fi
-
-    # Get game resolution
-    local current_resolution=$(grep -A1 "fixup:" "$config_file" | grep "game_resolution:" | awk '{print $2}')
-    if [ -z "$current_resolution" ]; then
-        current_resolution="1920x1080"
-    fi
-
-    echo -e "\n${color_header}Game Resolution${color_reset}"
-    echo -e "This sets the resolution for the modded game."
-    echo -e "Common resolutions: 1920x1080 (1080p), 2560x1440 (1440p), 3840x2160 (4K)"
-    read -rp "Enter game resolution [default: $current_resolution]: " input
-    if [ -n "$input" ]; then
-        game_resolution="$input"
-    else
-        game_resolution="$current_resolution"
-    fi
-
-    # Create a completely new config file with all the right paths
-    # This is the key improvement in this function
-    echo -e "\n${color_blue}Updating configuration...${color_reset}"
-
-    # Create a backup of the original config
-    cp "$config_file" "${config_file}.bak.$(date +%s)"
-    log_info "Backed up original config"
-
-    # Debug output to verify what we're using
-    log_info "DEBUG: wabbajack_path = $wabbajack_path"
-    log_info "DEBUG: downloads_dir = $downloads_dir"
-    log_info "DEBUG: install_path = $install_path"
-    log_info "DEBUG: api_key = [REDACTED]"
-    log_info "DEBUG: game_resolution = $game_resolution"
-
-    # Write a completely new configuration file to ensure all the correct values are used
-    cat > "$config_file" << EOF
-# Auto-generated hoolamike.yaml
-# Updated by MO2 Helper for Wabbajack installation on $(date)
-
-downloaders:
-  downloads_directory: "$downloads_dir"
-  nexus:
-    api_key: "$api_key"
-
-installation:
-  wabbajack_file_path: "$wabbajack_path"
-  installation_path: "$install_path"
-
-games:
-  Fallout3:
-    root_directory: "$(grep -A2 "Fallout3:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  FalloutNewVegas:
-    root_directory: "$(grep -A2 "FalloutNewVegas:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  EnderalSpecialEdition:
-    root_directory: "$(grep -A2 "EnderalSpecialEdition:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  SkyrimSpecialEdition:
-    root_directory: "$(grep -A2 "SkyrimSpecialEdition:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  Fallout4:
-    root_directory: "$(grep -A2 "Fallout4:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  Starfield:
-    root_directory: "$(grep -A2 "Starfield:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  Oblivion:
-    root_directory: "$(grep -A2 "Oblivion:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-  BaldursGate3:
-    root_directory: "$(grep -A2 "BaldursGate3:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-
-fixup:
-  game_resolution: $game_resolution
-
-extras:
-  tale_of_two_wastelands:
-    path_to_ttw_mpi_file: "$(grep -A3 "tale_of_two_wastelands:" "${config_file}.bak."* | grep "path_to_ttw_mpi_file:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-    variables:
-      DESTINATION: "$(grep -A4 "tale_of_two_wastelands:" "${config_file}.bak."* | grep "DESTINATION:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-      USERPROFILE: "$(grep -A4 "tale_of_two_wastelands:" "${config_file}.bak."* | grep "USERPROFILE:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-EOF
-
-    # Check if the new config has the correct paths
-    echo -e "${color_green}Configuration updated successfully.${color_reset}"
-    echo -e "Verifying key settings:"
-    local actual_install_path=$(grep "installation_path:" "$config_file" | sed -E 's/.*"([^"]+)".*/\1/')
-    local actual_downloads_dir=$(grep "downloads_directory:" "$config_file" | sed -E 's/.*"([^"]+)".*/\1/')
-
-    echo -e "Installation path: ${color_blue}$actual_install_path${color_reset}"
-    echo -e "Downloads directory: ${color_blue}$actual_downloads_dir${color_reset}"
-
-    log_info "Final config check - installation_path: $actual_install_path"
-    log_info "Final config check - downloads_directory: $actual_downloads_dir"
-
-    # If the install path still doesn't match, something is seriously wrong
-    if [ "$actual_install_path" != "$install_path" ]; then
-        log_error "CRITICAL: install_path was not set correctly in the config file!"
-        echo -e "${color_red}ERROR: Failed to update installation path in configuration!${color_reset}"
-        echo -e "Please manually edit the config file: ${color_blue}$config_file${color_reset}"
-        echo -e "Change the installation_path line to: ${color_blue}installation_path: \"$install_path\"${color_reset}"
-
-        if ! confirm_action "Continue anyway?"; then
-            echo -e "\n${color_yellow}Installation canceled.${color_reset}"
-            return 1
-        fi
-    fi
-
-    # Now show the updated configuration summary
-    echo -e "\n${color_header}Configuration Summary${color_reset}"
-    echo -e "Wabbajack file: ${color_green}$wabbajack_path${color_reset}"
-    echo -e "Downloads directory: ${color_green}$actual_downloads_dir${color_reset}"
-    echo -e "Installation path: ${color_green}$actual_install_path${color_reset}"
-    echo -e "Game resolution: ${color_green}$game_resolution${color_reset}"
-
-    if ! confirm_action "Apply these settings and start installation?"; then
-        echo -e "\n${color_yellow}Installation canceled.${color_reset}"
-        log_info "User cancelled Wabbajack installation after configuration"
-        return 1
-    fi
-
-    # Double-check the config one more time before running
-    if [ "$actual_install_path" != "$install_path" ]; then
-        log_error "Final check failed - installation_path in YAML doesnt match user input"
-        handle_error "Config file issue detected! Please check the logs." false
-        return 1
-    fi
-
-    # Run the installation
-    echo -e "\n${color_yellow}This process may take a long time depending on the modlist size.${color_reset}"
-    echo -e "Large modlists can take several hours and need a stable internet connection."
-
-    if confirm_action "Start Wabbajack installation now?"; then
-        # Final check to be absolutely sure
-        cat "$config_file" | grep "installation_path"
-        run_hoolamike "install"
-
-        # Check if installation succeeded
-        if [ $? -eq 0 ]; then
-            echo -e "\n${color_green}Wabbajack modlist installation completed!${color_reset}"
-            echo -e "You can now launch the game through Mod Organizer 2."
-            echo -e "\n${color_yellow}Important:${color_reset} Some modlists may require additional setup."
-            echo -e "Check the modlist documentation for any post-installation steps."
-        else
-            echo -e "\n${color_red}Wabbajack installation failed.${color_reset}"
-            echo -e "Check the logs for more information."
-        fi
-    else
-        echo -e "\nYou can run the installation later by selecting this option again."
-        echo -e "Your configuration has been saved."
-    fi
-
-    return 0
-}
-
-# Install a Wabbajack modlist (Non-Premium Option)
+# Simplified function for non-premium Wabbajack installation
 install_wabbajack_modlist_nonpremium() {
     print_section "Install Wabbajack Modlist (Non-Premium Option)"
     echo -e "${color_yellow}This option is for users without a Nexus Mods Premium account.${color_reset}"
     echo -e "You will need to manually download files through your browser when prompted.\n"
-    echo -e "${color_red}IMPORTANT:${color_reset} If you restart a download or encounter issues, you will need to"
-    echo -e "close this terminal window and start a new session before trying again.\n"
 
     local hoolamike_dir="$HOME/Hoolamike"
     local config_file="$hoolamike_dir/hoolamike.yaml"
@@ -651,6 +307,47 @@ install_wabbajack_modlist_nonpremium() {
     fi
 
     log_info "Selected browser: $browser_name"
+
+    # Configure Wabbajack file and settings
+    if ! configure_wabbajack_settings "$config_file"; then
+        return 1
+    fi
+
+    # Run the browser-based installation
+    echo -e "\n${color_yellow}This process may take a long time depending on the modlist size.${color_reset}"
+    echo -e "Your browser will open automatically when manual downloads are needed."
+
+    if confirm_action "Start Wabbajack installation now?"; then
+        cd "$HOME/Hoolamike" || {
+            log_error "Failed to enter Hoolamike directory"
+            return 1
+        }
+
+        # Run the handle-nxm command with browser option
+        ./hoolamike handle-nxm --use-browser "$browser_name"
+        local exit_status=$?
+
+        # Check if installation succeeded
+        if [ $exit_status -eq 0 ]; then
+            echo -e "\n${color_green}Wabbajack modlist installation completed!${color_reset}"
+            echo -e "You can now launch the game through Mod Organizer 2."
+            echo -e "\n${color_yellow}Important:${color_reset} Some modlists may require additional setup."
+            echo -e "Check the modlist documentation for any post-installation steps."
+        else
+            echo -e "\n${color_red}Wabbajack installation failed.${color_reset}"
+            echo -e "Check the logs for more information."
+        fi
+    else
+        echo -e "\nYou can run the installation later by selecting this option again."
+        echo -e "Your configuration has been saved."
+    fi
+
+    return 0
+}
+
+# Common function to configure Wabbajack settings for both premium and non-premium
+configure_wabbajack_settings() {
+    local config_file="$1"
 
     # Information about where to find Wabbajack files
     echo -e "\n${color_header}Where to Find Wabbajack Modlists${color_reset}"
@@ -696,7 +393,6 @@ install_wabbajack_modlist_nonpremium() {
     else
         downloads_dir="$current_downloads_dir"
     fi
-    echo "DEBUG: Using downloads directory: $downloads_dir"
 
     # Create downloads directory if it doesn't exist
     if [ ! -d "$downloads_dir" ]; then
@@ -722,7 +418,6 @@ install_wabbajack_modlist_nonpremium() {
     else
         install_path="$current_install_path"
     fi
-    echo "DEBUG: Using installation path: $install_path"
 
     # Create installation directory if it doesn't exist
     if [ ! -d "$install_path" ]; then
@@ -733,30 +428,31 @@ install_wabbajack_modlist_nonpremium() {
         fi
     fi
 
+    # Get Nexus API key
     local current_api_key=$(grep -A3 "downloaders:" "$config_file" | grep "api_key:" | sed -E 's/.*"([^"]+)".*/\1/')
-if [ -z "$current_api_key" ] || [ "$current_api_key" == "YOUR_API_KEY_HERE" ]; then
-    echo -e "\n${color_header}Nexus API Key${color_reset}"
-    echo -e "${color_yellow}A Nexus Mods API key is helpful even for non-premium installations.${color_reset}"
-    echo -e "You can get one from: ${color_blue}https://www.nexusmods.com/users/myaccount?tab=api${color_reset}"
-    read -rp "Enter Nexus API key (or leave empty): " api_key
+    if [ -z "$current_api_key" ] || [ "$current_api_key" == "YOUR_API_KEY_HERE" ]; then
+        echo -e "\n${color_header}Nexus API Key${color_reset}"
+        echo -e "${color_yellow}A Nexus Mods API key is helpful even for non-premium installations.${color_reset}"
+        echo -e "You can get one from: ${color_blue}https://www.nexusmods.com/users/myaccount?tab=api${color_reset}"
+        read -rp "Enter Nexus API key (or leave empty): " api_key
 
-    if [ -z "$api_key" ]; then
-        echo -e "${color_yellow}No API key provided. Using placeholder value.${color_reset}"
-        api_key="YOUR_API_KEY_HERE"
-    fi
-else
-    echo -e "\n${color_header}Nexus API Key${color_reset}"
-    echo -e "Nexus API key found in configuration."
-    if confirm_action "Use existing API key?"; then
-        echo -e "Using existing API key."
-        api_key="$current_api_key"
-    else
-        read -rp "Enter new Nexus API key (or leave empty): " api_key
         if [ -z "$api_key" ]; then
-            api_key="YOUR_API_KEY_HERE"  # Use placeholder if nothing entered
+            echo -e "${color_yellow}No API key provided. Using placeholder value.${color_reset}"
+            api_key="YOUR_API_KEY_HERE"
+        fi
+    else
+        echo -e "\n${color_header}Nexus API Key${color_reset}"
+        echo -e "Nexus API key found in configuration."
+        if confirm_action "Use existing API key?"; then
+            echo -e "Using existing API key."
+            api_key="$current_api_key"
+        else
+            read -rp "Enter new Nexus API key (or leave empty): " api_key
+            if [ -z "$api_key" ]; then
+                api_key="YOUR_API_KEY_HERE"  # Use placeholder if nothing entered
+            fi
         fi
     fi
-fi
 
     # Get game resolution
     local current_resolution=$(grep -A1 "fixup:" "$config_file" | grep "game_resolution:" | awk '{print $2}')
@@ -774,24 +470,14 @@ fi
         game_resolution="$current_resolution"
     fi
 
-    # Create a completely new config file with all the right paths
-    echo -e "\n${color_blue}Updating configuration...${color_reset}"
-
     # Create a backup of the original config
     cp "$config_file" "${config_file}.bak.$(date +%s)"
     log_info "Backed up original config"
 
-    # Debug output to verify what we're using
-    log_info "DEBUG: wabbajack_path = $wabbajack_path"
-    log_info "DEBUG: downloads_dir = $downloads_dir"
-    log_info "DEBUG: install_path = $install_path"
-    log_info "DEBUG: browser_name = $browser_name"
-    log_info "DEBUG: game_resolution = $game_resolution"
-
     # Write a completely new configuration file to ensure all the correct values are used
     cat > "$config_file" << EOF
 # Auto-generated hoolamike.yaml
-# Updated by MO2 Helper for Wabbajack non-premium installation on $(date)
+# Updated by NaK Helper on $(date)
 
 downloaders:
   downloads_directory: "$downloads_dir"
@@ -804,100 +490,83 @@ installation:
 
 games:
   Fallout3:
-    root_directory: "$(grep -A2 "Fallout3:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
   FalloutNewVegas:
-    root_directory: "$(grep -A2 "FalloutNewVegas:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
   EnderalSpecialEdition:
-    root_directory: "$(grep -A2 "EnderalSpecialEdition:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
   SkyrimSpecialEdition:
-    root_directory: "$(grep -A2 "SkyrimSpecialEdition:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
   Fallout4:
-    root_directory: "$(grep -A2 "Fallout4:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
   Starfield:
-    root_directory: "$(grep -A2 "Starfield:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
   Oblivion:
-    root_directory: "$(grep -A2 "Oblivion:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
   BaldursGate3:
-    root_directory: "$(grep -A2 "BaldursGate3:" "${config_file}.bak."* | grep "root_directory:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    root_directory: ""
 
 fixup:
   game_resolution: $game_resolution
 
 extras:
   tale_of_two_wastelands:
-    path_to_ttw_mpi_file: "$(grep -A3 "tale_of_two_wastelands:" "${config_file}.bak."* | grep "path_to_ttw_mpi_file:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+    path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
     variables:
-      DESTINATION: "$(grep -A4 "tale_of_two_wastelands:" "${config_file}.bak."* | grep "DESTINATION:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
-      USERPROFILE: "$(grep -A4 "tale_of_two_wastelands:" "${config_file}.bak."* | grep "USERPROFILE:" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+      DESTINATION: "./TTW_Output"
+      USERPROFILE: ""
 EOF
-
-    # Check if the new config has the correct paths
-    echo -e "${color_green}Configuration updated successfully.${color_reset}"
-    echo -e "Verifying key settings:"
-    local actual_install_path=$(grep "installation_path:" "$config_file" | sed -E 's/.*"([^"]+)".*/\1/')
-    local actual_downloads_dir=$(grep "downloads_directory:" "$config_file" | sed -E 's/.*"([^"]+)".*/\1/')
-
-    echo -e "Installation path: ${color_blue}$actual_install_path${color_reset}"
-    echo -e "Downloads directory: ${color_blue}$actual_downloads_dir${color_reset}"
-
-    log_info "Final config check - installation_path: $actual_install_path"
-    log_info "Final config check - downloads_directory: $actual_downloads_dir"
-
-    # If the install path still doesn't match, something is seriously wrong
-    if [ "$actual_install_path" != "$install_path" ]; then
-        log_error "CRITICAL: install_path was not set correctly in the config file!"
-        echo -e "${color_red}ERROR: Failed to update installation path in configuration!${color_reset}"
-        echo -e "Please manually edit the config file: ${color_blue}$config_file${color_reset}"
-        echo -e "Change the installation_path line to: ${color_blue}installation_path: \"$install_path\"${color_reset}"
-
-        if ! confirm_action "Continue anyway?"; then
-            echo -e "\n${color_yellow}Installation canceled.${color_reset}"
-            return 1
-        fi
-    fi
 
     # Now show the updated configuration summary
     echo -e "\n${color_header}Configuration Summary${color_reset}"
     echo -e "Wabbajack file: ${color_green}$wabbajack_path${color_reset}"
-    echo -e "Downloads directory: ${color_green}$actual_downloads_dir${color_reset}"
-    echo -e "Installation path: ${color_green}$actual_install_path${color_reset}"
-    echo -e "Browser: ${color_green}$browser_name${color_reset}"
+    echo -e "Downloads directory: ${color_green}$downloads_dir${color_reset}"
+    echo -e "Installation path: ${color_green}$install_path${color_reset}"
     echo -e "Game resolution: ${color_green}$game_resolution${color_reset}"
 
-    if ! confirm_action "Apply these settings and start installation?"; then
+    if ! confirm_action "Apply these settings and continue?"; then
         echo -e "\n${color_yellow}Installation canceled.${color_reset}"
         log_info "User cancelled Wabbajack installation after configuration"
         return 1
     fi
 
-    # Double-check the config one more time before running
-    if [ "$actual_install_path" != "$install_path" ]; then
-        log_error "Final check failed - installation_path in YAML doesnt match user input"
-        handle_error "Config file issue detected! Please check the logs." false
+    return 0
+}
+
+# Similar adjustments for the premium install function
+install_wabbajack_modlist() {
+    print_section "Install Wabbajack Modlist (Premium Option)"
+    echo -e "${color_yellow}This option requires a Nexus Mods Premium account for automatic downloads.${color_reset}"
+    echo -e "If you don't have a premium account, please use the 'Non-Premium Installation' option instead.\n"
+
+    local hoolamike_dir="$HOME/Hoolamike"
+    local config_file="$hoolamike_dir/hoolamike.yaml"
+
+    # Check if Hoolamike is installed
+    if [ ! -f "$hoolamike_dir/hoolamike" ]; then
+        handle_error "Hoolamike is not installed. Please install it first." false
         return 1
     fi
 
-    # Run the installation with browser support
+    # Check if config file exists
+    if [ ! -f "$config_file" ]; then
+        handle_error "Hoolamike configuration file not found. Please run 'Download/Update Hoolamike' first." false
+        return 1
+    fi
+
+    log_info "Starting Wabbajack premium modlist installation setup"
+
+    # Configure Wabbajack file and settings
+    if ! configure_wabbajack_settings "$config_file"; then
+        return 1
+    fi
+
+    # Run the installation
     echo -e "\n${color_yellow}This process may take a long time depending on the modlist size.${color_reset}"
-    echo -e "Your browser will open automatically when manual downloads are needed."
-    echo -e "\n${color_red}IMPORTANT REMINDER:${color_reset}"
-    echo -e "If you need to restart the process for any reason, you MUST close this"
-    echo -e "terminal completely and start a new session. Browser sessions may persist"
-    echo -e "between attempts and cause issues otherwise."
+    echo -e "Large modlists can take several hours and need a stable internet connection."
 
     if confirm_action "Start Wabbajack installation now?"; then
-        # Final check to be absolutely sure
-        cat "$config_file" | grep "installation_path"
-
-        # Run hoolamike with browser option
-                cd "$HOME/Hoolamike" || {
-            log_error "Failed to enter Hoolamike directory"
-            return 1
-        }
-
-        # Run the command directly instead of using the wrapper
-        ./hoolamike handle-nxm --use-browser "$browser_name"
-        local exit_status=$?
+        run_hoolamike "install"
 
         # Check if installation succeeded
         if [ $? -eq 0 ]; then
@@ -908,8 +577,6 @@ EOF
         else
             echo -e "\n${color_red}Wabbajack installation failed.${color_reset}"
             echo -e "Check the logs for more information."
-            echo -e "\n${color_yellow}Remember:${color_reset} If you need to try again, close this terminal window"
-            echo -e "completely and start a new session to avoid browser session conflicts."
         fi
     else
         echo -e "\nYou can run the installation later by selecting this option again."
@@ -990,6 +657,78 @@ edit_hoolamike_config() {
 
     echo -e "\n${color_green}Configuration file updated.${color_reset}"
     echo -e "You can now use Hoolamike with the updated configuration."
+
+    return 0
+}
+
+# Function to fix path formats in ModOrganizer.ini
+fix_modorganizer_paths() {
+    print_section "Fixing ModOrganizer Paths"
+    echo -e "Checking for ModOrganizer.ini to fix path formats..."
+    log_info "Searching for ModOrganizer.ini to fix Windows paths"
+
+    # Get installation path from config file
+    local config_file="$HOME/Hoolamike/hoolamike.yaml"
+    local install_path=$(grep -A2 "installation:" "$config_file" | grep "installation_path:" | sed -E 's/.*"([^"]+)".*/\1/')
+
+    if [ -z "$install_path" ]; then
+        echo -e "${color_yellow}Could not determine installation path from config.${color_reset}"
+        log_warning "Failed to determine installation path from hoolamike.yaml"
+
+        # Ask user for path
+        read -rp "Enter the modlist installation path: " install_path
+        if [ -z "$install_path" ]; then
+            echo -e "${color_yellow}No path provided. Skipping path fix.${color_reset}"
+            log_warning "User did not provide installation path. Skipping path fix."
+            return 1
+        fi
+    fi
+
+    # Expand tilde if present
+    install_path="${install_path/#\~/$HOME}"
+    log_info "Installation path: $install_path"
+
+    # Find all ModOrganizer.ini files recursively in the installation path
+    # Using a while loop with find to properly handle paths with spaces
+    local mo_ini_files=()
+    while IFS= read -r -d $'\0' file; do
+        mo_ini_files+=("$file")
+    done < <(find "$install_path" -name "ModOrganizer.ini" -print0 2>/dev/null)
+
+    if [ ${#mo_ini_files[@]} -eq 0 ]; then
+        echo -e "${color_yellow}No ModOrganizer.ini files found in \"$install_path\"${color_reset}"
+        log_warning "No ModOrganizer.ini files found in $install_path"
+        return 1
+    fi
+
+    echo -e "Found ${#mo_ini_files[@]} ModOrganizer.ini files to process."
+    log_info "Found ${#mo_ini_files[@]} ModOrganizer.ini files to process"
+
+    for ini_file in "${mo_ini_files[@]}"; do
+        echo -e "Processing: ${color_blue}\"$ini_file\"${color_reset}"
+        log_info "Processing file: $ini_file"
+
+        # Create a backup of the original file
+        cp -- "$ini_file" "${ini_file}.bak"
+        log_info "Created backup: ${ini_file}.bak"
+
+        # Create a temporary file for processing
+        local tmp_file=$(mktemp)
+        TEMP_FILES+=("$tmp_file")
+
+        # Replace // with Z:/
+        sed 's|//|Z:/|g' -- "$ini_file" > "$tmp_file"
+
+        # Replace /\\ with Z:\\ (using awk for better handling of backslashes)
+        awk '{gsub(/\/\\\\/,"Z:\\\\"); print}' "$tmp_file" > "$ini_file"
+
+        echo -e "${color_green}✓ Fixed paths in: \"$ini_file\"${color_reset}"
+        log_info "Fixed paths in: $ini_file"
+    done
+
+    echo -e "\n${color_green}Path fixing completed successfully!${color_reset}"
+    echo -e "${color_yellow}Note:${color_reset} If you encounter any issues with the game, you can restore the original files from the .bak backups."
+    log_info "Path fixing completed successfully"
 
     return 0
 }
