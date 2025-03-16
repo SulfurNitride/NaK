@@ -11,34 +11,59 @@ generate_hoolamike_config() {
 
     # Find game directories
     local steam_root=$(get_steam_root)
-
-    # Define placeholder for missing games - use empty string instead of path
-    local game_placeholder=""
-
-    # Find game directories - using empty strings for missing games
+    
+    # Find game directories - only store those that actually exist
+    local found_games=""
+    local game_configs=""
+    
+    # Check for each game and only add it if found
     local fallout3_dir=$(find_game_directory "Fallout 3 goty" "$steam_root")
-    fallout3_dir=${fallout3_dir:-$game_placeholder}
-
+    if [ -n "$fallout3_dir" ]; then
+        game_configs+="  Fallout3:\n    root_directory: \"$fallout3_dir\"\n"
+        found_games+="Fallout 3: $fallout3_dir\n"
+    fi
+    
     local fnv_dir=$(find_game_directory "Fallout New Vegas" "$steam_root")
-    fnv_dir=${fnv_dir:-$game_placeholder}
-
+    if [ -n "$fnv_dir" ]; then
+        game_configs+="  FalloutNewVegas:\n    root_directory: \"$fnv_dir\"\n"
+        found_games+="Fallout NV: $fnv_dir\n"
+    fi
+    
     local enderal_dir=$(find_game_directory "Enderal Special Edition" "$steam_root")
-    enderal_dir=${enderal_dir:-$game_placeholder}
-
+    if [ -n "$enderal_dir" ]; then
+        game_configs+="  EnderalSpecialEdition:\n    root_directory: \"$enderal_dir\"\n"
+        found_games+="Enderal Special Edition: $enderal_dir\n"
+    fi
+    
     local skyrim_se_dir=$(find_game_directory "Skyrim Special Edition" "$steam_root")
-    skyrim_se_dir=${skyrim_se_dir:-$game_placeholder}
-
+    if [ -n "$skyrim_se_dir" ]; then
+        game_configs+="  SkyrimSpecialEdition:\n    root_directory: \"$skyrim_se_dir\"\n"
+        found_games+="Skyrim Special Edition: $skyrim_se_dir\n"
+    fi
+    
     local fallout4_dir=$(find_game_directory "Fallout 4" "$steam_root")
-    fallout4_dir=${fallout4_dir:-$game_placeholder}
-
+    if [ -n "$fallout4_dir" ]; then
+        game_configs+="  Fallout4:\n    root_directory: \"$fallout4_dir\"\n"
+        found_games+="Fallout 4: $fallout4_dir\n"
+    fi
+    
     local starfield_dir=$(find_game_directory "Starfield" "$steam_root")
-    starfield_dir=${starfield_dir:-$game_placeholder}
-
+    if [ -n "$starfield_dir" ]; then
+        game_configs+="  Starfield:\n    root_directory: \"$starfield_dir\"\n"
+        found_games+="Starfield: $starfield_dir\n"
+    fi
+    
     local oblivion_dir=$(find_game_directory "Oblivion" "$steam_root")
-    oblivion_dir=${oblivion_dir:-$game_placeholder}
-
+    if [ -n "$oblivion_dir" ]; then
+        game_configs+="  Oblivion:\n    root_directory: \"$oblivion_dir\"\n"
+        found_games+="Oblivion: $oblivion_dir\n"
+    fi
+    
     local bg3_dir=$(find_game_directory "Baldurs Gate 3" "$steam_root")
-    bg3_dir=${bg3_dir:-$game_placeholder}
+    if [ -n "$bg3_dir" ]; then
+        game_configs+="  BaldursGate3:\n    root_directory: \"$bg3_dir\"\n"
+        found_games+="Baldur's Gate 3: $bg3_dir\n"
+    fi
 
     # Find Fallout New Vegas compatdata
     local fnv_compatdata=$(find_fnv_compatdata)
@@ -51,8 +76,10 @@ generate_hoolamike_config() {
         log_warning "FNV compatdata not found"
     fi
 
-    # Set fallback paths - using empty string for better compatibility
-    local userprofile_fallback=""
+    # If no games were found, add a comment to the YAML section
+    if [ -z "$game_configs" ]; then
+        game_configs="  # No games detected. Add game paths manually if needed.\n"
+    fi
 
     # Create default config with found paths
     cat > "$config_path" << EOF
@@ -69,23 +96,7 @@ installation:
   installation_path: "$HOME/ModdedGames"
 
 games:
-  Fallout3:
-    root_directory: "${fallout3_dir}"
-  FalloutNewVegas:
-    root_directory: "${fnv_dir}"
-  EnderalSpecialEdition:
-    root_directory: "${enderal_dir}"
-  SkyrimSpecialEdition:
-    root_directory: "${skyrim_se_dir}"
-  Fallout4:
-    root_directory: "${fallout4_dir}"
-  Starfield:
-    root_directory: "${starfield_dir}"
-  Oblivion:
-    root_directory: "${oblivion_dir}"
-  BaldursGate3:
-    root_directory: "${bg3_dir}"
-
+$(echo -e "$game_configs")
 fixup:
   game_resolution: 2560x1440
 
@@ -94,22 +105,224 @@ extras:
     path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
     variables:
       DESTINATION: "./TTW_Output"
-      USERPROFILE: "${userprofile_path:-$userprofile_fallback}"
 EOF
 
+    # Only add USERPROFILE if it was found
+    if [ -n "$userprofile_path" ]; then
+        echo "      USERPROFILE: \"$userprofile_path\"" >> "$config_path"
+    fi
+
     log_info "hoolamike.yaml created at $config_path"
-    echo -e "\n${color_green}Generated hoolamike.yaml with detected paths:${color_reset}"
-    echo -e "Fallout 3: ${fallout3_dir:-Not found}"
-    echo -e "Fallout NV: ${fnv_dir:-Not found}"
-    echo -e "Enderal Special Edition: ${enderal_dir:-Not found}"
-    echo -e "Skyrim Special Edition: ${skyrim_se_dir:-Not found}"
-    echo -e "Fallout 4: ${fallout4_dir:-Not found}"
-    echo -e "Starfield: ${starfield_dir:-Not found}"
-    echo -e "Oblivion: ${oblivion_dir:-Not found}"
-    echo -e "Baldur's Gate 3: ${bg3_dir:-Not found}"
-    echo -e "FNV User Profile: ${userprofile_path:-Not found}"
+    echo -e "\n${color_green}Generated hoolamike.yaml with detected games:${color_reset}"
+    
+    if [ -n "$found_games" ]; then
+        echo -e "$found_games"
+    else
+        echo -e "${color_yellow}No games were detected.${color_reset}"
+        echo -e "You will need to manually edit the config file to add your game paths."
+    fi
+    
     echo -e "\n${color_yellow}Edit the file to complete configuration:${color_reset}"
     echo -e "${color_blue}nano $config_path${color_reset}"
+}
+
+# Configure Wabbajack settings for a specific modlist
+configure_wabbajack_settings() {
+    local config_file="$1"
+    
+    # Information about where to find Wabbajack files
+    echo -e "\n${color_header}Where to Find Wabbajack Modlists${color_reset}"
+    echo -e "Before continuing, you'll need a .wabbajack file. You can find these at:"
+    echo -e "1. ${color_blue}https://build.wabbajack.org/authored_files${color_reset} - Official Wabbajack modlist repository"
+    echo -e "2. ${color_blue}https://www.nexusmods.com/${color_reset} - Some modlist authors publish on Nexus Mods"
+    echo -e "3. Various Discord communities for specific modlists"
+    echo -e "\n${color_yellow}NOTE:${color_reset} Download the .wabbajack file first, then continue.\n"
+
+    # Ask for Wabbajack file
+    local wabbajack_path=""
+    while true; do
+        read_with_tab_completion "Enter path to Wabbajack file (.wabbajack)" "" "wabbajack_path"
+
+        if [ -f "$wabbajack_path" ]; then
+            log_info "Selected Wabbajack file: $wabbajack_path"
+            break
+        else
+            echo -e "${color_yellow}File not found: $wabbajack_path${color_reset}"
+            if ! confirm_action "Try again?"; then
+                log_info "User cancelled Wabbajack installation"
+                return 1
+            fi
+        fi
+    done
+
+    # Get modlist name from the filename for better user experience
+    local modlist_name=$(basename "$wabbajack_path" .wabbajack)
+    echo -e "Installing modlist: ${color_green}$modlist_name${color_reset}"
+
+    # Get downloads directory
+    local current_downloads_dir=$(grep -A2 "downloaders:" "$config_file" | grep "downloads_directory:" | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$current_downloads_dir" ] || [[ "$current_downloads_dir" == *"YOUR"* ]]; then
+        current_downloads_dir="$HOME/Downloads"
+    fi
+
+    echo -e "\n${color_header}Downloads Directory${color_reset}"
+    echo -e "This is where mod files will be downloaded from Nexus/other sources."
+    echo -e "Enter downloads directory [default: $current_downloads_dir]: "
+    read -r direct_downloads_dir
+    if [ -n "$direct_downloads_dir" ]; then
+        downloads_dir="${direct_downloads_dir/#\~/$HOME}"
+    else
+        downloads_dir="$current_downloads_dir"
+    fi
+
+    # Create downloads directory if it doesn't exist
+    if [ ! -d "$downloads_dir" ]; then
+        echo -e "${color_yellow}Downloads directory does not exist.${color_reset}"
+        if confirm_action "Create directory?"; then
+            mkdir -p "$downloads_dir"
+            log_info "Created downloads directory: $downloads_dir"
+        fi
+    fi
+
+    # Get installation path
+    local current_install_path=$(grep -A2 "installation:" "$config_file" | grep "installation_path:" | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$current_install_path" ] || [[ "$current_install_path" == *"YOUR"* ]]; then
+        current_install_path="$HOME/ModdedGames/$modlist_name"
+    fi
+
+    echo -e "\n${color_header}Installation Path${color_reset}"
+    echo -e "This is where the modded game will be installed."
+    echo -e "Enter installation path [default: $current_install_path]: "
+    read -r direct_install_path
+    if [ -n "$direct_install_path" ]; then
+        install_path="${direct_install_path/#\~/$HOME}"
+    else
+        install_path="$current_install_path"
+    fi
+
+    # Create installation directory if it doesn't exist
+    if [ ! -d "$install_path" ]; then
+        echo -e "${color_yellow}Installation directory does not exist.${color_reset}"
+        if confirm_action "Create directory?"; then
+            mkdir -p "$install_path"
+            log_info "Created installation directory: $install_path"
+        fi
+    fi
+
+    # Get Nexus API key
+    local current_api_key=$(grep -A3 "downloaders:" "$config_file" | grep "api_key:" | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$current_api_key" ] || [ "$current_api_key" == "YOUR_API_KEY_HERE" ]; then
+        echo -e "\n${color_header}Nexus API Key${color_reset}"
+        echo -e "${color_yellow}A Nexus Mods API key is helpful even for non-premium installations.${color_reset}"
+        echo -e "You can get one from: ${color_blue}https://www.nexusmods.com/users/myaccount?tab=api${color_reset}"
+        read -rp "Enter Nexus API key (or leave empty): " api_key
+
+        if [ -z "$api_key" ]; then
+            echo -e "${color_yellow}No API key provided. Using placeholder value.${color_reset}"
+            api_key="YOUR_API_KEY_HERE"
+        fi
+    else
+        echo -e "\n${color_header}Nexus API Key${color_reset}"
+        echo -e "Nexus API key found in configuration."
+        if confirm_action "Use existing API key?"; then
+            echo -e "Using existing API key."
+            api_key="$current_api_key"
+        else
+            read -rp "Enter new Nexus API key (or leave empty): " api_key
+            if [ -z "$api_key" ]; then
+                api_key="YOUR_API_KEY_HERE"  # Use placeholder if nothing entered
+            fi
+        fi
+    fi
+
+    # Get game resolution
+    local current_resolution=$(grep -A1 "fixup:" "$config_file" | grep "game_resolution:" | awk '{print $2}')
+    if [ -z "$current_resolution" ]; then
+        current_resolution="1920x1080"
+    fi
+
+    echo -e "\n${color_header}Game Resolution${color_reset}"
+    echo -e "This sets the resolution for the modded game."
+    echo -e "Common resolutions: 1920x1080 (1080p), 2560x1440 (1440p), 3840x2160 (4K)"
+    read -rp "Enter game resolution [default: $current_resolution]: " input
+    if [ -n "$input" ]; then
+        game_resolution="$input"
+    else
+        game_resolution="$current_resolution"
+    fi
+
+    # Create a backup of the original config
+    cp "$config_file" "${config_file}.bak.$(date +%s)"
+    log_info "Backed up original config"
+
+    # Preserve game paths from existing config
+    log_info "Extracting existing game paths from configuration"
+    local game_section=""
+    local capture=false
+    
+    while IFS= read -r line; do
+        if [[ "$line" == "games:"* ]]; then
+            capture=true
+            game_section="games:\n"
+        elif [[ "$capture" == true ]]; then
+            if [[ "$line" == "fixup:"* ]]; then
+                capture=false
+            else
+                game_section+="$line\n"
+            fi
+        fi
+    done < "$config_file"
+    
+    # If no game section was found, add a comment
+    if [ -z "$game_section" ] || [ "$game_section" == "games:\n" ]; then
+        game_section="games:\n  # No games configured. Add them manually if needed.\n"
+    fi
+
+    # Write a new configuration file
+    cat > "$config_file" << EOF
+# Auto-generated hoolamike.yaml
+# Updated by NaK Helper on $(date)
+
+downloaders:
+  downloads_directory: "$downloads_dir"
+  nexus:
+    api_key: "$api_key"
+
+installation:
+  wabbajack_file_path: "$wabbajack_path"
+  installation_path: "$install_path"
+
+$(echo -e "$game_section")
+fixup:
+  game_resolution: $game_resolution
+
+extras:
+  tale_of_two_wastelands:
+    path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
+    variables:
+      DESTINATION: "./TTW_Output"
+EOF
+
+    # Only add USERPROFILE if it was found
+    local userprofile_path=$(grep "USERPROFILE:" "$config_file.bak."* | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -n "$userprofile_path" ]; then
+        echo "      USERPROFILE: \"$userprofile_path\"" >> "$config_file"
+    fi
+
+    # Now show the updated configuration summary
+    echo -e "\n${color_header}Configuration Summary${color_reset}"
+    echo -e "Wabbajack file: ${color_green}$wabbajack_path${color_reset}"
+    echo -e "Downloads directory: ${color_green}$downloads_dir${color_reset}"
+    echo -e "Installation path: ${color_green}$install_path${color_reset}"
+    echo -e "Game resolution: ${color_green}$game_resolution${color_reset}"
+
+    if ! confirm_action "Apply these settings and continue?"; then
+        echo -e "\n${color_yellow}Installation canceled.${color_reset}"
+        log_info "User cancelled Wabbajack installation after configuration"
+        return 1
+    fi
+
+    return 0
 }
 
 # Download and install Hoolamike
@@ -244,7 +457,6 @@ run_hoolamike() {
     fi
 
     # Run directly (no pipes) to preserve interactive terminal environment
-    # This is the key - we're executing hoolamike directly, not through any pipes
     ./hoolamike "$command"
     local exit_status=$?
 
@@ -345,195 +557,7 @@ install_wabbajack_modlist_nonpremium() {
     return 0
 }
 
-# Common function to configure Wabbajack settings for both premium and non-premium
-configure_wabbajack_settings() {
-    local config_file="$1"
-
-    # Information about where to find Wabbajack files
-    echo -e "\n${color_header}Where to Find Wabbajack Modlists${color_reset}"
-    echo -e "Before continuing, you'll need a .wabbajack file. You can find these at:"
-    echo -e "1. ${color_blue}https://build.wabbajack.org/authored_files${color_reset} - Official Wabbajack modlist repository"
-    echo -e "2. ${color_blue}https://www.nexusmods.com/${color_reset} - Some modlist authors publish on Nexus Mods"
-    echo -e "3. Various Discord communities for specific modlists"
-    echo -e "\n${color_yellow}NOTE:${color_reset} Download the .wabbajack file first, then continue.\n"
-
-    # Ask for Wabbajack file
-    local wabbajack_path=""
-    while true; do
-        read_with_tab_completion "Enter path to Wabbajack file (.wabbajack)" "" "wabbajack_path"
-
-        if [ -f "$wabbajack_path" ]; then
-            log_info "Selected Wabbajack file: $wabbajack_path"
-            break
-        else
-            echo -e "${color_yellow}File not found: $wabbajack_path${color_reset}"
-            if ! confirm_action "Try again?"; then
-                log_info "User cancelled Wabbajack installation"
-                return 1
-            fi
-        fi
-    done
-
-    # Get modlist name from the filename for better user experience
-    local modlist_name=$(basename "$wabbajack_path" .wabbajack)
-    echo -e "Installing modlist: ${color_green}$modlist_name${color_reset}"
-
-    # Get downloads directory
-    local current_downloads_dir=$(grep -A2 "downloaders:" "$config_file" | grep "downloads_directory:" | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$current_downloads_dir" ] || [[ "$current_downloads_dir" == *"YOUR"* ]]; then
-        current_downloads_dir="$HOME/Downloads"
-    fi
-
-    echo -e "\n${color_header}Downloads Directory${color_reset}"
-    echo -e "This is where mod files will be downloaded from Nexus/other sources."
-    echo -e "Enter downloads directory [default: $current_downloads_dir]: "
-    read -r direct_downloads_dir
-    if [ -n "$direct_downloads_dir" ]; then
-        downloads_dir="${direct_downloads_dir/#\~/$HOME}"
-    else
-        downloads_dir="$current_downloads_dir"
-    fi
-
-    # Create downloads directory if it doesn't exist
-    if [ ! -d "$downloads_dir" ]; then
-        echo -e "${color_yellow}Downloads directory does not exist.${color_reset}"
-        if confirm_action "Create directory?"; then
-            mkdir -p "$downloads_dir"
-            log_info "Created downloads directory: $downloads_dir"
-        fi
-    fi
-
-    # Get installation path
-    local current_install_path=$(grep -A2 "installation:" "$config_file" | grep "installation_path:" | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$current_install_path" ] || [[ "$current_install_path" == *"YOUR"* ]]; then
-        current_install_path="$HOME/ModdedGames/$modlist_name"
-    fi
-
-    echo -e "\n${color_header}Installation Path${color_reset}"
-    echo -e "This is where the modded game will be installed."
-    echo -e "Enter installation path [default: $current_install_path]: "
-    read -r direct_install_path
-    if [ -n "$direct_install_path" ]; then
-        install_path="${direct_install_path/#\~/$HOME}"
-    else
-        install_path="$current_install_path"
-    fi
-
-    # Create installation directory if it doesn't exist
-    if [ ! -d "$install_path" ]; then
-        echo -e "${color_yellow}Installation directory does not exist.${color_reset}"
-        if confirm_action "Create directory?"; then
-            mkdir -p "$install_path"
-            log_info "Created installation directory: $install_path"
-        fi
-    fi
-
-    # Get Nexus API key
-    local current_api_key=$(grep -A3 "downloaders:" "$config_file" | grep "api_key:" | sed -E 's/.*"([^"]+)".*/\1/')
-    if [ -z "$current_api_key" ] || [ "$current_api_key" == "YOUR_API_KEY_HERE" ]; then
-        echo -e "\n${color_header}Nexus API Key${color_reset}"
-        echo -e "${color_yellow}A Nexus Mods API key is helpful even for non-premium installations.${color_reset}"
-        echo -e "You can get one from: ${color_blue}https://www.nexusmods.com/users/myaccount?tab=api${color_reset}"
-        read -rp "Enter Nexus API key (or leave empty): " api_key
-
-        if [ -z "$api_key" ]; then
-            echo -e "${color_yellow}No API key provided. Using placeholder value.${color_reset}"
-            api_key="YOUR_API_KEY_HERE"
-        fi
-    else
-        echo -e "\n${color_header}Nexus API Key${color_reset}"
-        echo -e "Nexus API key found in configuration."
-        if confirm_action "Use existing API key?"; then
-            echo -e "Using existing API key."
-            api_key="$current_api_key"
-        else
-            read -rp "Enter new Nexus API key (or leave empty): " api_key
-            if [ -z "$api_key" ]; then
-                api_key="YOUR_API_KEY_HERE"  # Use placeholder if nothing entered
-            fi
-        fi
-    fi
-
-    # Get game resolution
-    local current_resolution=$(grep -A1 "fixup:" "$config_file" | grep "game_resolution:" | awk '{print $2}')
-    if [ -z "$current_resolution" ]; then
-        current_resolution="1920x1080"
-    fi
-
-    echo -e "\n${color_header}Game Resolution${color_reset}"
-    echo -e "This sets the resolution for the modded game."
-    echo -e "Common resolutions: 1920x1080 (1080p), 2560x1440 (1440p), 3840x2160 (4K)"
-    read -rp "Enter game resolution [default: $current_resolution]: " input
-    if [ -n "$input" ]; then
-        game_resolution="$input"
-    else
-        game_resolution="$current_resolution"
-    fi
-
-    # Create a backup of the original config
-    cp "$config_file" "${config_file}.bak.$(date +%s)"
-    log_info "Backed up original config"
-
-    # Write a completely new configuration file to ensure all the correct values are used
-    cat > "$config_file" << EOF
-# Auto-generated hoolamike.yaml
-# Updated by NaK Helper on $(date)
-
-downloaders:
-  downloads_directory: "$downloads_dir"
-  nexus:
-    api_key: "$api_key"
-
-installation:
-  wabbajack_file_path: "$wabbajack_path"
-  installation_path: "$install_path"
-
-games:
-  Fallout3:
-    root_directory: ""
-  FalloutNewVegas:
-    root_directory: ""
-  EnderalSpecialEdition:
-    root_directory: ""
-  SkyrimSpecialEdition:
-    root_directory: ""
-  Fallout4:
-    root_directory: ""
-  Starfield:
-    root_directory: ""
-  Oblivion:
-    root_directory: ""
-  BaldursGate3:
-    root_directory: ""
-
-fixup:
-  game_resolution: $game_resolution
-
-extras:
-  tale_of_two_wastelands:
-    path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
-    variables:
-      DESTINATION: "./TTW_Output"
-      USERPROFILE: ""
-EOF
-
-    # Now show the updated configuration summary
-    echo -e "\n${color_header}Configuration Summary${color_reset}"
-    echo -e "Wabbajack file: ${color_green}$wabbajack_path${color_reset}"
-    echo -e "Downloads directory: ${color_green}$downloads_dir${color_reset}"
-    echo -e "Installation path: ${color_green}$install_path${color_reset}"
-    echo -e "Game resolution: ${color_green}$game_resolution${color_reset}"
-
-    if ! confirm_action "Apply these settings and continue?"; then
-        echo -e "\n${color_yellow}Installation canceled.${color_reset}"
-        log_info "User cancelled Wabbajack installation after configuration"
-        return 1
-    fi
-
-    return 0
-}
-
-# Similar adjustments for the premium install function
+# Premium install function
 install_wabbajack_modlist() {
     print_section "Install Wabbajack Modlist (Premium Option)"
     echo -e "${color_yellow}This option requires a Nexus Mods Premium account for automatic downloads.${color_reset}"
