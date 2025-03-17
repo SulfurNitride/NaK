@@ -96,7 +96,7 @@ check_dependencies() {
 
 check_flatpak_steam() {
     log_info "Checking for Flatpak Steam"
-    if flatpak list --app --columns=application 2>/dev/null | grep -q 'com.valvesoftware.Steam'; then
+    if flatpak list --app --columns=application 2>/dev/null | grep -q '^com\.valvesoftware\.Steam$'; then
         error_exit "Detected Steam installed via Flatpak. This script doesn't support Flatpak Steam installations."
     fi
 }
