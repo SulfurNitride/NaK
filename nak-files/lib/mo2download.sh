@@ -4,6 +4,24 @@
 # Functions for downloading and installing Mod Organizer 2
 # -------------------------------------------------------------------
 
+# Function to check if any system 7z tool is available
+check_system_7z() {
+    log_info "Checking for system 7z tools"
+    
+    # Check for various system 7zip tool names
+    local zip_tools=("7z" "7za" "7zr" "7zip" "p7zip")
+    
+    for tool in "${zip_tools[@]}"; do
+        if command_exists "$tool"; then
+            log_info "Found system $tool command"
+            return 0
+        fi
+    done
+    
+    log_info "No system 7z tools found"
+    return 1
+}
+
 # Function to install py7zr Python package for 7z extraction
 install_py7zr() {
     log_info "Installing py7zr Python package"
@@ -54,7 +72,7 @@ check_py7zr_installed() {
     return 0
 }
 
-# Function to extract 7z archive using py7zr
+# Function to extract 7z archive with system tools or py7zr
 extract_7z_archive() {
     local archive_path="$1"
     local extract_to="$2"
@@ -171,12 +189,20 @@ download_mo2() {
         return 1
     fi
 
-    # Check for py7zr, install if needed
-    if ! check_py7zr_installed; then
-        echo -e "${color_yellow}Installing Python 7z extractor...${color_reset}"
-        if ! install_py7zr; then
-            handle_error "Failed to install Python 7z extractor" false
-            return 1
+    # First check if a system 7z tool exists
+    local system_7z_available=false
+    if check_system_7z; then
+        system_7z_available=true
+        echo -e "${color_green}Found system 7z tool, will use it for extraction${color_reset}"
+        log_info "System 7z tool found, skipping py7zr installation"
+    else
+        # Check for py7zr, install if needed
+        if ! check_py7zr_installed; then
+            echo -e "${color_yellow}Installing Python 7z extractor...${color_reset}"
+            if ! install_py7zr; then
+                handle_error "Failed to install Python 7z extractor" false
+                return 1
+            fi
         fi
     fi
 
