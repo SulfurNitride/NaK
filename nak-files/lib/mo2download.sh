@@ -59,13 +59,58 @@ extract_7z_archive() {
     local archive_path="$1"
     local extract_to="$2"
 
-    log_info "Extracting 7z archive using py7zr: $archive_path to $extract_to"
+    log_info "Extracting 7z archive: $archive_path to $extract_to"
 
+    # Check for various system 7zip tool names
+    local zip_tools=("7z" "7za" "7zr" "7zip" "p7zip")
+    local found_tool=""
+    
+    for tool in "${zip_tools[@]}"; do
+        if command_exists "$tool"; then
+            found_tool="$tool"
+            log_info "Found system $tool command"
+            break
+        fi
+    done
+    
+    # First, try using system 7zip tools if available
+    if [ -n "$found_tool" ]; then
+        log_info "Using system $found_tool command"
+        mkdir -p "$extract_to"
+        
+        # Handle different parameter formats for different tools
+        if [[ "$found_tool" == "p7zip" ]]; then
+            # Some p7zip versions have different syntax
+            if $found_tool -d "$archive_path" -o "$extract_to"; then
+                log_info "$found_tool extraction completed successfully"
+                return 0
+            fi
+        else
+            # Standard 7z syntax
+            if $found_tool x "$archive_path" -o"$extract_to"; then
+                log_info "$found_tool extraction completed successfully"
+                return 0
+            fi
+        fi
+        
+        log_warning "System $found_tool extraction failed, falling back to py7zr"
+    fi
+
+    # If system tools failed or aren't available, use py7zr
     # Get the portable Python binary
     local python_bin=$(get_portable_python)
     if [ $? -ne 0 ]; then
         handle_error "Failed to set up portable Python" false
         return 1
+    fi
+
+    # Check for py7zr, install if needed
+    if ! check_py7zr_installed; then
+        log_info "py7zr not installed, trying to install"
+        if ! install_py7zr; then
+            handle_error "Failed to install Python 7z extractor and no system 7z available" false
+            return 1
+        fi
     fi
 
     # Create a temporary Python script for extraction
