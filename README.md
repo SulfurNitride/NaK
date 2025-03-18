@@ -2,10 +2,13 @@ NaK, is a sodium and potassium alloy. Highly reactive.
 
 A Bash script I made with DeepSeek and Claude that should work with all major Linux distros that sets up mod manager downloads for MO2 in Proton, and installs _almost_ all dependencies for the modlists you make via Protontricks.
 
-The script can be run by piping directly to Bash or SH
-```sh
+The script can be run by piping directly to Bash 
+```
 bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/main/nak-installer.sh)
-Or with SH
+```
+
+Or With SH
+```
 sh -c "$(curl -sS https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/main/nak-installer.sh)"
 ```
 Alternatively, you may run this script by downloading a local copy
