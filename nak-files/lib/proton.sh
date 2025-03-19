@@ -179,6 +179,7 @@ select_dpi_scaling() {
 
 
 # Function to apply DPI scaling to selected game
+# Function to apply DPI scaling to selected game
 apply_dpi_scaling() {
     log_info "Applying DPI scaling ($selected_scaling) to game: $selected_name (AppID: $selected_appid)"
 
@@ -200,7 +201,10 @@ apply_dpi_scaling() {
 
     # Find the prefix path for the selected game
     local steam_root=$(get_steam_root)
-    local prefix_path="${steam_root}/steamapps/compatdata/${selected_appid}/pfx"
+    local compatdata_path=$(find_game_compatdata "$selected_appid" "$steam_root")
+    local prefix_path="$compatdata_path/pfx"
+
+    log_info "Using compatdata path: $compatdata_path"
 
     if [ ! -d "$prefix_path" ]; then
         end_progress_tracking "$tracker" false
