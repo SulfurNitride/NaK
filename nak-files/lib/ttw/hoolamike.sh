@@ -745,6 +745,14 @@ fix_modorganizer_paths() {
 
         # Replace /\\ with Z:\\ (using awk for better handling of backslashes)
         awk '{gsub(/\/\\\\/,"Z:\\\\"); print}' "$tmp_file" > "$ini_file"
+        
+        # Remove any line containing download_directory=
+        if grep -q "download_directory=" "$ini_file"; then
+            log_info "Removing download_directory line from $ini_file"
+            grep -v "download_directory=" "$ini_file" > "$tmp_file"
+            cp -- "$tmp_file" "$ini_file"
+            echo -e "${color_green}✓ Removed download_directory line from: \"$ini_file\"${color_reset}"
+        fi
 
         echo -e "${color_green}✓ Fixed paths in: \"$ini_file\"${color_reset}"
         log_info "Fixed paths in: $ini_file"
