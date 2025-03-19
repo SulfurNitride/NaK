@@ -154,7 +154,7 @@ main_menu() {
             "Mod Organizer Setup" "Set up MO2 with Proton, NXM handler, and dependencies" \
             "Tale of Two Wastelands" "TTW-specific installation and tools" \
             "Hoolamike Tools" "Wabbajack and other modlist installations" \
-            "Game-Specific Info" "Fallout NV, Enderal, BG3 Info Here!" \
+            "Game-Specific Info" "Fallout NV, Enderal, BG3 Info Here! (PLEASE REVIEW!)" \
             "Exit" "Quit the application"
 
         local choice=$?
@@ -301,10 +301,10 @@ game_specific_menu() {
     while true; do
         print_header
 
-        display_menu "Game-Specific Tools" \
-            "Fallout New Vegas" "Launch options for Fallout New Vegas" \
-            "Enderal Special Edition" "Launch options for Enderal" \
-            "Baldur's Gate 3" "Launch options for Baldur's Gate 3" \
+        display_menu "Game-Specific Fixes" \
+            "Fallout New Vegas" "Launch options and fixes for Fallout New Vegas. Along with MO2 NXM and DPI Scaling Fixes" \
+            "Enderal Special Edition" "Launch options and fixes for Enderal. Along with MO2 NXM and DPI Scaling Fixes" \
+            "Baldur's Gate 3" "Launch options and fixes for Baldur's Gate 3" \
             "All Games Advice" "View advice for all detected games" \
             "Back to Main Menu" "Return to the main menu"
 
@@ -317,6 +317,135 @@ game_specific_menu() {
             4) generate_advice ;;
             5) return ;;
         esac
+    done
+}
+
+# Now, let's update the Fallout New Vegas menu in fallout.sh
+# Fallout New Vegas menu
+fnv_menu() {
+    # Set up for Fallout New Vegas (AppID 22380)
+    selected_appid="22380"
+    selected_name="Fallout New Vegas"
+
+    while true; do
+        # Show launch advice specific to FNV
+        print_section "Fallout New Vegas Options"
+        local steam_root=$(get_steam_root)
+        local fnv_compatdata=$(find_game_compatdata "22380" "$steam_root")
+
+        if [ -n "$fnv_compatdata" ]; then
+            echo -e "Recommended launch options for Fallout New Vegas:"
+            echo -e "${color_blue}STEAM_COMPAT_DATA_PATH=\"$fnv_compatdata\" %command%${color_reset}"
+            log_info "Displayed FNV launch options"
+
+            # Display menu options
+            display_menu "Fallout New Vegas Fixes" \
+                "Install Dependencies" "Install Fallout New Vegas specific dependencies for modding" \
+                "Configure NXM Handler" "Set up Nexus Mod Manager link handling for FNV based modlists. " \
+                "Configure DPI Scaling" "Adjust DPI scaling for FNV based modlists" \
+                "Back" "Return to the game menu"
+
+            local choice=$?
+
+            case $choice in
+                1)
+                    install_fnv_dependencies
+                    pause "Press any key to continue..."
+                    ;;
+                2)
+                    check_dependencies
+                    if setup_nxm_handler; then
+                        pause "NXM handler configured successfully for Fallout New Vegas!"
+                    fi
+                    ;;
+                3)
+                    check_dependencies
+                    select_dpi_scaling
+                    apply_dpi_scaling
+                    pause "DPI scaling applied successfully for Fallout New Vegas!"
+                    ;;
+                4)
+                    return
+                    ;;
+            esac
+        else
+            echo -e "${color_yellow}Fallout New Vegas has not been run yet or is not installed.${color_reset}"
+            echo -e "Please run the game at least once through Steam before using these options."
+            log_warning "FNV compatdata not found"
+            pause "Press any key to continue..."
+            return
+        fi
+    done
+}
+
+# Enderal Special Edition menu
+enderal_menu() {
+    # Set up for Enderal SE (AppID 976620)
+    selected_appid="976620"
+    selected_name="Enderal Special Edition"
+
+    while true; do
+        # Show launch advice specific to Enderal
+        print_section "Enderal Special Edition Options"
+        local steam_root=$(get_steam_root)
+        local enderal_compatdata=$(find_game_compatdata "976620" "$steam_root")
+
+        if [ -n "$enderal_compatdata" ]; then
+            echo -e "Recommended launch options for Enderal Special Edition:"
+            echo -e "${color_blue}STEAM_COMPAT_DATA_PATH=\"$enderal_compatdata\" %command%${color_reset}"
+            log_info "Displayed Enderal launch options"
+
+            # Display menu options
+            display_menu "Enderal Special Edition Fixes" \
+                "Install Dependencies" "Install Enderal specific dependencies for modding" \
+                "Configure NXM Handler" "Set up Nexus Mod Manager link handling for Enderal based modlists." \
+                "Configure DPI Scaling" "Adjust DPI scaling Enderal based modlists." \
+                "Back" "Return to the game menu"
+
+            local choice=$?
+
+            case $choice in
+                1)
+                    # Set components for Enderal before installing
+                    components=(
+                        fontsmooth=rgb
+                        xact
+                        xact_x64
+                        d3dx11_43
+                        d3dcompiler_43
+                        d3dcompiler_47
+                        vcrun2022
+                        dotnet6
+                        dotnet7
+                        dotnet8
+                    )
+                    check_dependencies
+                    install_proton_dependencies
+                    pause "Press any key to continue..."
+                    ;;
+                2)
+                    check_dependencies
+                    if setup_nxm_handler; then
+                        pause "NXM handler configured successfully for Enderal Special Edition!"
+                    fi
+                    ;;
+                3)
+                    check_dependencies
+                    select_dpi_scaling
+                    apply_dpi_scaling
+                    pause "DPI scaling applied successfully for Enderal Special Edition!"
+                    ;;
+                4)
+                    return
+                    ;;
+            esac
+        else
+            echo -e "${color_yellow}Enderal has not been run yet or is not installed.${color_reset}"
+            echo -e "Please run the game at least once through Steam before using these options."
+            log_warning "Enderal compatdata not found"
+            pause "Press any key to continue..."
+            return
+        fi
     done
 }
 
