@@ -96,147 +96,153 @@ atomic_increment() {
     ) 200>"$lockfile"
 }
 
-# Function to generate mod order CSV using PowerShell
 generate_mod_order_csv() {
-    if [ ! -f "$VRAMR_TEMP/ActiveModListOrder.csv" ]; then
-        echo "No mod order CSV found. Checking for PowerShell script generation capability..."
+    if [ -f "$VRAMR_TEMP/ActiveModListOrder.csv" ]; then
+        echo "Found existing mod order CSV at $VRAMR_TEMP/ActiveModListOrder.csv"
+        return 0
+    fi
 
-        # Check if we have a working PowerShell command
-        if [ -n "$PWSH_CMD" ] && [ -x "$PWSH_CMD" ]; then
-            echo "Running external PowerShell script to generate mod load order CSV..."
+    echo "No mod order CSV found. Generating one directly..."
+    local output_csv="$VRAMR_TEMP/ActiveModListOrder.csv"
+    local log_csv="$VRAMR_TEMP/logfiles/csv_generation.log"
+    mkdir -p "$(dirname "$log_csv")"
+    > "$log_csv"
 
-            # --- Determine MO2 Profile Path ---
-            # Assuming standard MO2 structure: /path/to/ModlistName/mods
-            MO2_BASE_PATH=""
-            PROFILE_NAME=""
-            PROFILE_PATH=""
-            MODLIST_FILE=""
-            can_determine_profile=0
+    # Check if we have a valid mods directory
+    if [ -z "$MODS_DIR" ] || [ ! -d "$MODS_DIR" ]; then
+        echo "WARNING: Mods directory not found or not specified: $MODS_DIR" | tee -a "$log_csv"
+        return 1
+    fi
 
-            if [ -n "$MODS_DIR" ] && [[ "$MODS_DIR" == *"/mods" ]]; then
-                MO2_BASE_PATH=$(dirname "$MODS_DIR")
-                PROFILE_NAME=$(basename "$MO2_BASE_PATH")
-                PROFILE_PATH="$MO2_BASE_PATH/profiles/$PROFILE_NAME"
-                MODLIST_FILE="$PROFILE_PATH/modlist.txt"
-                if [ -d "$PROFILE_PATH" ] && [ -f "$MODLIST_FILE" ]; then
-                    echo "DEBUG: Determined Profile Path: $PROFILE_PATH"
-                    echo "DEBUG: Found Modlist File: $MODLIST_FILE"
-                    can_determine_profile=1
-                else
-                    echo "WARNING: Could not find profile directory or modlist.txt at expected path: $PROFILE_PATH" | tee -a "$LOG_FILE"
+    # Locate modlist.txt
+    local modlist_file=""
+    local base_dir=$(dirname "$MODS_DIR")
+    local profile_name=$(basename "$base_dir")
+
+    # Try standard MO2 path first
+    modlist_file="$base_dir/profiles/$profile_name/modlist.txt"
+
+    # Check if file exists
+    if [ ! -f "$modlist_file" ]; then
+        echo "WARNING: Could not find modlist.txt at expected path: $modlist_file" | tee -a "$log_csv"
+
+        # Search in profiles directory
+        if [ -d "$base_dir/profiles" ]; then
+            echo "Searching for modlist.txt in profiles directory..." | tee -a "$log_csv"
+
+            # Find first modlist.txt in any profile
+            for profile_dir in "$base_dir"/profiles/*/; do
+                if [ -d "$profile_dir" ]; then
+                    if [ -f "$profile_dir/modlist.txt" ]; then
+                        modlist_file="$profile_dir/modlist.txt"
+                        echo "Found modlist.txt at: $modlist_file" | tee -a "$log_csv"
+                        break
+                    fi
                 fi
-            else
-                echo "WARNING: MODS_DIR ('$MODS_DIR') does not seem to be a standard MO2 mods directory. Cannot automatically determine profile path." | tee -a "$LOG_FILE"
+            done
+        fi
+    fi
+
+    # Final check for modlist file
+    if [ ! -f "$modlist_file" ]; then
+        echo "ERROR: Could not find modlist.txt file. Cannot generate mod order CSV." | tee -a "$log_csv"
+        return 1
+    fi
+
+    echo "Using modlist file: $modlist_file" | tee -a "$log_csv"
+
+    # Create CSV header
+    echo "ModActivationIndex,ModName,IsModActive,ModPath" > "$output_csv"
+
+    # Pre-cache all mod directories (major optimization)
+    local mod_dirs=()
+    if [ -d "$MODS_DIR" ]; then
+        echo "Caching mod directories from: $MODS_DIR..." | tee -a "$log_csv"
+        while IFS= read -r -d '' dir; do
+            if [ -d "$dir" ]; then
+                mod_dirs+=("$dir")
             fi
-            # --- End Profile Path Determination ---
+        done < <(find "$MODS_DIR" -maxdepth 1 -type d -print0)
+    fi
+    echo "Cached ${#mod_dirs[@]} mod directories" | tee -a "$log_csv"
 
-            if [ $can_determine_profile -eq 1 ]; then
-                # Define arguments for PowerShell
-                MODS_DIR_ARG="$MODS_DIR"
-                PROFILE_PATH_ARG="$PROFILE_PATH"
-                OUTPUT_CSV_ARG="$VRAMR_TEMP/ActiveModListOrder.csv"
+    # Read modlist.txt and extract enabled mods
+    local temp_modlist=$(mktemp)
+    tr -d '\r' < "$modlist_file" > "$temp_modlist"
 
-                # --- Create Temporary PowerShell Script ---
-                TEMP_PS1_FILE=$(mktemp --tmpdir="$TEMP_DIR" generate_modlist_XXXXXX.ps1)
-                cat > "$TEMP_PS1_FILE" << 'EOF_PWSH'
-# PowerShell script to generate mod load order CSV
-# Arguments are accessed via $args array
+    # Extract enabled mods and store in array
+    local mod_names=()
+    while IFS= read -r line; do
+        # Check if it's an enabled mod (starts with +)
+        if [[ "$line" == +* ]]; then
+            # Remove the + prefix and trim whitespace
+            local mod_name=$(echo "${line:1}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
-# --- Assign arguments from $args ---
-if ($args.Count -lt 3) {
-    Write-Error "Insufficient arguments provided to PowerShell script. Expected 3, got $($args.Count)."
-    exit 1
-}
-$modsPath = $args[0]      # Passed from MODS_DIR_ARG
-$profilePath = $args[1]   # Passed from PROFILE_PATH_ARG
-$outputCsvPath = $args[2]  # Passed from OUTPUT_CSV_ARG
+            # Skip empty lines and separator lines
+            if [[ -n "$mod_name" && "$mod_name" != "---"* ]]; then
+                mod_names+=("$mod_name")
+            fi
+        fi
+    done < "$temp_modlist"
+    rm -f "$temp_modlist"
 
-# --- Paths derived from arguments ---
-$modListFile = Join-Path $profilePath "modlist.txt"
+    # Process mods in reverse order (bottom-up = higher priority)
+    local mod_count=${#mod_names[@]}
+    echo "Processing $mod_count mods in reversed order (bottom-up priority)..." | tee -a "$log_csv"
 
-# --- Read Mod Activation Order (modlist.txt) ---
-Write-Host "Reading active mod order from $modListFile (bottom-to-top priority)..."
-$activeModsData = [System.Collections.Generic.List[PSCustomObject]]::new()
+    # Process in reverse order (highest priority first = lowest index)
+    local index=0
+    for ((i=${#mod_names[@]}-1; i>=0; i--)); do
+        local mod_name="${mod_names[i]}"
 
-if (Test-Path $modListFile) {
-    $modListContent = Get-Content $modListFile
-    # Reverse the order of lines to process from bottom to top for priority
-    [array]::Reverse($modListContent)
+        # Try to find matching directory efficiently
+        local mod_dir=""
+        local mod_name_lower=$(echo "$mod_name" | tr '[:upper:]' '[:lower:]')
 
-    $currentIndex = 0
-    $actualModsFound = 0
-    foreach ($line in $modListContent) {
-        # Process only ACTIVE mods (start with '+'), ignore inactive ('-') and separators
-        if ($line.StartsWith("+")) {
-            $modName = $line.Substring(1) # Remove the '+'
+        # Fast matching using pre-cached directories
+        for dir in "${mod_dirs[@]}"; do
+            local dir_basename=$(basename "$dir")
+            local dir_basename_lower=$(echo "$dir_basename" | tr '[:upper:]' '[:lower:]')
 
-            # Ensure a directory for this mod name exists
-            $potentialModPath = Join-Path $modsPath $modName
-            if (Test-Path $potentialModPath -PathType Container) {
-                # Store mod info directly
-                $modData = [PSCustomObject]@{
-                    ModActivationIndex = $currentIndex
-                    ModName            = $modName
-                    IsModActive        = $true
-                    ModPath            = $potentialModPath # Use the confirmed path
-                }
-                $activeModsData.Add($modData)
+            # Exact match (case-insensitive)
+            if [ "$dir_basename_lower" = "$mod_name_lower" ]; then
+                mod_dir="$dir"
+                break
+            fi
+        done
 
-                $currentIndex++
-                $actualModsFound++ # Count only actual mod directories found
-            } else {
-                Write-Host "  - Skipping '+$($modName)' from modlist.txt: Directory not found at '$($potentialModPath)'" -ForegroundColor Gray
-            }
-        }
-    }
-    Write-Host "Found $($actualModsFound) active mod directories matching entries in modlist.txt."
-} else {
-    Write-Warning "Modlist file not found at '$modListFile'. Cannot determine mod activation status or order."
-}
-# --- End Mod Activation Order ---
-
-# --- Sort and Export Results ---
-Write-Host "Sorting results by activation index (0 = highest priority)..."
-# Sort directly by the ModActivationIndex (which is already bottom-up)
-$sortedResults = $activeModsData | Sort-Object ModActivationIndex
-
-Write-Host "Exporting $($sortedResults.Count) results to $outputCsvPath..."
-if ($sortedResults.Count -gt 0) {
-    # Select only the desired columns for the final output
-    $sortedResults | Select-Object ModActivationIndex, ModName, IsModActive, ModPath | Export-Csv -Path $outputCsvPath -NoTypeInformation
-    Write-Host "Export complete."
-} else {
-    Write-Host "No active mods found or processed. CSV not created."
-}
-EOF_PWSH
-                # --- End Temporary PowerShell Script ---
-
-                # Execute the temporary PowerShell script using -File
-                echo "Executing temporary PowerShell script: $TEMP_PS1_FILE"
-                "$PWSH_CMD" -NoProfile -File "$TEMP_PS1_FILE" "$MODS_DIR_ARG" "$PROFILE_PATH_ARG" "$OUTPUT_CSV_ARG"
-                PWSH_EXIT_CODE=$?
-
-                if [ $PWSH_EXIT_CODE -ne 0 ]; then
-                    echo "ERROR: PowerShell script execution failed with exit code $PWSH_EXIT_CODE." | tee -a "$LOG_FILE"
-                    # Decide if this is fatal or just a warning
-                fi
-            else
-                echo "WARNING: Unable to determine profile path. Mod load order CSV generation skipped." | tee -a "$LOG_FILE"
+        # Add to CSV with or without path
+        if [ -n "$mod_dir" ]; then
+            echo "$index,$mod_name,true,$mod_dir" >> "$output_csv"
+            if [ "$VERBOSE" -eq 1 ]; then
+                echo "  Added mod [$index]: $mod_name -> $mod_dir" | tee -a "$log_csv"
             fi
         else
-            echo "WARNING: No working PowerShell command found. Cannot generate mod load order CSV." | tee -a "$LOG_FILE"
+            echo "$index,$mod_name,true,\"\"" >> "$output_csv"
+            if [ "$VERBOSE" -eq 1 ]; then
+                echo "  Added mod [$index]: $mod_name (no matching directory found)" | tee -a "$log_csv"
+            fi
+        fi
+
+        # Increment index
+        index=$((index + 1))
+    done
+
+    # Verify CSV was created successfully
+    if [ -f "$output_csv" ]; then
+        local csv_entries=$(($(wc -l < "$output_csv") - 1))
+        if [ $csv_entries -gt 0 ]; then
+            echo "Successfully created CSV with $csv_entries entries" | tee -a "$log_csv"
+            echo "CSV file: $output_csv"
+            echo "DEBUG: CSV Found. Will attempt prioritized copy."
+            return 0
+        else
+            echo "ERROR: CSV file has no entries (only header)" | tee -a "$log_csv"
         fi
     else
-        echo "Found existing mod order CSV at $VRAMR_TEMP/ActiveModListOrder.csv"
+        echo "ERROR: CSV file was not created" | tee -a "$log_csv"
     fi
 
-    # Debug: Check CSV status before copy choice
-    echo "DEBUG: Checking for CSV at '$VRAMR_TEMP/ActiveModListOrder.csv'"
-    if [ -f "$VRAMR_TEMP/ActiveModListOrder.csv" ]; then
-        echo "DEBUG: CSV Found. Will attempt prioritized copy."
-    else
-        echo "DEBUG: CSV NOT Found. Will use simple parallel copy."
-    fi
-    echo "DEBUG: Value of VRAMR_TEMP is '$VRAMR_TEMP'"
-    echo "DEBUG: Value of PWSH_CMD is '$PWSH_CMD'"
+    echo "DEBUG: CSV NOT Found. Will use simple parallel copy."
+    return 1
 }
