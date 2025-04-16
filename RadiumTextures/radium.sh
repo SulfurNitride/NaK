@@ -538,6 +538,8 @@ resolve_dependencies() {
 
     return 0
 }
+export PWSH_CMD
+echo "PowerShell command being used: $PWSH_CMD"
 
 # --- Source remaining libraries ---
 # Now that we've defined the paths, we can safely source the necessary library files
@@ -618,12 +620,16 @@ main() {
     echo "Step 2: Initializing script settings..."
     initialize_script "$@"
 
+    # Generate Mod Order CSV using PowerShell
+    echo "Step 3: Generating mod order CSV..."
+    generate_mod_order_csv
+
     # Extract BSA files
-    echo "Step 3: Extracting BSA files..."
+    echo "Step 4: Extracting BSA files..."
     extract_bsa_files
 
     # Copy loose textures
-    echo "Step 4: Copying loose textures..."
+    echo "Step 5: Copying loose textures..."
     # Check if we should use prioritized copy based on CSV
     if [ -f "$VRAMR_TEMP/ActiveModListOrder.csv" ]; then
         echo "Using prioritized texture copy based on mod order CSV..."
@@ -634,11 +640,11 @@ main() {
     fi
 
     # Process exclusions
-    echo "Step 5: Processing exclusions..."
+    echo "Step 6: Processing exclusions..."
     linux_native_exclusions
 
     # Analyze textures
-    echo "Step 6: Analyzing textures..."
+    echo "Step 7: Analyzing textures..."
     if ! linux_native_analyze; then
         echo "Warning: Standard texture analysis failed. Trying safe mode..."
         if ! analyze_textures_safely; then
@@ -648,23 +654,23 @@ main() {
     fi
 
     # Filter textures based on preset
-    echo "Step 7: Filtering textures..."
+    echo "Step 8: Filtering textures..."
     linux_native_filter
 
     # Delete skipped textures
-    echo "Step 8: Deleting skipped textures..."
+    echo "Step 9: Deleting skipped textures..."
     delete_skipped_textures
 
     # Optimize textures
-    echo "Step 9: Optimizing textures..."
+    echo "Step 10: Optimizing textures..."
     optimize_textures
 
     # Run quality control checks
-    echo "Step 10: Running quality control..."
+    echo "Step 11: Running quality control..."
     quality_control
 
     # Final cleanup
-    echo "Step 11: Final cleanup..."
+    echo "Step 12: Final cleanup..."
     final_cleanup
 
     echo "====================================="
