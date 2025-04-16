@@ -4,7 +4,7 @@
 
 # Find system binary or download/prepare portable binaries
 resolve_dependencies() {
-    echo "Resolving dependencies (sqlite3, texconv, magick, hoolamike, pwsh)..."
+    echo "Resolving dependencies (sqlite3, texconv, magick, hoolamike, pwsh, cuttlefish, ispc)..."
 
     # Ensure portable directory exists
     mkdir -p "$PORTABLE_DIR"
@@ -64,7 +64,7 @@ resolve_dependencies() {
         fi
     fi
 
-    # --- Resolve Texconv (PRIMARY texture analysis tool) ---
+    # --- Resolve Texconv (FALLBACK texture analysis tool) ---
     TEXCONV_CMD=$(command -v texconv)
     if [ -n "$TEXCONV_CMD" ] && [ -x "$TEXCONV_CMD" ]; then
         echo "Found system texconv: $TEXCONV_CMD"
@@ -150,33 +150,33 @@ resolve_dependencies() {
         fi
     fi
 
-    # --- Resolve ImageMagick (Fallback/Optional) ---
+    # --- Resolve ImageMagick (PRIMARY texture analysis tool) ---
     MAGICK_CMD=$(command -v magick || command -v convert) # Prefer magick, fallback to convert
     if [ -n "$MAGICK_CMD" ] && [ -x "$MAGICK_CMD" ]; then
-        echo "Found system ImageMagick: $MAGICK_CMD (Fallback tool)"
+        echo "Found system ImageMagick: $MAGICK_CMD (PRIMARY texture analysis tool)"
     else
         echo "System ImageMagick (magick/convert) not found or not executable. Checking for portable version..."
         MAGICK_CMD="$PORTABLE_MAGICK_BIN"
         if [ ! -f "$MAGICK_CMD" ]; then
-            echo "Portable ImageMagick binary not found. Downloading (for potential fallback use)..."
+            echo "Portable ImageMagick binary not found. Downloading..."
             if command -v wget &>/dev/null; then
                 wget -q "$MAGICK_URL" -O "$MAGICK_CMD"
             elif command -v curl &>/dev/null; then
                 curl -s "$MAGICK_URL" -o "$MAGICK_CMD"
             else
-                echo "WARNING: Neither wget nor curl found. Cannot download ImageMagick. Will proceed without fallback tool." | tee -a "$LOG_FILE"
+                echo "WARNING: Neither wget nor curl found. Cannot download ImageMagick." | tee -a "$LOG_FILE"
                 MAGICK_CMD=""  # Clear the command as it's not available
             fi
 
             if [ -n "$MAGICK_CMD" ] && [ ! -f "$MAGICK_CMD" ]; then
-                echo "WARNING: Failed to download ImageMagick binary. Will proceed without fallback tool." | tee -a "$LOG_FILE"
+                echo "WARNING: Failed to download ImageMagick binary." | tee -a "$LOG_FILE"
                 MAGICK_CMD=""  # Clear the command as it's not available
             elif [ -n "$MAGICK_CMD" ]; then
                 chmod +x "$MAGICK_CMD"
-                echo "Portable ImageMagick binary downloaded to $MAGICK_CMD (Fallback tool)"
+                echo "Portable ImageMagick binary downloaded to $MAGICK_CMD (PRIMARY tool)"
             fi
         else
-             echo "Found portable ImageMagick binary: $MAGICK_CMD (Fallback tool)"
+             echo "Found portable ImageMagick binary: $MAGICK_CMD (PRIMARY tool)"
         fi
 
         # Verify portable executable status if MAGICK_CMD is set
@@ -184,8 +184,152 @@ resolve_dependencies() {
             echo "Making portable ImageMagick binary executable..."
             chmod +x "$MAGICK_CMD"
             if [ ! -x "$MAGICK_CMD" ]; then
-                echo "WARNING: Could not make portable ImageMagick binary executable: $MAGICK_CMD. Will proceed without fallback tool." | tee -a "$LOG_FILE"
+                echo "WARNING: Could not make portable ImageMagick binary executable: $MAGICK_CMD." | tee -a "$LOG_FILE"
                 MAGICK_CMD=""  # Clear the command as it's not executable
+            fi
+        fi
+    fi
+
+    # --- Resolve ISPC (required for Cuttlefish) ---
+    echo "Checking for ISPC (dependency for Cuttlefish)..."
+    ISPC_CMD=$(command -v ispc)
+    if [ -n "$ISPC_CMD" ] && [ -x "$ISPC_CMD" ]; then
+        echo "Found system ISPC: $ISPC_CMD"
+    else
+        echo "System ISPC not found or not executable. Checking for portable version..."
+        ISPC_CMD="$PORTABLE_ISPC_BIN"
+        if [ ! -f "$ISPC_CMD" ]; then
+            echo "Portable ISPC binary not found. Downloading from $ISPC_URL..."
+
+            if command -v wget &>/dev/null; then
+                wget -q "$ISPC_URL" -O "$TEMP_DIR/$ISPC_ARCHIVE"
+            elif command -v curl &>/dev/null; then
+                curl -s -L "$ISPC_URL" -o "$TEMP_DIR/$ISPC_ARCHIVE"
+            else
+                echo "ERROR: Neither wget nor curl found. Cannot download ISPC." | tee -a "$LOG_FILE"
+                return 1
+            fi
+
+            if [ ! -f "$TEMP_DIR/$ISPC_ARCHIVE" ]; then
+                echo "ERROR: Failed to download ISPC archive file: $ISPC_ARCHIVE" | tee -a "$LOG_FILE"
+                return 1
+            fi
+
+            # Extract ISPC
+            echo "Extracting ISPC binary from $ISPC_ARCHIVE..."
+            local EXTRACT_DIR=$(mktemp -d --tmpdir="$TEMP_DIR" ispc_extract.XXXXXX)
+
+            # Extract to temp directory
+            if tar -xzf "$TEMP_DIR/$ISPC_ARCHIVE" -C "$EXTRACT_DIR"; then
+                # Find the ispc binary
+                local ISPC_BIN_PATH=$(find "$EXTRACT_DIR" -name "ispc" -type f -executable | head -n 1)
+                if [ -n "$ISPC_BIN_PATH" ]; then
+                    cp "$ISPC_BIN_PATH" "$ISPC_CMD"
+                    chmod +x "$ISPC_CMD"
+                    echo "Portable ISPC binary extracted to $ISPC_CMD"
+
+                    # Create ISPC directory for potential additional files
+                    mkdir -p "$PORTABLE_ISPC_DIR"
+
+                    # Copy any required libraries or data files
+                    find "$EXTRACT_DIR" -type f -not -name "ispc" -exec cp {} "$PORTABLE_ISPC_DIR/" \;
+                    echo "Copied any additional ISPC files to $PORTABLE_ISPC_DIR"
+                else
+                    echo "ERROR: Failed to find ISPC executable in the downloaded archive." | tee -a "$LOG_FILE"
+                    rm -rf "$EXTRACT_DIR" "$TEMP_DIR/$ISPC_ARCHIVE"
+                    return 1
+                fi
+            else
+                echo "ERROR: Failed to extract ISPC archive $TEMP_DIR/$ISPC_ARCHIVE" | tee -a "$LOG_FILE"
+                rm -rf "$EXTRACT_DIR"
+                return 1
+            fi
+
+            # Clean up temporary extraction directory and archive
+            rm -rf "$EXTRACT_DIR" "$TEMP_DIR/$ISPC_ARCHIVE"
+        else
+            echo "Found portable ISPC binary: $ISPC_CMD"
+        fi
+
+        # Verify portable executable status
+        if [ ! -x "$ISPC_CMD" ]; then
+            echo "Making portable ISPC binary executable..."
+            chmod +x "$ISPC_CMD"
+            if [ ! -x "$ISPC_CMD" ]; then
+                echo "ERROR: Could not make portable ISPC binary executable: $ISPC_CMD" | tee -a "$LOG_FILE"
+                return 1
+            fi
+        fi
+    fi
+
+    # --- Resolve Cuttlefish (PRIMARY texture optimization tool) ---
+    echo "Checking for Cuttlefish texture processor..."
+    CUTTLEFISH_CMD=$(command -v cuttlefish)
+    if [ -n "$CUTTLEFISH_CMD" ] && [ -x "$CUTTLEFISH_CMD" ]; then
+        echo "Found system Cuttlefish: $CUTTLEFISH_CMD"
+    else
+        echo "System Cuttlefish not found or not executable. Checking for portable version..."
+        CUTTLEFISH_CMD="$PORTABLE_CUTTLEFISH_BIN"
+        if [ ! -f "$CUTTLEFISH_CMD" ]; then
+            echo "Portable Cuttlefish binary not found. Downloading from $CUTTLEFISH_URL..."
+
+            if command -v wget &>/dev/null; then
+                wget -q "$CUTTLEFISH_URL" -O "$TEMP_DIR/$CUTTLEFISH_ARCHIVE"
+            elif command -v curl &>/dev/null; then
+                curl -s -L "$CUTTLEFISH_URL" -o "$TEMP_DIR/$CUTTLEFISH_ARCHIVE"
+            else
+                echo "ERROR: Neither wget nor curl found. Cannot download Cuttlefish." | tee -a "$LOG_FILE"
+                return 1
+            fi
+
+            if [ ! -f "$TEMP_DIR/$CUTTLEFISH_ARCHIVE" ]; then
+                echo "ERROR: Failed to download Cuttlefish archive file: $CUTTLEFISH_ARCHIVE" | tee -a "$LOG_FILE"
+                return 1
+            fi
+
+            # Extract Cuttlefish
+            echo "Extracting Cuttlefish binary from $CUTTLEFISH_ARCHIVE..."
+            local EXTRACT_DIR=$(mktemp -d --tmpdir="$TEMP_DIR" cuttlefish_extract.XXXXXX)
+
+            # Extract to temp directory
+            if tar -xzf "$TEMP_DIR/$CUTTLEFISH_ARCHIVE" -C "$EXTRACT_DIR"; then
+                # Find the cuttlefish binary
+                local CUTTLEFISH_BIN_PATH=$(find "$EXTRACT_DIR" -name "cuttlefish" -type f -executable | head -n 1)
+                if [ -n "$CUTTLEFISH_BIN_PATH" ]; then
+                    cp "$CUTTLEFISH_BIN_PATH" "$CUTTLEFISH_CMD"
+                    chmod +x "$CUTTLEFISH_CMD"
+                    echo "Portable Cuttlefish binary extracted to $CUTTLEFISH_CMD"
+
+                    # Create Cuttlefish directory for additional files and libraries
+                    mkdir -p "$PORTABLE_CUTTLEFISH_DIR"
+
+                    # Copy any required libraries or data files
+                    find "$EXTRACT_DIR" -type f -not -name "cuttlefish" -exec cp {} "$PORTABLE_CUTTLEFISH_DIR/" \;
+                    echo "Copied additional Cuttlefish files to $PORTABLE_CUTTLEFISH_DIR"
+                else
+                    echo "ERROR: Failed to find Cuttlefish executable in the downloaded archive." | tee -a "$LOG_FILE"
+                    rm -rf "$EXTRACT_DIR" "$TEMP_DIR/$CUTTLEFISH_ARCHIVE"
+                    return 1
+                fi
+            else
+                echo "ERROR: Failed to extract Cuttlefish archive $TEMP_DIR/$CUTTLEFISH_ARCHIVE" | tee -a "$LOG_FILE"
+                rm -rf "$EXTRACT_DIR"
+                return 1
+            fi
+
+            # Clean up temporary extraction directory and archive
+            rm -rf "$EXTRACT_DIR" "$TEMP_DIR/$CUTTLEFISH_ARCHIVE"
+        else
+            echo "Found portable Cuttlefish binary: $CUTTLEFISH_CMD"
+        fi
+
+        # Verify portable executable status
+        if [ ! -x "$CUTTLEFISH_CMD" ]; then
+            echo "Making portable Cuttlefish binary executable..."
+            chmod +x "$CUTTLEFISH_CMD"
+            if [ ! -x "$CUTTLEFISH_CMD" ]; then
+                echo "ERROR: Could not make portable Cuttlefish binary executable: $CUTTLEFISH_CMD" | tee -a "$LOG_FILE"
+                return 1
             fi
         fi
     fi
@@ -357,17 +501,6 @@ resolve_dependencies() {
         fi
     fi
 
-    # Final check on the command path viability
-    if [ -z "$PWSH_CMD" ]; then
-         echo "ERROR: PowerShell command could not be resolved (system or portable). This is required for prioritized texture copy." | tee -a "$LOG_FILE"
-         echo "Please ensure PowerShell is installed system-wide OR allow the script to download the portable version." | tee -a "$LOG_FILE"
-         exit 1 # Exit script because PowerShell is mandatory
-    elif [ ! -x "$PWSH_CMD" ]; then
-        echo "ERROR: Final check failed - PowerShell command is set ($PWSH_CMD) but not executable. Mod list generation will fail." | tee -a "$LOG_FILE"
-        PWSH_CMD=""
-        exit 1 # Exit script because PowerShell is mandatory but broken
-    fi
-
     # --- Resolve fd (Optional Find Alternative) ---
     FD_CMD=$(command -v fdfind || command -v fd) # Check both common names
     if [ -n "$FD_CMD" ] && [ -x "$FD_CMD" ]; then
@@ -402,7 +535,14 @@ resolve_dependencies() {
 
     if [ -z "$MAGICK_CMD" ] || [ ! -x "$MAGICK_CMD" ]; then
         echo "ERROR: Could not resolve a working ImageMagick command (primary texture analysis tool)." | tee -a "$LOG_FILE"
-        return 1
+
+        # Check if texconv is available as fallback for texture analysis
+        if [ -n "$TEXCONV_CMD" ] && [ -x "$TEXCONV_CMD" ]; then
+            echo "WARNING: ImageMagick not available. Will rely on texconv for texture analysis." | tee -a "$LOG_FILE"
+        else
+            echo "ERROR: Neither ImageMagick nor texconv available. Cannot perform texture analysis." | tee -a "$LOG_FILE"
+            return 1
+        fi
     fi
 
     if [ -z "$HOOLAMIKE_CMD" ] || [ ! -x "$HOOLAMIKE_CMD" ]; then
@@ -410,20 +550,54 @@ resolve_dependencies() {
         return 1
     fi
 
-    echo "Using SQLite command: $SQLITE_CMD"
-    echo "Using ImageMagick command: $MAGICK_CMD (PRIMARY texture analysis tool)"
-    echo "Using hoolamike command: $HOOLAMIKE_CMD (BSA extraction tool)"
+    # Check texture optimization tools
+    if [ -n "$CUTTLEFISH_CMD" ] && [ -x "$CUTTLEFISH_CMD" ]; then
+        echo "Using Cuttlefish command: $CUTTLEFISH_CMD (PRIMARY texture optimization tool)"
 
-    if [ -n "$TEXCONV_CMD" ] && [ -x "$TEXCONV_CMD" ]; then
-        echo "Using Texconv command: $TEXCONV_CMD (FALLBACK tool, only used if ImageMagick fails)"
+        # Check if ISPC dependency is satisfied
+        if [ -z "$ISPC_CMD" ] || [ ! -x "$ISPC_CMD" ]; then
+            echo "WARNING: ISPC is required for Cuttlefish but was not found. Cuttlefish may not work properly." | tee -a "$LOG_FILE"
+        else
+            echo "Using ISPC command: $ISPC_CMD (dependency for Cuttlefish)"
+        fi
     else
-        echo "No texconv fallback available. Will rely exclusively on ImageMagick."
+        echo "WARNING: Cuttlefish not available. Will rely on texconv for texture optimization." | tee -a "$LOG_FILE"
+
+        if [ -z "$TEXCONV_CMD" ] || [ ! -x "$TEXCONV_CMD" ]; then
+            echo "ERROR: Neither Cuttlefish nor texconv available for texture optimization." | tee -a "$LOG_FILE"
+            return 1
+        fi
     fi
 
-    if [ -n "$PWSH_CMD" ] && [ -x "$PWSH_CMD" ]; then
-        echo "Using PowerShell command: $PWSH_CMD (for mod list generation)"
+    # Final tool status summary
+    echo "--- Tool Status Summary ---"
+    echo "SQLite: $SQLITE_CMD (database)"
+    echo "ImageMagick: $MAGICK_CMD (PRIMARY texture analysis tool)"
+
+    if [ -n "$TEXCONV_CMD" ] && [ -x "$TEXCONV_CMD" ]; then
+        echo "Texconv: $TEXCONV_CMD (FALLBACK texture analysis tool, PRIMARY if ImageMagick fails)"
     else
-        echo "WARNING: No working PowerShell command found (system or portable). Mod list generation will be skipped." | tee -a "$LOG_FILE"
+        echo "Texconv: Not available (no fallback for texture analysis)"
+    fi
+
+    if [ -n "$CUTTLEFISH_CMD" ] && [ -x "$CUTTLEFISH_CMD" ]; then
+        echo "Cuttlefish: $CUTTLEFISH_CMD (PRIMARY texture optimization tool)"
+    else
+        echo "Cuttlefish: Not available"
+
+        if [ -n "$TEXCONV_CMD" ] && [ -x "$TEXCONV_CMD" ]; then
+            echo "Will use texconv for texture optimization instead"
+        else
+            echo "WARNING: No texture optimization tool available!"
+        fi
+    fi
+
+    echo "Hoolamike: $HOOLAMIKE_CMD (BSA extraction tool)"
+
+    if [ -n "$PWSH_CMD" ] && [ -x "$PWSH_CMD" ]; then
+        echo "PowerShell: $PWSH_CMD (mod list generation)"
+    else
+        echo "PowerShell: Not available (mod list generation might fail)"
     fi
 
     return 0
