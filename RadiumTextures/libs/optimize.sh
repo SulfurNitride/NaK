@@ -89,7 +89,7 @@ optimize_textures() {
                 echo $((current + 1)) > "$progress_file"
             ) 200>"$progress_file.lock"
             return 1
-        }
+        fi
 
         # Create a temporary directory for this optimization
         local temp_dir
