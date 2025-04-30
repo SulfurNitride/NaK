@@ -9,7 +9,7 @@ bash <(curl -s https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/ma
 
 Or With SH
 ```
-sh -c "$(curl -sS https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/main/nak-installer.sh)"
+sh -c "$(curl -sS https://raw.githubusercontent.com/SulfurNitride/NaK/refs/heads/main/install-nak.sh)"
 ```
 Alternatively, you may run this script by downloading a local copy
 ```bash
