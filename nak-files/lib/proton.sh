@@ -366,7 +366,66 @@ apply_dpi_scaling() {
     return 0
 }
 
-# Install Proton dependencies for a selected game
+# Function to install .NET 9 SDK directly
+install_dotnet9_sdk() {
+    local prefix_path="$1"
+    local dotnet_url="https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.203/dotnet-sdk-9.0.203-win-x64.exe"
+    local dotnet_file="dotnet-sdk-9.0.203-win-x64.exe"
+
+    log_info "Installing .NET 9 SDK directly from Microsoft"
+    echo -e "\n${color_header}Installing .NET 9 SDK...${color_reset}"
+
+    # Find steam root and Proton path
+    local steam_root=$(get_steam_root)
+    local proton_path=$(find_proton_path "$steam_root")
+
+    if [ -z "$proton_path" ]; then
+        log_error "Could not find Proton installation"
+        return 1
+    fi
+
+    # Create a temporary directory for the download
+    local temp_dir=$(mktemp -d)
+    TEMP_FILES+=("$temp_dir")
+
+    # Download the file
+    echo -e "Downloading .NET 9 SDK from Microsoft..."
+    if ! curl -L -o "$temp_dir/$dotnet_file" "$dotnet_url"; then
+        log_error "Failed to download .NET 9 SDK"
+        rm -rf "$temp_dir" 2>/dev/null
+        return 1
+    fi
+
+    # Copy to the Wine prefix
+    mkdir -p "$prefix_path/drive_c/temp" 2>/dev/null
+    local win_file="$prefix_path/drive_c/temp/$dotnet_file"
+    cp "$temp_dir/$dotnet_file" "$win_file"
+
+    # Run the installer with silent options using Proton's Wine
+    echo -e "Running .NET 9 SDK installer (silent mode)..."
+
+    # Using environment variables needed for Proton
+    env STEAM_COMPAT_CLIENT_INSTALL_PATH="$steam_root" \
+        STEAM_COMPAT_DATA_PATH="$(dirname "$prefix_path")" \
+        "$proton_path" run "C:\\temp\\$dotnet_file" /q
+
+    local result=$?
+
+    # Clean up
+    rm -f "$win_file" 2>/dev/null
+    rm -rf "$temp_dir" 2>/dev/null
+
+    if [ $result -ne 0 ]; then
+        log_error "Failed to install .NET 9 SDK with status $result"
+        return 1
+    fi
+
+    log_info ".NET 9 SDK installed successfully"
+    echo -e "${color_green}.NET 9 SDK installed successfully!${color_reset}"
+    return 0
+}
+
+# Function to install Proton dependencies for a selected game
 install_proton_dependencies() {
     if [ -z "$selected_appid" ] || [ -z "$selected_name" ]; then
         handle_error "No game selected. Please select a game first." false
@@ -379,6 +438,11 @@ install_proton_dependencies() {
     if [ "${#components[@]}" -eq 0 ]; then
         get_game_components "$selected_appid"
     fi
+
+    # Add dotnet9 to components if needed (ensure it's in the list)
+    # You can remove this for games where you don't want .NET 9
+    components+=("dotnet9")
+    log_info "Added dotnet9 to components list"
 
     print_section "Installing Dependencies"
     echo -e "Installing common dependencies for ${color_blue}$selected_name${color_reset}"
@@ -397,71 +461,102 @@ install_proton_dependencies() {
         return 1
     fi
 
+    # Check for dotnet9 component
+    local has_dotnet9=false
+    local standard_components=()
+
+    for comp in "${components[@]}"; do
+        if [ "$comp" = "dotnet9" ]; then
+            has_dotnet9=true
+            log_info "Detected dotnet9 in components list"
+        else
+            standard_components+=("$comp")
+        fi
+    done
+
     # Use a temp file for logging protontricks output
     local temp_log=$(mktemp)
     TEMP_FILES+=("$temp_log")
 
-    # Install all components at once with --no-bwrap
-    echo -e "\n${color_header}Installing all components...${color_reset}"
-    echo -e "This will take several minutes. Please wait..."
+    # Install all standard components at once with --no-bwrap
+    if [ ${#standard_components[@]} -gt 0 ]; then
+        echo -e "\n${color_header}Installing standard components...${color_reset}"
+        echo -e "This will take several minutes. Please wait..."
 
-    log_info "Running: $protontricks_cmd --no-bwrap $selected_appid -q ${components[*]}"
+        log_info "Running: $protontricks_cmd --no-bwrap $selected_appid -q ${standard_components[*]}"
 
-    # Show a simple spinner animation
-    echo -n "Installing "
+        # Show a simple spinner animation
+        echo -n "Installing"
 
-    # Run the installation in the background
-    $protontricks_cmd --no-bwrap "$selected_appid" -q "${components[@]}" > "$temp_log" 2>&1 &
-    local pid=$!
+        # Run the installation in the background
+        $protontricks_cmd --no-bwrap "$selected_appid" -q "${standard_components[@]}" > "$temp_log" 2>&1 &
+        local pid=$!
 
-    # Simple spinner while waiting
-    local chars="/-\|"
-    while ps -p $pid > /dev/null; do
-        for (( i=0; i<${#chars}; i++ )); do
-            echo -en "\b${chars:$i:1}"
-            sleep 0.2
+        # Simple spinner while waiting
+        local chars="/-\|"
+        while ps -p $pid > /dev/null; do
+            for (( i=0; i<${#chars}; i++ )); do
+                echo -en "\b${chars:$i:1}"
+                sleep 0.2
+            done
         done
-    done
-    echo -en "\b"
+        echo -en "\b"
 
-    # Check the result
-    wait $pid
-    local status=$?
+        # Check the result
+        wait $pid
+        local status=$?
 
-    if [ $status -eq 0 ]; then
-        echo -e "\n${color_green}All dependencies installed successfully!${color_reset}"
-        log_info "Dependencies installed successfully"
+        if [ $status -ne 0 ]; then
+            # Copy the temp log to our log file for debugging
+            cat "$temp_log" >> "$log_file"
+            log_error "Dependency installation failed with status $status"
+            handle_error "Failed to install components. Check log for details." false
+            echo -e "\n${color_yellow}Installation may be partially completed.${color_reset}"
 
-        # Find the prefix path for the selected game
-        local steam_root=$(get_steam_root)
-        local compatdata_path=$(find_game_compatdata "$selected_appid" "$steam_root")
-        local prefix_path="$compatdata_path/pfx"
+            # Show the error from the temp log
+            echo -e "\n${color_header}Error details:${color_reset}"
+            tail -n 10 "$temp_log"
 
-        # Enable dotfiles visibility
-        if [ -d "$prefix_path" ]; then
-            echo -e "\n${color_header}Enabling dotfiles visibility...${color_reset}"
-            enable_show_dotfiles "$prefix_path"
-            echo -e "${color_green}Hidden (.) files will now be visible in Wine/Proton.${color_reset}"
-
-            # Set Windows XP compatibility for SSEEdit tools
-            echo -e "\n${color_header}Setting Windows XP mode for XEDIT tools...${color_reset}"
-            set_sseedit_to_winxp "$prefix_path"
-            echo -e "${color_green}All XEDIT tools will now use Windows XP compatibility mode. (Drag and drop support!)${color_reset}"
+            # Wait for user to acknowledge the error
+            pause "Review the error above and press any key to continue..."
+            return 1
         fi
-    else
-        # Copy the temp log to our log file for debugging
-        cat "$temp_log" >> "$log_file"
-        log_error "Dependency installation failed with status $status"
-        handle_error "Failed to install components. Check log for details." false
-        echo -e "\n${color_yellow}Installation may be partially completed.${color_reset}"
+    fi
 
-        # Show the error from the temp log
-        echo -e "\n${color_header}Error details:${color_reset}"
-        tail -n 10 "$temp_log"
+    # Find the prefix path for the selected game
+    local steam_root=$(get_steam_root)
+    local compatdata_path=$(find_game_compatdata "$selected_appid" "$steam_root")
+    local prefix_path="$compatdata_path/pfx"
 
-        # Wait for user to acknowledge the error
-        pause "Review the error above and press any key to continue..."
+    if [ ! -d "$prefix_path" ]; then
+        handle_error "Could not find Proton prefix at: $prefix_path" false
         return 1
+    fi
+
+    # If we have dotnet9 to install, do it separately
+    if $has_dotnet9; then
+        echo -e "\n${color_header}Installing .NET 9 SDK...${color_reset}"
+        # Install .NET 9 SDK
+        if ! install_dotnet9_sdk "$prefix_path"; then
+            handle_error "Failed to install .NET 9 SDK. Check log for details." false
+            return 1
+        fi
+    fi
+
+    # Success message
+    echo -e "\n${color_green}All dependencies installed successfully!${color_reset}"
+    log_info "Dependencies installed successfully"
+
+    # Enable dotfiles visibility
+    if [ -d "$prefix_path" ]; then
+        echo -e "\n${color_header}Enabling dotfiles visibility...${color_reset}"
+        enable_show_dotfiles "$prefix_path"
+        echo -e "${color_green}Hidden (.) files will now be visible in Wine/Proton.${color_reset}"
+
+        # Set Windows XP compatibility for SSEEdit tools
+        echo -e "\n${color_header}Setting Windows XP mode for XEDIT tools...${color_reset}"
+        set_sseedit_to_winxp "$prefix_path"
+        echo -e "${color_green}All XEDIT tools will now use Windows XP compatibility mode. (Drag and drop support!)${color_reset}"
     fi
 
     # Offer some tips
@@ -473,6 +568,5 @@ install_proton_dependencies() {
         echo -e "4. Press any button to continue"
     fi
 
-    # No need for a pause here since the calling function will pause
     return 0
 }
