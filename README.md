@@ -19,7 +19,7 @@ chmod +x ./nak-installer.sh
 bash ./nak-installer.sh
 ```
 
-Uses Hoolamike [GitHub](https://github.com/Niedzwiedzw/hoolamike) | [Discord](https://discord.gg/xYHjpKX3YP)\
+Uses Hoolamike [GitHub](https://github.com/Niedzwiedzw/hoolamike) | [Discord](https://discord.gg/xYHjpKX3YP)
 
 Sky-tex-opti [Github](https://github.com/BenHUET/sky-tex-opti)
 
