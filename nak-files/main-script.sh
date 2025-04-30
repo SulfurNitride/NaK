@@ -6,7 +6,7 @@
 # -------------------------------------------------------------------
 
 # Script metadata
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="1.4.0"
 SCRIPT_DATE="$(date +%Y-%m-%d)"
 
 # Define script directory to find modules
