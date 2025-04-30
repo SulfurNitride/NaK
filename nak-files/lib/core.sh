@@ -413,11 +413,13 @@ enderal_menu() {
                         xact_x64
                         d3dx11_43
                         d3dcompiler_43
+                        d3dcompiler_46
                         d3dcompiler_47
                         vcrun2022
                         dotnet6
                         dotnet7
                         dotnet8
+                        winhttp
                     )
                     check_dependencies
                     install_proton_dependencies
