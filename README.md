@@ -19,12 +19,12 @@ chmod +x ./nak-installer.sh
 bash ./nak-installer.sh
 ```
 
-Powered by Hoolamike [GitHub](https://github.com/Niedzwiedzw/hoolamike) | [Discord](https://discord.gg/xYHjpKX3YP)
+Uses Hoolamike [GitHub](https://github.com/Niedzwiedzw/hoolamike) | [Discord](https://discord.gg/xYHjpKX3YP)
+Sky-tex-opti [Github](https://github.com/BenHUET/sky-tex-opti)
 
 You can find me in the [Wabbajack Discord](https://discord.gg/wabbajack) in the `unofficial-linux-help` channel until I make a dedicated Discord or something.
 
 My YT: https://www.youtube.com/@sulfurnitride
 
 
-![image](https://github.com/user-attachments/assets/e405ea67-eb99-4f7a-b114-a1ff1660dc16)
-
+![image](https://github.com/user-attachments/assets/223d9dee-64b2-4bc6-b569-a14452d9d097)
