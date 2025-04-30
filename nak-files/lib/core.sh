@@ -154,6 +154,7 @@ main_menu() {
             "Mod Organizer Setup" "Set up MO2 with Proton, NXM handler, and dependencies" \
             "Tale of Two Wastelands" "TTW-specific installation and tools" \
             "Hoolamike Tools" "Wabbajack and other modlist installations" \
+            "Sky Texture Optimizer (Linux VRAMr)" "Run the Skyrim modlist texture optimizer tool" \
             "Game-Specific Info" "Fallout NV, Enderal, BG3 Info Here! (PLEASE REVIEW!)" \
             "Exit" "Quit the application"
 
@@ -163,8 +164,9 @@ main_menu() {
             1) mo2_setup_menu ;;
             2) ttw_installation_menu ;;
             3) hoolamike_tools_menu ;;
-            4) game_specific_menu ;;
-            5)
+            4) sky_tex_opti_main ;;
+            5) game_specific_menu ;;
+            6)
                 log_info "User exited application"
                 echo -e "\n${color_green}Thank you for using NaK!${color_reset}"
                 exit 0
