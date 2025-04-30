@@ -19,7 +19,8 @@ chmod +x ./nak-installer.sh
 bash ./nak-installer.sh
 ```
 
-Uses Hoolamike [GitHub](https://github.com/Niedzwiedzw/hoolamike) | [Discord](https://discord.gg/xYHjpKX3YP)
+Uses Hoolamike [GitHub](https://github.com/Niedzwiedzw/hoolamike) | [Discord](https://discord.gg/xYHjpKX3YP)\
+
 Sky-tex-opti [Github](https://github.com/BenHUET/sky-tex-opti)
 
 You can find me in the [Wabbajack Discord](https://discord.gg/wabbajack) in the `unofficial-linux-help` channel until I make a dedicated Discord or something.
