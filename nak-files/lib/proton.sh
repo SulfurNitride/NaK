@@ -113,6 +113,108 @@ EOF
     return 0
 }
 
+# Function to enable visibility of dotfiles in Wine/Proton
+enable_show_dotfiles() {
+    local prefix_path="$1"
+
+    if [ -z "$prefix_path" ] || [ ! -d "$prefix_path" ]; then
+        log_warning "Invalid prefix path for dotfiles visibility"
+        return 1
+    fi
+
+    log_info "Enabling dotfiles visibility in prefix: $prefix_path"
+
+    # Create a simple batch file
+    local batch_file=$(mktemp --suffix=.bat)
+    TEMP_FILES+=("$batch_file")
+
+    echo "@echo off" > "$batch_file"
+    echo "reg add \"HKEY_CURRENT_USER\\Software\\Wine\" /v ShowDotFiles /d Y /f" >> "$batch_file"
+    echo "exit 0" >> "$batch_file"
+
+    # Copy and execute
+    local win_batch_file="$prefix_path/drive_c/temp_dotfiles.bat"
+    cp "$batch_file" "$win_batch_file"
+    WINEPREFIX="$prefix_path" wine cmd /c "C:\\temp_dotfiles.bat" > /dev/null 2>&1
+    rm -f "$win_batch_file" 2>/dev/null
+
+    log_info "Dotfiles visibility enabled"
+    return 0
+}
+
+# Function to set Windows XP mode for SSE Edit tools
+set_sseedit_to_winxp() {
+    local prefix_path="$1"
+
+    if [ -z "$prefix_path" ] || [ ! -d "$prefix_path" ]; then
+        log_warning "Invalid prefix path for setting Windows XP mode"
+        return 1
+    fi
+
+    log_info "Setting Windows XP compatibility mode for SSEEdit tools"
+
+    # Create a registry file with proper structure for Wine
+    local reg_file=$(mktemp --suffix=.reg)
+    TEMP_FILES+=("$reg_file")
+
+    # Create correct registry entry based on actual Wine registry structure
+    cat > "$reg_file" << EOF
+REGEDIT4
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\SSEEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\SSEEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FO4Edit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FO4Edit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\TES4Edit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\TES4Edit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\xEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\SF1Edit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FNVEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FNVEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FO3Edit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FO3Edit64.exe]
+"Version"="winxp"
+EOF
+
+    # Apply the registry changes using wine regedit
+    echo "Applying registry changes..."
+    WINEPREFIX="$prefix_path" wine regedit "$reg_file"
+    local result=$?
+
+    # Clean up
+    rm -f "$reg_file"
+
+    if [ $result -ne 0 ]; then
+        log_warning "Failed to set Windows XP mode for SSEEdit tools"
+        return 1
+    fi
+
+    log_info "Windows XP mode set for SSEEdit.exe and SSEEdit64.exe"
+    return 0
+}
+
 # Function to let user select DPI scaling
 select_dpi_scaling() {
     log_info "Starting DPI scaling selection"
@@ -329,6 +431,23 @@ install_proton_dependencies() {
     if [ $status -eq 0 ]; then
         echo -e "\n${color_green}All dependencies installed successfully!${color_reset}"
         log_info "Dependencies installed successfully"
+
+        # Find the prefix path for the selected game
+        local steam_root=$(get_steam_root)
+        local compatdata_path=$(find_game_compatdata "$selected_appid" "$steam_root")
+        local prefix_path="$compatdata_path/pfx"
+
+        # Enable dotfiles visibility
+        if [ -d "$prefix_path" ]; then
+            echo -e "\n${color_header}Enabling dotfiles visibility...${color_reset}"
+            enable_show_dotfiles "$prefix_path"
+            echo -e "${color_green}Hidden (.) files will now be visible in Wine/Proton.${color_reset}"
+
+            # Set Windows XP compatibility for SSEEdit tools
+            echo -e "\n${color_header}Setting Windows XP mode for SSEEdit tools...${color_reset}"
+            set_sseedit_to_winxp "$prefix_path"
+            echo -e "${color_green}SSEEdit tools will now use Windows XP compatibility mode.${color_reset}"
+        fi
     else
         # Copy the temp log to our log file for debugging
         cat "$temp_log" >> "$log_file"
