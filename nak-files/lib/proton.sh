@@ -151,7 +151,7 @@ set_sseedit_to_winxp() {
         return 1
     fi
 
-    log_info "Setting Windows XP compatibility mode for SSEEdit tools"
+    log_info "Setting Windows XP compatibility mode for all XEDIT tools"
 
     # Create a registry file with proper structure for Wine
     local reg_file=$(mktemp --suffix=.reg)
@@ -444,9 +444,9 @@ install_proton_dependencies() {
             echo -e "${color_green}Hidden (.) files will now be visible in Wine/Proton.${color_reset}"
 
             # Set Windows XP compatibility for SSEEdit tools
-            echo -e "\n${color_header}Setting Windows XP mode for SSEEdit tools...${color_reset}"
+            echo -e "\n${color_header}Setting Windows XP mode for XEDIT tools...${color_reset}"
             set_sseedit_to_winxp "$prefix_path"
-            echo -e "${color_green}SSEEdit tools will now use Windows XP compatibility mode.${color_reset}"
+            echo -e "${color_green}All XEDIT tools will now use Windows XP compatibility mode. (Drag and drop support!)${color_reset}"
         fi
     else
         # Copy the temp log to our log file for debugging
