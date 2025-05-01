@@ -1,4 +1,5 @@
 1.4.0 4/30/25
+
 Here's a changelog as well:
 [Sky Text Opti](https://github.com/BenHUET/sky-tex-opti) has been added, it is a native tool that plans to recreate and do what VRAMr does better and faster. Currently it's faster and we only have one mode for right now, planning to have more in the future.
 
