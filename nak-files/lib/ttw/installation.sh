@@ -164,6 +164,7 @@ wait_for_mpi_file() {
     local timeout=6000000  # 10000 minutes
 
     print_section "Waiting for TTW MPI File"
+    echo -e "MPI File can be found here https://mod.pub/ttw/133/files"
     echo -e "Waiting for you to download and place the TTW MPI file in:"
     echo -e "${color_blue}$hoolamike_dir/${color_reset}"
     echo -e "\nPress Ctrl+C at any time to cancel..."
