@@ -191,6 +191,24 @@ REGEDIT4
 [HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FNVEdit64.exe]
 "Version"="winxp"
 
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\xFOEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\xFOEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\xSFEEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\xSFEEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\xTESEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\xTESEdit64.exe]
+"Version"="winxp"
+
 [HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\FO3Edit.exe]
 "Version"="winxp"
 
