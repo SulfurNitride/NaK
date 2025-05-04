@@ -64,135 +64,52 @@ setup_nxm_handler() {
     check_flatpak_steam
     local steam_root=$(get_steam_root)
 
-    # Find all available Proton versions
-    echo -e "Searching for installed Proton versions..."
-    local proton_versions=()
-    local proton_paths=()
-
-    # Search in all Steam libraries
-    local steam_paths=("$steam_root")
-    libraryfolders="$steam_root/steamapps/libraryfolders.vdf"
-    if [ -f "$libraryfolders" ]; then
-        while read -r line; do
-            [[ "$line" == *\"path\"* ]] && steam_paths+=("$(echo "$line" | awk -F'"' '{print $4}')")
-        done < "$libraryfolders"
-    fi
-
-    # Look for Proton in all Steam libraries
-    for path in "${steam_paths[@]}"; do
-        # Check for Proton 9.x versions first (recommended)
-        for version in "9.0" "9.1" "9.2" "9"; do
-            proton_candidate="$path/steamapps/common/Proton $version/proton"
-            if [ -f "$proton_candidate" ]; then
-                proton_versions+=("Proton $version (Recommended)")
-                proton_paths+=("$proton_candidate")
-                log_info "Found Proton $version at $proton_candidate"
-            fi
-        done
-
-        # Check for other Proton versions
-        for proton_dir in "$path/steamapps/common/Proton"*; do
-            if [ -d "$proton_dir" ] && [ -f "$proton_dir/proton" ]; then
-                # Skip any we've already found
-                local already_found=false
-                for existing_path in "${proton_paths[@]}"; do
-                    if [ "$existing_path" = "$proton_dir/proton" ]; then
-                        already_found=true
-                        break
-                    fi
-                done
-
-                if ! $already_found; then
-                    # Extract version from directory name
-                    local version_name=${proton_dir##*/}
-                    proton_versions+=("$version_name")
-                    proton_paths+=("$proton_dir/proton")
-                    log_info "Found $version_name at $proton_dir/proton"
-                fi
-            fi
-        done
-    done
-
-    # Check if we found any Proton versions
-    if [ ${#proton_versions[@]} -eq 0 ]; then
-        handle_error "No Proton installations found. Please install Proton 9.0 from Steam." false
+    local proton_path=$(find_proton_path "$steam_root")
+    if [ -z "$proton_path" ]; then
+        handle_error "Could not find Proton Experimental. Make sure it's installed in Steam." false
         return 1
     fi
 
-    # Let the user select a Proton version
-    echo -e "\n${color_header}Available Proton Versions:${color_reset}"
-    echo -e "${color_yellow}Note: Use the proton you have set for MO2!${color_reset}"
+   while true; do
+    read_with_tab_completion "Enter FULL path to nxmhandler.exe (or 'b' to go back)" "" "nxmhandler_path"
 
-    for ((i=0; i<${#proton_versions[@]}; i++)); do
-        echo -e "${color_option}$((i+1)). ${proton_versions[i]}${color_reset}"
-    done
+    # Check if user wants to go back
+    if [[ "$nxmhandler_path" == "b" || "$nxmhandler_path" == "B" ]]; then
+        log_info "User cancelled NXM handler setup"
+        return 1
+    fi
 
-    local choice
-    while true; do
-        read -rp $'\nSelect a Proton version (1-'${#proton_versions[@]}'): ' choice
-        if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#proton_versions[@]})); then
-            break
-        else
-            echo -e "${color_yellow}Invalid choice. Please try again.${color_reset}"
-        fi
-    done
+    if [ -f "$nxmhandler_path" ]; then
+        log_info "Selected nxmhandler.exe: $nxmhandler_path"
+        break
+    fi
 
-    local selected_proton="${proton_paths[choice-1]}"
-    local selected_proton_name="${proton_versions[choice-1]}"
-    log_info "Selected Proton: $selected_proton_name ($selected_proton)"
+    echo -e "${color_red}File not found!${color_reset} Try again or enter 'b' to go back."
+    log_warning "Invalid path: $nxmhandler_path"
+done
 
-    # Get nxmhandler.exe path
-    while true; do
-        read_with_tab_completion "Enter FULL path to nxmhandler.exe (or 'b' to go back)" "" "nxmhandler_path"
-
-        # Check if user wants to go back
-        if [[ "$nxmhandler_path" == "b" || "$nxmhandler_path" == "B" ]]; then
-            log_info "User cancelled NXM handler setup"
-            return 1
-        fi
-
-        if [ -f "$nxmhandler_path" ]; then
-            log_info "Selected nxmhandler.exe: $nxmhandler_path"
-            break
-        fi
-
-        echo -e "${color_red}File not found!${color_reset} Try again or enter 'b' to go back."
-        log_warning "Invalid path: $nxmhandler_path"
-    done
-
-    # Create the desktop file for NXM handler
     steam_compat_data_path="$steam_root/steamapps/compatdata/$selected_appid"
     desktop_file="$HOME/.local/share/applications/modorganizer2-nxm-handler.desktop"
 
-    log_info "Creating desktop file: $desktop_file with Proton: $selected_proton"
+    log_info "Creating desktop file: $desktop_file"
     mkdir -p "$HOME/.local/share/applications"
     cat << EOF > "$desktop_file"
 [Desktop Entry]
 Type=Application
 Categories=Game;
-Exec=bash -c 'env "STEAM_COMPAT_CLIENT_INSTALL_PATH=$steam_root" "STEAM_COMPAT_DATA_PATH=$steam_compat_data_path" "$selected_proton" run "$nxmhandler_path" "%u"'
+Exec=bash -c 'env "STEAM_COMPAT_CLIENT_INSTALL_PATH=$steam_root" "STEAM_COMPAT_DATA_PATH=$steam_compat_data_path" "$proton_path" run "$nxmhandler_path" "%u"'
 Name=Mod Organizer 2 NXM Handler
 MimeType=x-scheme-handler/nxm;
 NoDisplay=true
 EOF
 
     chmod +x "$desktop_file"
+
     register_mime_handler
 
-    echo -e "\n${color_green}NXM Handler setup complete with $selected_proton_name!${color_reset}"
+    echo -e "\n${color_green}NXM Handler setup complete!${color_reset}"
+    log_info "NXM Handler setup complete"
 
-    # Display important warning about matching Proton versions
-    echo -e "\n${color_yellow}======================= IMPORTANT =======================${color_reset}"
-    echo -e "${color_yellow}You MUST use the same Proton version ($selected_proton_name) for${color_reset}"
-    echo -e "${color_yellow}Mod Organizer 2 in Steam! Configure this by:${color_reset}"
-    echo -e "${color_green}1. Open Steam${color_reset}"
-    echo -e "${color_green}2. Right-click on Mod Organizer 2 -> Properties${color_reset}"
-    echo -e "${color_green}3. Go to Compatibility${color_reset}"
-    echo -e "${color_green}4. Check 'Force the use of a specific Steam Play compatibility tool'${color_reset}"
-    echo -e "${color_green}5. Select '$selected_proton_name' from the dropdown${color_reset}"
-    echo -e "${color_yellow}=======================================================${color_reset}"
-
-    log_info "NXM Handler setup complete with $selected_proton_name"
     return 0
 }
 
@@ -380,6 +297,8 @@ select_dpi_scaling() {
     done
 }
 
+
+# Function to apply DPI scaling to selected game
 # Function to apply DPI scaling to selected game
 apply_dpi_scaling() {
     log_info "Applying DPI scaling ($selected_scaling) to game: $selected_name (AppID: $selected_appid)"
@@ -546,39 +465,6 @@ install_proton_dependencies() {
     print_section "Installing Dependencies"
     echo -e "Installing common dependencies for ${color_blue}$selected_name${color_reset}"
     echo -e "This may take some time. Please be patient.\n"
-
-    # First quickly run a simple wine command to check Proton version
-    local proton_check_log=$(mktemp)
-    TEMP_FILES+=("$proton_check_log")
-
-    echo -e "Running quick Proton version check..."
-    $protontricks_cmd --no-bwrap "$selected_appid" wine > "$proton_check_log" 2>&1
-
-    # Wait a moment for the log to be written
-    sleep 2
-
-    # Check if Proton 9.0 is mentioned in the log
-    if ! grep -q "Proton 9.0" "$proton_check_log"; then
-        echo -e "\n${color_red}ERROR: Proton 9.0 not detected!${color_reset}"
-        echo -e "${color_yellow}======================= IMPORTANT FIX =======================${color_reset}"
-        echo -e "${color_yellow}This script requires Proton 9.0 for compatibility reasons.${color_reset}"
-        echo -e "${color_yellow}Currently you are using a different Proton version.${color_reset}"
-        echo -e ""
-        echo -e "${color_green}To fix this issue:${color_reset}"
-        echo -e "${color_green}1. Open Steam${color_reset}"
-        echo -e "${color_green}2. Right-click on $selected_name -> Properties${color_reset}"
-        echo -e "${color_green}3. Go to Compatibility${color_reset}"
-        echo -e "${color_green}4. Check 'Force the use of a specific Steam Play compatibility tool'${color_reset}"
-        echo -e "${color_green}5. Select 'Proton 9.0' from the dropdown${color_reset}"
-        echo -e "${color_green}6. Launch the game once, then run this script again${color_reset}"
-        echo -e "${color_yellow}=========================================================${color_reset}"
-
-        cat "$proton_check_log" >> "$log_file"
-        log_error "Proton 9.0 not detected in protontricks output"
-        exit 1  # Force exit the script entirely
-    fi
-
-    echo -e "${color_green}Proton 9.0 detected. Proceeding with installation.${color_reset}\n"
 
     # Show components to be installed
     echo -e "${color_header}Components to install:${color_reset}"
