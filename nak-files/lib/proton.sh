@@ -525,7 +525,6 @@ install_dotnet9_sdk() {
 }
 
 # Function to install Proton dependencies for a selected game
-# Function to install Proton dependencies for a selected game
 install_proton_dependencies() {
     if [ -z "$selected_appid" ] || [ -z "$selected_name" ]; then
         handle_error "No game selected. Please select a game first." false
@@ -548,9 +547,38 @@ install_proton_dependencies() {
     echo -e "Installing common dependencies for ${color_blue}$selected_name${color_reset}"
     echo -e "This may take some time. Please be patient.\n"
 
-    # Add the Proton version warning
-    echo -e "${color_yellow}IMPORTANT:${color_reset} As of right now Proton 9 is forced!"
-    echo -e "You can change this in Steam: Right-click game → Properties → Compatibility → Force Proton 9.0\n"
+    # First quickly run a simple wine command to check Proton version
+    local proton_check_log=$(mktemp)
+    TEMP_FILES+=("$proton_check_log")
+
+    echo -e "Running quick Proton version check..."
+    $protontricks_cmd --no-bwrap "$selected_appid" wine > "$proton_check_log" 2>&1
+
+    # Wait a moment for the log to be written
+    sleep 2
+
+    # Check if Proton 9.0 is mentioned in the log
+    if ! grep -q "Proton 9.0" "$proton_check_log"; then
+        echo -e "\n${color_red}ERROR: Proton 9.0 not detected!${color_reset}"
+        echo -e "${color_yellow}======================= IMPORTANT FIX =======================${color_reset}"
+        echo -e "${color_yellow}This script requires Proton 9.0 for compatibility reasons.${color_reset}"
+        echo -e "${color_yellow}Currently you are using a different Proton version.${color_reset}"
+        echo -e ""
+        echo -e "${color_green}To fix this issue:${color_reset}"
+        echo -e "${color_green}1. Open Steam${color_reset}"
+        echo -e "${color_green}2. Right-click on $selected_name -> Properties${color_reset}"
+        echo -e "${color_green}3. Go to Compatibility${color_reset}"
+        echo -e "${color_green}4. Check 'Force the use of a specific Steam Play compatibility tool'${color_reset}"
+        echo -e "${color_green}5. Select 'Proton 9.0' from the dropdown${color_reset}"
+        echo -e "${color_green}6. Launch the game once, then run this script again${color_reset}"
+        echo -e "${color_yellow}=========================================================${color_reset}"
+
+        cat "$proton_check_log" >> "$log_file"
+        log_error "Proton 9.0 not detected in protontricks output"
+        exit 1  # Force exit the script entirely
+    fi
+
+    echo -e "${color_green}Proton 9.0 detected. Proceeding with installation.${color_reset}\n"
 
     # Show components to be installed
     echo -e "${color_header}Components to install:${color_reset}"
@@ -609,31 +637,6 @@ install_proton_dependencies() {
         # Check the result
         wait $pid
         local status=$?
-
-        # Wait a few seconds to make sure all output is captured
-        echo -e "\nChecking Proton version compatibility..."
-        sleep 7  # Wait 7 seconds to ensure log has complete information
-
-        # Check if Proton 9.0 is mentioned in the log
-        if ! grep -q "Proton 9.0" "$temp_log"; then
-            echo -e "\n${color_red}ERROR: Proton 9.0 not detected!${color_reset}"
-            echo -e "${color_yellow}======================= IMPORTANT FIX =======================${color_reset}"
-            echo -e "${color_yellow}This script requires Proton 9.0 for compatibility reasons.${color_reset}"
-            echo -e "${color_yellow}Currently you are using a different Proton version.${color_reset}"
-            echo -e ""
-            echo -e "${color_green}To fix this issue:${color_reset}"
-            echo -e "${color_green}1. Open Steam${color_reset}"
-            echo -e "${color_green}2. Right-click on $selected_name -> Properties${color_reset}"
-            echo -e "${color_green}3. Go to Compatibility${color_reset}"
-            echo -e "${color_green}4. Check 'Force the use of a specific Steam Play compatibility tool'${color_reset}"
-            echo -e "${color_green}5. Select 'Proton 9.0' from the dropdown${color_reset}"
-            echo -e "${color_green}6. Launch the game once, then run this script again${color_reset}"
-            echo -e "${color_yellow}=========================================================${color_reset}"
-
-            cat "$temp_log" >> "$log_file"
-            log_error "Proton 9.0 not detected in protontricks output"
-            exit 1  # Force exit the script entirely
-        fi
 
         if [ $status -ne 0 ]; then
             # Copy the temp log to our log file for debugging
