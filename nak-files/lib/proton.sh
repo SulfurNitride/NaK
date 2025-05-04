@@ -466,6 +466,10 @@ install_proton_dependencies() {
     echo -e "Installing common dependencies for ${color_blue}$selected_name${color_reset}"
     echo -e "This may take some time. Please be patient.\n"
 
+    echo -e "${color_yellow}IMPORTANT:${color_reset} For best compatibility, make sure you're using Proton 9.0"
+    echo -e "in your Steam Play settings for this game, as Proton Experimental may cause issues."
+    echo -e "You can change this in Steam: Right-click game → Properties → Compatibility → Force Proton 9.0\n"
+
     # Show components to be installed
     echo -e "${color_header}Components to install:${color_reset}"
     for comp in "${components[@]}"; do
