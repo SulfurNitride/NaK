@@ -32,6 +32,29 @@ find_proton_path() {
     return 1
 }
 
+# Helper function to run commands through Proton Wine instead of system Wine
+run_with_proton_wine() {
+    local prefix_path="$1"
+    local command="$2"
+    local args="${@:3}"  # All remaining arguments
+
+    # Get necessary paths
+    local steam_root=$(get_steam_root)
+    local proton_path=$(find_proton_path "$steam_root")
+
+    if [ -z "$proton_path" ]; then
+        log_error "Could not find Proton installation"
+        return 1
+    fi
+
+    # Run the command with Proton's Wine
+    env STEAM_COMPAT_CLIENT_INSTALL_PATH="$steam_root" \
+        STEAM_COMPAT_DATA_PATH="$(dirname "$prefix_path")" \
+        "$proton_path" run "$command" $args
+
+    return $?
+}
+
 # Register MIME handler for nxm:// protocol
 register_mime_handler() {
     log_info "Registering NXM MIME handler"
@@ -135,7 +158,10 @@ enable_show_dotfiles() {
     # Copy and execute
     local win_batch_file="$prefix_path/drive_c/temp_dotfiles.bat"
     cp "$batch_file" "$win_batch_file"
-    WINEPREFIX="$prefix_path" wine cmd /c "C:\\temp_dotfiles.bat" > /dev/null 2>&1
+
+    # Use Proton's Wine instead of system Wine
+    run_with_proton_wine "$prefix_path" "C:\\temp_dotfiles.bat"
+
     rm -f "$win_batch_file" 2>/dev/null
 
     log_info "Dotfiles visibility enabled"
@@ -216,12 +242,17 @@ REGEDIT4
 "Version"="winxp"
 EOF
 
-    # Apply the registry changes using wine regedit
+    # Copy the registry file to the prefix
+    local win_reg_file="$prefix_path/drive_c/temp_xpedit.reg"
+    cp "$reg_file" "$win_reg_file"
+
+    # Apply the registry changes using Proton's regedit
     echo "Applying registry changes..."
-    WINEPREFIX="$prefix_path" wine regedit "$reg_file"
+    run_with_proton_wine "$prefix_path" "regedit" "C:\\temp_xpedit.reg"
     local result=$?
 
     # Clean up
+    rm -f "$win_reg_file" 2>/dev/null
     rm -f "$reg_file"
 
     if [ $result -ne 0 ]; then
@@ -229,7 +260,7 @@ EOF
         return 1
     fi
 
-    log_info "Windows XP mode set for SSEEdit.exe and SSEEdit64.exe"
+    log_info "Windows XP mode set for all xEdit tools"
     return 0
 }
 
@@ -299,7 +330,6 @@ select_dpi_scaling() {
 
 
 # Function to apply DPI scaling to selected game
-# Function to apply DPI scaling to selected game
 apply_dpi_scaling() {
     log_info "Applying DPI scaling ($selected_scaling) to game: $selected_name (AppID: $selected_appid)"
 
@@ -354,11 +384,11 @@ apply_dpi_scaling() {
 
     log_info "Created batch file: $win_batch_file"
 
-    # Run the batch file with a plain WINEPREFIX call (no GUI)
+    # Run the batch file with Proton's Wine
     echo -e "Applying registry changes silently..."
-    log_info "Running batch file to set registry keys"
+    log_info "Running batch file to set registry keys with Proton's Wine"
 
-    WINEPREFIX="$prefix_path" wine cmd /c "C:\\temp_dpi.bat" > /dev/null 2>&1
+    run_with_proton_wine "$prefix_path" "C:\\temp_dpi.bat"
     local result=$?
 
     # Clean up temporary batch file in the prefix
