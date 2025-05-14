@@ -147,25 +147,24 @@ enable_show_dotfiles() {
 
     log_info "Enabling dotfiles visibility in prefix: $prefix_path"
 
-    # Create a simple batch file
-    local batch_file=$(mktemp --suffix=.bat)
-    TEMP_FILES+=("$batch_file")
+    # Direct registry command approach
+    echo "Running direct registry command to enable dotfiles visibility..."
+    run_with_proton_wine "$prefix_path" "reg" "add" "HKCU\\Software\\Wine" "/v" "ShowDotFiles" "/d" "Y" "/f"
+    local result=$?
 
-    echo "@echo off" > "$batch_file"
-    echo "reg add \"HKCU\\Software\\Wine\" /v ShowDotFiles /d Y /f" >> "$batch_file"
-    echo "exit /b 0" >> "$batch_file"
+    if [ $result -eq 0 ]; then
+        echo -e "${color_green}Dotfiles visibility enabled successfully${color_reset}"
+        log_info "Dotfiles visibility enabled successfully"
+    else
+        echo -e "${color_yellow}Warning: Failed to enable dotfiles visibility (exit code: $result)${color_reset}"
+        log_warning "Failed to enable dotfiles visibility (exit code: $result)"
+        
+        # Optional: Add verification to check if it worked despite the error
+        echo "Verifying registry setting..."
+        run_with_proton_wine "$prefix_path" "reg" "query" "HKCU\\Software\\Wine" "/v" "ShowDotFiles"
+    fi
 
-    # Copy and execute
-    local win_batch_file="$prefix_path/drive_c/temp_dotfiles.bat"
-    cp "$batch_file" "$win_batch_file"
-
-    # Use Proton's Wine instead of system Wine
-    run_with_proton_wine "$prefix_path" "C:\\temp_dotfiles.bat"
-
-    rm -f "$win_batch_file" 2>/dev/null
-
-    log_info "Dotfiles visibility enabled"
-    return 0
+    return $result
 }
 
 # Function to set Windows XP mode for SSE Edit tools
