@@ -152,7 +152,7 @@ enable_show_dotfiles() {
     TEMP_FILES+=("$batch_file")
 
     echo "@echo off" > "$batch_file"
-    echo "reg add \"HKEY_CURRENT_USER\\Software\\Wine\" /v ShowDotFiles /d Y /f" >> "$batch_file"
+    echo "reg add "HKCU\Software\Wine" /v ShowDotFiles /d Y /f" >> "$batch_file"
     echo "exit 0" >> "$batch_file"
 
     # Copy and execute
