@@ -152,8 +152,8 @@ enable_show_dotfiles() {
     TEMP_FILES+=("$batch_file")
 
     echo "@echo off" > "$batch_file"
-    echo "reg add "HKCU\Software\Wine" /v ShowDotFiles /d Y /f" >> "$batch_file"
-    echo "exit 0" >> "$batch_file"
+    echo "reg add \"HKCU\\Software\\Wine\" /v ShowDotFiles /d Y /f" >> "$batch_file"
+    echo "exit /b 0" >> "$batch_file"
 
     # Copy and execute
     local win_batch_file="$prefix_path/drive_c/temp_dotfiles.bat"
