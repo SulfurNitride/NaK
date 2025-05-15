@@ -145,7 +145,6 @@ check_for_updates() {
     return 0
 }
 
-# Menu system structure (main menu and submenu handlers)
 main_menu() {
     while true; do
         print_header
@@ -153,6 +152,7 @@ main_menu() {
         display_menu "Main Menu" \
             "Mod Organizer Setup" "Set up MO2 with Proton, NXM handler, and dependencies" \
             "Vortex Setup" "Set up Vortex with Proton, NXM handler, and dependencies" \
+            "Limo Setup" "Set up game prefixes for Limo (Linux native mod manager)" \
             "Tale of Two Wastelands" "TTW-specific installation and tools" \
             "Hoolamike Tools" "Wabbajack and other modlist installations" \
             "Sky Texture Optimizer (Linux VRAMr)" "Run the Skyrim modlist texture optimizer tool" \
@@ -164,17 +164,156 @@ main_menu() {
         case $choice in
             1) mo2_setup_menu ;;
             2) vortex_setup_menu ;;
-            3) ttw_installation_menu ;;
-            4) hoolamike_tools_menu ;;
-            5) sky_tex_opti_main ;;
-            6) game_specific_menu ;;
-            7)
+            3) limo_setup_menu ;;
+            4) ttw_installation_menu ;;
+            5) hoolamike_tools_menu ;;
+            6) sky_tex_opti_main ;;
+            7) game_specific_menu ;;
+            8)
                 log_info "User exited application"
                 echo -e "\n${color_green}Thank you for using NaK!${color_reset}"
                 exit 0
                 ;;
         esac
     done
+}
+
+# Limo setup submenu
+limo_setup_menu() {
+    while true; do
+        print_header
+
+        print_section "Limo Setup (Linux Native Mod Manager)"
+        echo -e "Limo is a Linux-native mod manager that uses game prefixes directly."
+        echo -e "This tool will help you prepare your game prefixes with the necessary dependencies."
+        echo -e ""
+
+        display_menu "Limo Setup" \
+            "Configure Games for Limo" "Install dependencies for game prefixes" \
+            "Back to Main Menu" "Return to the main menu"
+
+        local choice=$?
+
+        case $choice in
+            1)
+                configure_games_for_limo
+                ;;
+            2)
+                return
+                ;;
+        esac
+    done
+}
+
+# Function to configure games for Limo
+configure_games_for_limo() {
+    check_dependencies
+
+    # List Steam games using protontricks
+    print_section "Fetching Steam Games"
+    log_info "Scanning for Steam games via protontricks"
+
+    echo "Scanning for Steam games..."
+    local protontricks_output
+    if ! protontricks_output=$($protontricks_cmd -l 2>&1); then
+        handle_error "Failed to run protontricks. Check log for details." false
+        return 1
+    fi
+
+    local games=""
+    local count=0
+    local collecting=false
+
+    while IFS= read -r line; do
+        # Start collecting games after this line
+        if [[ "$line" == "Found the following games:"* ]]; then
+            collecting=true
+            continue
+        fi
+
+        # Stop collecting at the note line
+        if [[ "$line" == "To run Protontricks"* ]]; then
+            break
+        fi
+
+        # Process game lines
+        if [ "$collecting" = true ] && [[ "$line" =~ (.*)\(([0-9]+)\) ]]; then
+            local name="${BASH_REMATCH[1]}"
+            local appid="${BASH_REMATCH[2]}"
+
+            # Trim whitespace from name
+            name=$(echo "$name" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+            # Skip non-Steam shortcuts, SteamVR, Proton, etc.
+            if [[ "$name" != "Non-Steam shortcut:"* ]] &&
+               [[ "$name" != *"SteamVR"* ]] &&
+               [[ "$name" != *"Proton"* ]] &&
+               [[ "$name" != *"Steam Linux Runtime"* ]]; then
+                games+="$appid:$name"$'\n'
+                ((count++))
+            fi
+        fi
+    done <<< "$protontricks_output"
+
+    IFS=$'\n' read -d '' -ra game_array <<< "$games"
+
+    if [ ${#game_array[@]} -eq 0 ]; then
+        handle_error "No Steam games found! Make sure you've launched your games at least once." false
+        return 1
+    fi
+
+    echo "Found ${#game_array[@]} Steam games."
+
+    # Select a game
+    # Build an array of just the game names for display
+    local display_games=()
+
+    for game in "${game_array[@]}"; do
+        IFS=':' read -r appid name <<< "$game"
+        display_games+=("$name (AppID: $appid)")
+    done
+
+    # Show selection menu with the full game list
+    print_section "Game Selection"
+    echo "Please select a game to configure for Limo:"
+
+    select_from_list "Available Steam Games" "${display_games[@]}"
+    local choice=$SELECTION_RESULT
+
+    if [ $choice -eq 0 ]; then
+        log_info "User canceled game selection"
+        return 1
+    fi
+
+    selected_game="${game_array[$((choice-1))]}"
+    IFS=':' read -r selected_appid selected_name <<< "$selected_game"
+    get_game_components "$selected_appid"
+    log_info "Selected game: $selected_name (AppID: $selected_appid)"
+
+    # Install dependencies for the selected game
+    print_section "Installing Dependencies for $selected_name"
+    echo -e "Installing dependencies for ${color_blue}$selected_name${color_reset}"
+    echo -e "This will prepare the game prefix for use with Limo."
+
+    # Install dependencies using existing function
+    install_proton_dependencies
+
+    # Find the prefix path for the selected game (for informational purposes)
+    local steam_root=$(get_steam_root)
+    local compatdata_path=$(find_game_compatdata "$selected_appid" "$steam_root")
+    local prefix_path="$compatdata_path/pfx"
+
+    echo -e "\n${color_green}Successfully configured $selected_name for Limo!${color_reset}"
+    echo -e "Proton prefix path: ${color_blue}$prefix_path${color_reset}"
+
+    # Ask if user is modding any other games
+    echo -e "\nAre you planning to mod any other games with Limo?"
+    if confirm_action "Configure another game?"; then
+        configure_games_for_limo
+    fi
+
+    pause "Press any key to continue..."
+    return 0
 }
 
 # Hoolamike general tools menu
