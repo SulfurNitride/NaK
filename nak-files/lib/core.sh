@@ -157,6 +157,7 @@ main_menu() {
             "Hoolamike Tools" "Wabbajack and other modlist installations" \
             "Sky Texture Optimizer (Linux VRAMr)" "Run the Skyrim modlist texture optimizer tool" \
             "Game-Specific Info" "Fallout NV, Enderal, BG3 Info Here! (PLEASE REVIEW!)" \
+            "Remove NXM Handlers" "Remove previously configured NXM handlers" \
             "Exit" "Quit the application"
 
         local choice=$?
@@ -169,7 +170,8 @@ main_menu() {
             5) hoolamike_tools_menu ;;
             6) sky_tex_opti_main ;;
             7) game_specific_menu ;;
-            8)
+            8) remove_nxm_handlers ;;
+            9)
                 log_info "User exited application"
                 echo -e "\n${color_green}Thank you for using NaK!${color_reset}"
                 exit 0
