@@ -152,6 +152,7 @@ main_menu() {
 
         display_menu "Main Menu" \
             "Mod Organizer Setup" "Set up MO2 with Proton, NXM handler, and dependencies" \
+            "Vortex Setup" "Set up Vortex with Proton, NXM handler, and dependencies" \
             "Tale of Two Wastelands" "TTW-specific installation and tools" \
             "Hoolamike Tools" "Wabbajack and other modlist installations" \
             "Sky Texture Optimizer (Linux VRAMr)" "Run the Skyrim modlist texture optimizer tool" \
@@ -162,11 +163,12 @@ main_menu() {
 
         case $choice in
             1) mo2_setup_menu ;;
-            2) ttw_installation_menu ;;
-            3) hoolamike_tools_menu ;;
-            4) sky_tex_opti_main ;;
-            5) game_specific_menu ;;
-            6)
+            2) vortex_setup_menu ;;
+            3) ttw_installation_menu ;;
+            4) hoolamike_tools_menu ;;
+            5) sky_tex_opti_main ;;
+            6) game_specific_menu ;;
+            7)
                 log_info "User exited application"
                 echo -e "\n${color_green}Thank you for using NaK!${color_reset}"
                 exit 0
@@ -322,7 +324,6 @@ game_specific_menu() {
     done
 }
 
-# Now, let's update the Fallout New Vegas menu in fallout.sh
 # Fallout New Vegas menu
 fnv_menu() {
     # Set up for Fallout New Vegas (AppID 22380)
@@ -377,6 +378,61 @@ fnv_menu() {
             pause "Press any key to continue..."
             return
         fi
+    done
+}
+
+# Vortex setup submenu
+vortex_setup_menu() {
+    while true; do
+        print_header
+
+        display_menu "Vortex Setup" \
+            "Download Vortex" "Download and install the latest version" \
+            "Set Up Existing Installation" "Configure an existing Vortex installation" \
+            "Install Basic Dependencies" "Install common Proton components for Vortex" \
+            "Configure NXM Handler" "Set up Nexus Mod Manager link handling" \
+            "DPI Scaling" "Configure DPI scaling for HiDPI displays" \
+            "Back to Main Menu" "Return to the main menu"
+
+        local choice=$?
+
+        case $choice in
+            1)
+                download_vortex
+                pause "Press any key to continue..."
+                ;;
+            2)
+                setup_existing_vortex
+                pause "Press any key to continue..."
+                ;;
+            3)
+                check_dependencies
+                get_non_steam_games
+                if select_game; then
+                    install_proton_dependencies
+                    pause "Basic dependencies installation complete!"
+                fi
+                ;;
+            4)
+                check_dependencies
+                get_non_steam_games
+                if select_game; then
+                    if setup_vortex_nxm_handler; then
+                        pause "Vortex NXM handler configured successfully!"
+                    fi
+                fi
+                ;;
+            5)
+                check_dependencies
+                get_non_steam_games
+                if select_game; then
+                    select_dpi_scaling
+                    apply_dpi_scaling
+                    pause "DPI scaling applied successfully!"
+                fi
+                ;;
+            6) return ;;
+        esac
     done
 }
 
