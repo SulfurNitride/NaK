@@ -30,4 +30,5 @@ You can find me in the [Wabbajack Discord](https://discord.gg/wabbajack) in the 
 My YT: https://www.youtube.com/@sulfurnitride
 
 
-![image](https://github.com/user-attachments/assets/223d9dee-64b2-4bc6-b569-a14452d9d097)
+![image](https://github.com/user-attachments/assets/4f0838c2-5ce3-406e-b671-1ae4bfc87dfd)
+
