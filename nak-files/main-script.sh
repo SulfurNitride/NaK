@@ -24,6 +24,7 @@ source "$LIB_DIR/portablepython.sh"
 source "$LIB_DIR/vdf.sh"
 source "$LIB_DIR/mo2download.sh"
 source "$LIB_DIR/sky-tex-opti.sh"
+source "$LIB_DIR/vortex.sh"
 
 # Source game modules
 source "$LIB_DIR/games/games.sh"
