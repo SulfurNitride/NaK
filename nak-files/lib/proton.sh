@@ -167,6 +167,51 @@ enable_show_dotfiles() {
     return $result
 }
 
+# Function to remove window decorations for Pandora Behaviour Engine
+set_pandora_no_decorations() {
+    local prefix_path="$1"
+
+    if [ -z "$prefix_path" ] || [ ! -d "$prefix_path" ]; then
+        log_warning "Invalid prefix path for setting Pandora window decoration removal"
+        return 1
+    fi
+
+    log_info "Setting window decoration removal for Pandora Behaviour Engine+"
+
+    # Create a registry file with proper structure for Wine
+    local reg_file=$(mktemp --suffix=.reg)
+    TEMP_FILES+=("$reg_file")
+
+    # Create registry entry for Pandora - note the escaped + sign
+    cat > "$reg_file" << EOF
+REGEDIT4
+
+[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\Pandora Behaviour Engine+.exe\\X11 Driver]
+"Decorated"="N"
+EOF
+
+    # Copy the registry file to the prefix
+    local win_reg_file="$prefix_path/drive_c/temp_pandora.reg"
+    cp "$reg_file" "$win_reg_file"
+
+    # Apply the registry changes using Proton's regedit
+    echo "Applying registry changes for Pandora..."
+    run_with_proton_wine "$prefix_path" "regedit" "C:\\temp_pandora.reg"
+    local result=$?
+
+    # Clean up
+    rm -f "$win_reg_file" 2>/dev/null
+    rm -f "$reg_file"
+
+    if [ $result -ne 0 ]; then
+        log_warning "Failed to set window decoration removal for Pandora"
+        return 1
+    fi
+
+    log_info "Window decorations disabled for Pandora Behaviour Engine+"
+    return 0
+}
+
 # Function to set Windows XP mode for SSE Edit tools
 set_sseedit_to_winxp() {
     local prefix_path="$1"
@@ -604,6 +649,14 @@ install_proton_dependencies() {
         echo -e "\n${color_header}Setting Windows XP mode for XEDIT tools...${color_reset}"
         set_sseedit_to_winxp "$prefix_path"
         echo -e "${color_green}All XEDIT tools will now use Windows XP compatibility mode. (Drag and drop support!)${color_reset}"
+
+    fi
+
+
+    if [ -d "$prefix_path" ]; then
+        echo -e "\n${color_header}Configuring Pandora Behaviour Engine+...${color_reset}"
+        set_pandora_no_decorations "$prefix_path"
+        echo -e "${color_green}Window decorations removed for Pandora Behaviour Engine+.${color_reset}"
     fi
 
     # Offer some tips
