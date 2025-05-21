@@ -517,6 +517,54 @@ install_dotnet9_sdk() {
     return 0
 }
 
+# Function to setup DigiCert certificate for Synthesis
+setup_synthesis_certificate() {
+    log_info "Checking if user needs Synthesis certificate setup"
+
+    print_section "Synthesis Patcher Support"
+    echo -e "Synthesis is a popular patching framework used in Bethesda game modlists."
+    echo -e "${color_yellow}Users of Synthesis may encounter NuGet certificate validation errors.${color_reset}"
+
+    if confirm_action "Will you be using Synthesis with this setup?"; then
+        echo -e "\nTo fix potential NuGet package validation errors, we need to install a certificate."
+        echo -e "This requires ${color_yellow}sudo${color_reset} access to install the DigiCert Universal Root certificate."
+
+        if confirm_action "Install DigiCert Universal Root certificate?"; then
+            log_info "User confirmed certificate installation"
+
+            echo -e "\n${color_blue}Downloading certificate...${color_reset}"
+            if ! wget -q https://cacerts.digicert.com/universal-root.crt.pem; then
+                log_error "Failed to download certificate"
+                echo -e "${color_red}Failed to download certificate.${color_reset}"
+                return 1
+            fi
+
+            echo -e "${color_blue}Installing certificate (you may be prompted for your password)...${color_reset}"
+            if ! sudo trust anchor --store universal-root.crt.pem; then
+                log_error "Failed to install certificate"
+                echo -e "${color_red}Failed to install certificate.${color_reset}"
+                return 1
+            fi
+
+            # Clean up
+            rm -f universal-root.crt.pem
+
+            echo -e "\n${color_green}Certificate installed successfully!${color_reset}"
+            echo -e "This should resolve NuGet certificate validation errors when using Synthesis."
+            log_info "Certificate installed successfully"
+        else
+            log_info "User declined certificate installation"
+            echo -e "\n${color_yellow}If you encounter NuGet certificate errors later, you can manually install the certificate with:${color_reset}"
+            echo -e "${color_blue}wget https://cacerts.digicert.com/universal-root.crt.pem${color_reset}"
+            echo -e "${color_blue}sudo trust anchor --store universal-root.crt.pem${color_reset}"
+        fi
+    else
+        log_info "User indicated they won't be using Synthesis"
+    fi
+
+    return 0
+}
+
 # Function to install Proton dependencies for a selected game
 install_proton_dependencies() {
     if [ -z "$selected_appid" ] || [ -z "$selected_name" ]; then
@@ -652,12 +700,13 @@ install_proton_dependencies() {
 
     fi
 
-
     if [ -d "$prefix_path" ]; then
         echo -e "\n${color_header}Configuring Pandora Behaviour Engine+...${color_reset}"
         set_pandora_no_decorations "$prefix_path"
         echo -e "${color_green}Window decorations removed for Pandora Behaviour Engine+.${color_reset}"
     fi
+
+    setup_synthesis_certificate
 
     # Offer some tips
     if $show_advice; then
