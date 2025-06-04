@@ -1,8 +1,78 @@
 #!/bin/bash
 # -------------------------------------------------------------------
 # hoolamike.sh
-# Hoolamike integration for MO2 Helper
+# Hoolamike integration for MO2 Helper - Updated with dynamic MPI detection
 # -------------------------------------------------------------------
+
+# Function to find the actual MPI file in the Hoolamike directory
+find_mpi_file() {
+    local hoolamike_dir="$HOME/Hoolamike"
+    
+    # Look for any .mpi file in the directory
+    local mpi_files=($(find "$hoolamike_dir" -maxdepth 1 -name "*.mpi" 2>/dev/null))
+    
+    if [ ${#mpi_files[@]} -eq 0 ]; then
+        log_info "No MPI file found in $hoolamike_dir"
+        return 1
+    elif [ ${#mpi_files[@]} -eq 1 ]; then
+        # Only one MPI file found, use it
+        local mpi_filename=$(basename "${mpi_files[0]}")
+        log_info "Found MPI file: $mpi_filename"
+        echo "$mpi_filename"
+        return 0
+    else
+        # Multiple MPI files found, let user choose
+        log_info "Multiple MPI files found, prompting user to choose"
+        echo -e "${color_yellow}Multiple MPI files found:${color_reset}"
+        
+        local i=1
+        for mpi in "${mpi_files[@]}"; do
+            echo -e "$i. $(basename "$mpi")"
+            ((i++))
+        done
+        
+        while true; do
+            read -rp "Select MPI file to use (1-${#mpi_files[@]}): " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#mpi_files[@]} )); then
+                local selected_mpi=$(basename "${mpi_files[$((choice-1))]}")
+                log_info "User selected MPI file: $selected_mpi"
+                echo "$selected_mpi"
+                return 0
+            else
+                echo "Invalid choice. Please try again."
+            fi
+        done
+    fi
+}
+
+# Function to update the MPI file path in existing config
+update_mpi_file_in_config() {
+    local config_file="$HOME/Hoolamike/hoolamike.yaml"
+    
+    if [ ! -f "$config_file" ]; then
+        log_warning "Config file not found: $config_file"
+        return 1
+    fi
+    
+    # Find the actual MPI file
+    local mpi_filename
+    if mpi_filename=$(find_mpi_file); then
+        log_info "Updating config with MPI file: $mpi_filename"
+        
+        # Create a backup
+        cp "$config_file" "${config_file}.bak.$(date +%s)"
+        
+        # Update the MPI file path in the config
+        sed -i "s|path_to_ttw_mpi_file:.*|path_to_ttw_mpi_file: \"./$mpi_filename\"|" "$config_file"
+        
+        echo -e "${color_green}Updated TTW MPI file path in config: $mpi_filename${color_reset}"
+        log_info "Successfully updated MPI file path in config"
+        return 0
+    else
+        log_warning "No MPI file found to update in config"
+        return 1
+    fi
+}
 
 # Generate Hoolamike configuration file
 generate_hoolamike_config() {
@@ -81,6 +151,15 @@ generate_hoolamike_config() {
         game_configs="  # No games detected. Add game paths manually if needed.\n"
     fi
 
+    # Try to find an existing MPI file for the TTW section
+    local mpi_filename
+    if mpi_filename=$(find_mpi_file); then
+        log_info "Using existing MPI file: $mpi_filename"
+    else
+        log_info "No MPI file found, using placeholder"
+        mpi_filename="YOUR_TTW_MPI_FILE.mpi"
+    fi
+
     # Create default config with found paths
     cat > "$config_path" << EOF
 # Auto-generated hoolamike.yaml
@@ -102,7 +181,7 @@ fixup:
 
 extras:
   tale_of_two_wastelands:
-    path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
+    path_to_ttw_mpi_file: "./$mpi_filename"
     variables:
       DESTINATION: "./TTW_Output"
 EOF
@@ -120,6 +199,13 @@ EOF
     else
         echo -e "${color_yellow}No games were detected.${color_reset}"
         echo -e "You will need to manually edit the config file to add your game paths."
+    fi
+    
+    if [ "$mpi_filename" != "YOUR_TTW_MPI_FILE.mpi" ]; then
+        echo -e "\n${color_green}Found TTW MPI file: $mpi_filename${color_reset}"
+    else
+        echo -e "\n${color_yellow}No TTW MPI file found yet.${color_reset}"
+        echo -e "Place your TTW .mpi file in $HOME/Hoolamike/ and the config will be updated automatically."
     fi
     
     echo -e "\n${color_yellow}Edit the file to complete configuration:${color_reset}"
@@ -278,6 +364,22 @@ configure_wabbajack_settings() {
         game_section="games:\n  # No games configured. Add them manually if needed.\n"
     fi
 
+    # Try to find the current MPI file or use existing one from config
+    local mpi_filename
+    if mpi_filename=$(find_mpi_file); then
+        log_info "Using found MPI file: $mpi_filename"
+    else
+        # Try to extract existing MPI filename from config
+        local existing_mpi=$(grep "path_to_ttw_mpi_file:" "$config_file" | sed -E 's/.*"\.\/([^"]+)".*/\1/')
+        if [ -n "$existing_mpi" ] && [ "$existing_mpi" != "YOUR_TTW_MPI_FILE.mpi" ]; then
+            mpi_filename="$existing_mpi"
+            log_info "Using existing MPI filename from config: $mpi_filename"
+        else
+            mpi_filename="YOUR_TTW_MPI_FILE.mpi"
+            log_info "No MPI file found, using placeholder"
+        fi
+    fi
+
     # Write a new configuration file
     cat > "$config_file" << EOF
 # Auto-generated hoolamike.yaml
@@ -298,13 +400,13 @@ fixup:
 
 extras:
   tale_of_two_wastelands:
-    path_to_ttw_mpi_file: "./Tale of Two Wastelands 3.3.3b.mpi"
+    path_to_ttw_mpi_file: "./$mpi_filename"
     variables:
       DESTINATION: "./TTW_Output"
 EOF
 
-    # Only add USERPROFILE if it was found
-    local userprofile_path=$(grep "USERPROFILE:" "$config_file.bak."* | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+    # Only add USERPROFILE if it was found in the backup
+    local userprofile_path=$(grep "USERPROFILE:" "$config_file.bak."* 2>/dev/null | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -n "$userprofile_path" ]; then
         echo "      USERPROFILE: \"$userprofile_path\"" >> "$config_file"
     fi
@@ -315,6 +417,12 @@ EOF
     echo -e "Downloads directory: ${color_green}$downloads_dir${color_reset}"
     echo -e "Installation path: ${color_green}$install_path${color_reset}"
     echo -e "Game resolution: ${color_green}$game_resolution${color_reset}"
+    
+    if [ "$mpi_filename" != "YOUR_TTW_MPI_FILE.mpi" ]; then
+        echo -e "TTW MPI file: ${color_green}$mpi_filename${color_reset}"
+    else
+        echo -e "TTW MPI file: ${color_yellow}Not configured yet${color_reset}"
+    fi
 
     if ! confirm_action "Apply these settings and continue?"; then
         echo -e "\n${color_yellow}Installation canceled.${color_reset}"
@@ -418,6 +526,7 @@ download_hoolamike() {
     echo -e "2. Download the latest 'TTW_*.7z' file"
     echo -e "3. Extract the .mpi file from the archive"
     echo -e "4. Copy the .mpi file to: ${color_blue}$hoolamike_dir/${color_reset}"
+    echo -e "\n${color_green}The script will automatically detect and use whatever MPI file you place there!${color_reset}"
 
     echo -e "\n${color_green}Hoolamike setup completed!${color_reset}"
     echo -e "You can now configure your mod setup in:"
@@ -435,6 +544,20 @@ run_hoolamike() {
     if [ ! -f "$HOME/Hoolamike/hoolamike" ]; then
         handle_error "Hoolamike is not installed. Please install it first." false
         return 1
+    fi
+
+    # Before running TTW installation, make sure the MPI file path is current
+    if [ "$command" == "tale-of-two-wastelands" ]; then
+        echo -e "${color_yellow}Checking for TTW MPI file...${color_reset}"
+        if update_mpi_file_in_config; then
+            echo -e "${color_green}MPI file configuration updated.${color_reset}"
+        else
+            echo -e "${color_yellow}No MPI file found or config update failed.${color_reset}"
+            echo -e "Make sure you have placed a TTW .mpi file in $HOME/Hoolamike/"
+            if ! confirm_action "Continue anyway?"; then
+                return 1
+            fi
+        fi
     fi
 
     print_section "Running Hoolamike"
@@ -763,6 +886,48 @@ fix_modorganizer_paths() {
     log_info "Path fixing completed successfully"
 
     return 0
+}
+
+# Wait for MPI file to be placed in the hoolamike directory
+wait_for_mpi_file() {
+    local hoolamike_dir="$HOME/Hoolamike"
+    local wait_time=0
+    local timeout=6000000  # 10000 minutes
+
+    print_section "Waiting for TTW MPI File"
+    echo -e "MPI File can be found here https://mod.pub/ttw/133/files"
+    echo -e "Waiting for you to download and place the TTW MPI file in:"
+    echo -e "${color_blue}$hoolamike_dir/${color_reset}"
+    echo -e "\nPress Ctrl+C at any time to cancel..."
+
+    # Wait for MPI file with timeout
+    while [ $wait_time -lt $timeout ]; do
+        # Check for any .mpi file
+        if ls "$hoolamike_dir"/*.mpi >/dev/null 2>&1; then
+            local found_mpi_file=$(find_mpi_file)
+            if [ -n "$found_mpi_file" ]; then
+                log_info "Found MPI file: $found_mpi_file"
+                echo -e "\n${color_green}Detected MPI file: $found_mpi_file${color_reset}"
+                
+                # Update the config file with the new MPI file
+                update_mpi_file_in_config
+                
+                return 0
+            fi
+        fi
+
+        # Show progress every 15 seconds
+        if (( wait_time % 15 == 0 )); then
+            echo -n "."
+        fi
+
+        sleep 1
+        ((wait_time++))
+    done
+
+    # Timeout occurred
+    handle_error "Timed out waiting for MPI file. Please try again after downloading the file." false
+    return 1
 }
 
 # Function to run custom Hoolamike commands
