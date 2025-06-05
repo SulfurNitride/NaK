@@ -8,8 +8,11 @@
 find_mpi_file() {
     local hoolamike_dir="$HOME/Hoolamike"
     
-    # Look for any .mpi file in the directory
-    local mpi_files=($(find "$hoolamike_dir" -maxdepth 1 -name "*.mpi" 2>/dev/null))
+    # Look for any .mpi file in the directory - properly handle filenames with spaces
+    local mpi_files=()
+    while IFS= read -r -d $'\0' file; do
+        mpi_files+=("$file")
+    done < <(find "$hoolamike_dir" -maxdepth 1 -name "*.mpi" -print0 2>/dev/null)
     
     if [ ${#mpi_files[@]} -eq 0 ]; then
         log_info "No MPI file found in $hoolamike_dir"
@@ -902,8 +905,9 @@ wait_for_mpi_file() {
 
     # Wait for MPI file with timeout
     while [ $wait_time -lt $timeout ]; do
-        # Check for any .mpi file
-        if ls "$hoolamike_dir"/*.mpi >/dev/null 2>&1; then
+        # Check for any .mpi file using space-safe method
+        local mpi_count=$(find "$hoolamike_dir" -maxdepth 1 -name "*.mpi" 2>/dev/null | wc -l)
+        if [ "$mpi_count" -gt 0 ]; then
             local found_mpi_file=$(find_mpi_file)
             if [ -n "$found_mpi_file" ]; then
                 log_info "Found MPI file: $found_mpi_file"
