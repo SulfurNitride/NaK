@@ -32,6 +32,63 @@ read_with_tab_completion() {
     eval "$var_name=\"$input_value\""
 }
 
+# Get all Steam games (both native and non-Steam) - based on Limo setup logic
+get_all_steam_games() {
+    print_section "Fetching Steam Games"
+    log_info "Scanning for all Steam games via protontricks"
+
+    echo "Scanning for Steam games..."
+    local protontricks_output
+    if ! protontricks_output=$($protontricks_cmd -l 2>&1); then
+        handle_error "Failed to run protontricks. Check log for details." false
+        return 1
+    fi
+
+    local games=""
+    local count=0
+    local collecting=false
+
+    while IFS= read -r line; do
+        # Start collecting games after this line
+        if [[ "$line" == "Found the following games:"* ]]; then
+            collecting=true
+            continue
+        fi
+
+        # Stop collecting at the note line
+        if [[ "$line" == "To run Protontricks"* ]]; then
+            break
+        fi
+
+        # Process game lines
+        if [ "$collecting" = true ] && [[ "$line" =~ (.*)\(([0-9]+)\) ]]; then
+            local name="${BASH_REMATCH[1]}"
+            local appid="${BASH_REMATCH[2]}"
+
+            # Trim whitespace from name
+            name=$(echo "$name" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+            # Skip SteamVR, Proton, etc. but include both Steam and non-Steam games
+            if [[ "$name" != *"SteamVR"* ]] &&
+               [[ "$name" != *"Proton"* ]] &&
+               [[ "$name" != *"Steam Linux Runtime"* ]]; then
+                games+="$appid:$name"$'\n'
+                ((count++))
+            fi
+        fi
+    done <<< "$protontricks_output"
+
+    IFS=$'\n' read -d '' -ra game_array <<< "$games"
+
+    if [ ${#game_array[@]} -eq 0 ]; then
+        handle_error "No Steam games found! Make sure you've launched your games at least once." false
+        return 1
+    fi
+
+    echo "Found ${#game_array[@]} Steam games."
+    return 0
+}
+
 # Find a specific game directory in Steam libraries
 find_game_directory() {
     local game_name="$1"
