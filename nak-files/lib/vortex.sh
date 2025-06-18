@@ -116,6 +116,7 @@ download_vortex() {
     else
         # We need to use Proton - which requires a prefix
         echo -e "\n${color_yellow}No system Wine found. We need to select a game to use its Proton prefix.${color_reset}"
+        check_dependencies
         get_non_steam_games
         if ! select_game; then
             end_progress_tracking "$tracker" false
