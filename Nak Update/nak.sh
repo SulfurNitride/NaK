@@ -1,21 +1,14 @@
 #!/bin/bash
 # ===================================================================
-# NaK (Linux Modding Helper) - Redesigned with Whiptail UI
-# Version: 2.0.0
+# NaK (Linux Modding Helper) - Beautiful Gum UI Version
+# Version: 3.0.0
 # ===================================================================
 
 # Script metadata
-readonly SCRIPT_VERSION="2.0.0"
+readonly SCRIPT_VERSION="3.0.0"
 readonly SCRIPT_NAME="NaK - Linux Modding Helper"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Color definitions for terminal output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly CYAN='\033[0;36m'
-readonly NC='\033[0m' # No Color
+readonly GUM_BINARY="$SCRIPT_DIR/bin/gum"
 
 # Configuration
 readonly CONFIG_DIR="$HOME/.config/nak"
@@ -29,65 +22,111 @@ declare -g SELECTED_APPID=""
 declare -g STEAM_ROOT=""
 declare -g PROTONTRICKS_CMD=""
 
+# Gum Theme Setup
+export GUM_INPUT_CURSOR_FOREGROUND="#00FF00"
+export GUM_INPUT_PROMPT_FOREGROUND="#0080FF"
+export GUM_STYLE_FOREGROUND="212"
+export GUM_STYLE_BORDER="rounded"
+export GUM_CONFIRM_SELECTED_FOREGROUND="230"
+export GUM_CHOOSE_CURSOR_FOREGROUND="#00FF00"
+export GUM_FILTER_MATCH_FOREGROUND="#00FF00"
+
 # ===================================================================
 # Core Functions
 # ===================================================================
 
-# Initialize the script
+# Initialize
 init() {
-    # Create necessary directories
+    # Create directories
     mkdir -p "$CONFIG_DIR" "$TEMP_DIR"
 
-    # Set up logging
-    exec 2> >(tee -a "$LOG_FILE")
-    echo "[$(date)] Starting $SCRIPT_NAME v$SCRIPT_VERSION" >> "$LOG_FILE"
+    # Setup logging
+    touch "$LOG_FILE"
+    log "Starting $SCRIPT_NAME v$SCRIPT_VERSION"
+
+    # Check for gum
+    if [[ ! -f "$GUM_BINARY" ]]; then
+        echo "Gum not found. Installing..."
+        install_gum
+    fi
 
     # Check dependencies
     check_dependencies
 
-    # Find Steam root
+    # Find Steam
     STEAM_ROOT=$(find_steam_root)
 
-    # Load configuration
+    # Load config
     load_config
 
-    # Trap for cleanup
+    # Trap cleanup
     trap cleanup EXIT INT TERM
 }
 
-# Clean up temporary files
-cleanup() {
-    rm -rf "$TEMP_DIR"
-    echo "[$(date)] Cleanup completed" >> "$LOG_FILE"
+# Install gum binary
+install_gum() {
+    local gum_url="https://github.com/charmbracelet/gum/releases/download/v0.16.1/gum_0.16.1_Linux_x86_64.tar.gz"
+    local temp_file="$TEMP_DIR/gum.tar.gz"
+
+    mkdir -p "$SCRIPT_DIR/bin"
+
+    echo "Downloading gum..."
+    if curl -L -o "$temp_file" "$gum_url"; then
+        tar -xzf "$temp_file" -C "$SCRIPT_DIR/bin" gum
+        chmod +x "$GUM_BINARY"
+        echo "Gum installed successfully!"
+    else
+        echo "Failed to download gum. Some features may not work properly."
+        sleep 2
+    fi
 }
 
-# Check for required dependencies
+# Logging
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+# Cleanup
+cleanup() {
+    rm -rf "$TEMP_DIR"
+    log "Cleanup completed"
+}
+
+# Check dependencies
 check_dependencies() {
-    local deps=("whiptail" "curl" "jq" "protontricks")
     local missing=()
 
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            # Special case for protontricks (can be flatpak)
-            if [[ "$dep" == "protontricks" ]] && flatpak list --app 2>/dev/null | grep -q "com.github.Matoking.protontricks"; then
-                PROTONTRICKS_CMD="flatpak run com.github.Matoking.protontricks"
-                continue
+    # Check for protontricks
+    if command -v protontricks &> /dev/null; then
+        PROTONTRICKS_CMD="protontricks"
+    elif flatpak list --app 2>/dev/null | grep -q "com.github.Matoking.protontricks"; then
+        PROTONTRICKS_CMD="flatpak run com.github.Matoking.protontricks"
+    else
+        missing+=("protontricks")
+    fi
+
+    # Check other dependencies
+    for cmd in curl jq 7z; do
+        if ! command -v "$cmd" &> /dev/null; then
+            # Check alternatives for 7z
+            if [[ "$cmd" == "7z" ]]; then
+                command -v 7za &> /dev/null || command -v p7zip &> /dev/null || missing+=("p7zip-full")
+            else
+                missing+=("$cmd")
             fi
-            missing+=("$dep")
         fi
     done
 
-    # Set protontricks command if not flatpak
-    [[ -z "$PROTONTRICKS_CMD" ]] && PROTONTRICKS_CMD="protontricks"
-
     if [[ ${#missing[@]} -gt 0 ]]; then
-        whiptail --title "Missing Dependencies" --msgbox \
-            "Please install: ${missing[*]}\n\nExample:\nsudo apt install ${missing[*]}" 10 60
+        $GUM_BINARY style --foreground 196 --border double --padding "1 2" \
+            "Missing dependencies: ${missing[*]}" \
+            "" \
+            "Install with: sudo apt install ${missing[*]}"
         exit 1
     fi
 }
 
-# Find Steam root directory
+# Find Steam root
 find_steam_root() {
     local candidates=(
         "$HOME/.local/share/Steam"
@@ -102,7 +141,7 @@ find_steam_root() {
         fi
     done
 
-    whiptail --title "Error" --msgbox "Steam installation not found!" 8 50
+    $GUM_BINARY style --foreground 196 "Steam installation not found!"
     exit 1
 }
 
@@ -111,7 +150,6 @@ load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
         source "$CONFIG_FILE"
     else
-        # Create default config
         cat > "$CONFIG_FILE" << EOF
 # NaK Configuration
 DEFAULT_SCALING=96
@@ -121,12 +159,12 @@ EOF
     fi
 }
 
-# Save configuration value
+# Save configuration
 save_config() {
     local key="$1"
     local value="$2"
 
-    if grep -q "^$key=" "$CONFIG_FILE"; then
+    if grep -q "^$key=" "$CONFIG_FILE" 2>/dev/null; then
         sed -i "s/^$key=.*/$key=$value/" "$CONFIG_FILE"
     else
         echo "$key=$value" >> "$CONFIG_FILE"
@@ -137,191 +175,227 @@ save_config() {
 # UI Functions
 # ===================================================================
 
+# Create banner
+create_banner() {
+    $GUM_BINARY style \
+        --foreground "#FF6B6B" \
+        --border double \
+        --border-foreground "#45B7D1" \
+        --align center \
+        --width 60 \
+        --margin "1 2" \
+        --padding "2 4" \
+        --bold \
+        "$SCRIPT_NAME v$SCRIPT_VERSION"
+}
+
 # Show main menu
 show_main_menu() {
     while true; do
-        local choice=$(whiptail --title "$SCRIPT_NAME v$SCRIPT_VERSION" \
-            --menu "Choose an option:" 20 70 12 \
-            "1" "Mod Organizer 2 Setup" \
-            "2" "Vortex Setup" \
-            "3" "Limo Setup (Native Linux)" \
-            "4" "Tale of Two Wastelands" \
-            "5" "Hoolamike Tools" \
-            "6" "Sky Texture Optimizer" \
-            "7" "Game-Specific Fixes" \
-            "8" "Remove NXM Handlers" \
-            "9" "Settings" \
-            "0" "Exit" \
-            3>&1 1>&2 2>&3)
+        clear
+        create_banner
 
-        case $choice in
-            1) mo2_menu ;;
-            2) vortex_menu ;;
-            3) limo_menu ;;
-            4) ttw_menu ;;
-            5) hoolamike_menu ;;
-            6) sky_tex_menu ;;
-            7) game_fixes_menu ;;
-            8) remove_nxm_handlers ;;
-            9) settings_menu ;;
-            0|"") exit 0 ;;
+        local choice=$($GUM_BINARY choose \
+            --cursor.foreground "#00FF00" \
+            --selected.foreground "#00FF00" \
+            --selected.bold \
+            "🎮 Mod Organizer 2 Setup" \
+            "🔧 Vortex Setup" \
+            "🐧 Limo Setup (Native Linux)" \
+            "🏜️  Tale of Two Wastelands" \
+            "🛠️  Hoolamike Tools" \
+            "🖼️  Sky Texture Optimizer" \
+            "🎯 Game-Specific Fixes" \
+            "🗑️  Remove NXM Handlers" \
+            "📊 View Logs" \
+            "❌ Exit")
+
+        case "$choice" in
+            "🎮 Mod Organizer 2 Setup") mo2_menu ;;
+            "🔧 Vortex Setup") vortex_menu ;;
+            "🐧 Limo Setup"*) limo_menu ;;
+            "🏜️  Tale of Two Wastelands") ttw_menu ;;
+            "🛠️  Hoolamike Tools") hoolamike_menu ;;
+            "🖼️  Sky Texture Optimizer") sky_tex_menu ;;
+            "🎯 Game-Specific Fixes") game_fixes_menu ;;
+            "🗑️  Remove NXM Handlers") remove_nxm_handlers ;;
+            "📊 View Logs") view_logs ;;
+            "❌ Exit"|"")
+                $GUM_BINARY style --foreground 46 "Thanks for using NaK!"
+                exit 0
+                ;;
         esac
     done
 }
 
-# Progress bar helper
-show_progress() {
-    local title="$1"
-    local text="$2"
-    local percent="$3"
-
-    echo "$percent" | whiptail --gauge "$text" 8 70 0 --title "$title"
-}
-
 # ===================================================================
-# Game Detection Functions
-# ===================================================================
-
-# Get list of Steam games
-get_steam_games() {
-    local games=()
-    local output=$($PROTONTRICKS_CMD -l 2>&1)
-
-    while IFS= read -r line; do
-        if [[ "$line" =~ (.*)\(([0-9]+)\) ]]; then
-            local name="${BASH_REMATCH[1]}"
-            local appid="${BASH_REMATCH[2]}"
-            name=$(echo "$name" | xargs) # Trim whitespace
-
-            # Filter out system entries
-            if [[ ! "$name" =~ (SteamVR|Proton|Steam Linux Runtime) ]]; then
-                games+=("$appid" "$name")
-            fi
-        fi
-    done <<< "$output"
-
-    printf '%s\n' "${games[@]}"
-}
-
-# Select a game
-select_game() {
-    local games=($(get_steam_games))
-
-    if [[ ${#games[@]} -eq 0 ]]; then
-        whiptail --title "Error" --msgbox "No games found!" 8 50
-        return 1
-    fi
-
-    local choice=$(whiptail --title "Select Game" \
-        --menu "Choose a game:" 20 70 12 \
-        "${games[@]}" \
-        3>&1 1>&2 2>&3)
-
-    if [[ -n "$choice" ]]; then
-        SELECTED_APPID="$choice"
-        # Find the game name
-        for ((i=0; i<${#games[@]}; i+=2)); do
-            if [[ "${games[i]}" == "$choice" ]]; then
-                SELECTED_GAME="${games[i+1]}"
-                break
-            fi
-        done
-        return 0
-    fi
-    return 1
-}
-
-# ===================================================================
-# Mod Organizer 2 Functions
+# MO2 Functions
 # ===================================================================
 
 mo2_menu() {
     while true; do
-        local choice=$(whiptail --title "Mod Organizer 2 Setup" \
-            --menu "Choose an option:" 16 60 8 \
-            "1" "Download Latest MO2" \
-            "2" "Setup Existing MO2" \
-            "3" "Install Dependencies" \
-            "4" "Configure NXM Handler" \
-            "5" "Configure DPI Scaling" \
-            "B" "Back to Main Menu" \
-            3>&1 1>&2 2>&3)
+        clear
+        $GUM_BINARY style --foreground 212 --border normal --padding "1 2" \
+            "Mod Organizer 2 Setup"
 
-        case $choice in
-            1) download_mo2 ;;
-            2) setup_existing_mo2 ;;
-            3) select_game && install_dependencies ;;
-            4) select_game && setup_nxm_handler ;;
-            5) select_game && setup_dpi_scaling ;;
-            B|"") return ;;
+        local choice=$($GUM_BINARY choose \
+            "📥 Download Latest MO2" \
+            "📁 Setup Existing MO2" \
+            "💉 Install Dependencies" \
+            "🔗 Configure NXM Handler" \
+            "🖥️  Configure DPI Scaling" \
+            "⬅️  Back to Main Menu")
+
+        case "$choice" in
+            "📥 Download Latest MO2") download_mo2 ;;
+            "📁 Setup Existing MO2") setup_existing_mo2 ;;
+            "💉 Install Dependencies") select_game && install_dependencies ;;
+            "🔗 Configure NXM Handler") select_game && setup_nxm_handler ;;
+            "🖥️  Configure DPI Scaling") select_game && setup_dpi_scaling ;;
+            "⬅️  Back"*|"") return ;;
         esac
     done
 }
 
 # Download MO2
 download_mo2() {
-    local temp_file="$TEMP_DIR/mo2_release.json"
+    log "Starting MO2 download"
 
-    # Show progress while fetching release info
-    {
-        echo "10"
-        echo "# Fetching latest release info..."
+    # Get installation directory
+    local install_base=$($GUM_BINARY file --directory)
+    [[ -z "$install_base" ]] && return
 
-        curl -s https://api.github.com/repos/ModOrganizer2/modorganizer/releases/latest > "$temp_file"
+    local install_dir="$install_base/ModOrganizer2"
 
-        echo "30"
-        echo "# Parsing release data..."
-
-        local version=$(jq -r '.tag_name' "$temp_file" | sed 's/^v//')
-        local download_url=$(jq -r '.assets[] | select(.name | test("^Mod\\.Organizer-[0-9.]+\\.7z$")) | .browser_download_url' "$temp_file")
-
-        if [[ -z "$download_url" ]]; then
-            whiptail --title "Error" --msgbox "Could not find MO2 download URL" 8 50
-            return 1
+    # Check if we need to rename
+    if [[ -d "$install_dir" ]]; then
+        if $GUM_BINARY confirm "Directory exists. Overwrite?"; then
+            rm -rf "$install_dir"
+        else
+            local new_name=$($GUM_BINARY input --placeholder "Enter new directory name" --value "ModOrganizer2_new")
+            install_dir="$install_base/$new_name"
         fi
+    fi
 
-        echo "40"
-        echo "# Preparing download..."
+    # Fetch release info
+    local release_info
+    release_info=$($GUM_BINARY spin --title "Fetching latest release info..." --show-output -- \
+        curl -s https://api.github.com/repos/ModOrganizer2/modorganizer/releases/latest)
 
-        local install_dir=$(whiptail --inputbox "Install directory:" 8 60 "$HOME/ModOrganizer2" 3>&1 1>&2 2>&3)
-        [[ -z "$install_dir" ]] && return
+    local version=$(echo "$release_info" | jq -r '.tag_name' | sed 's/^v//')
+    local download_url=$(echo "$release_info" | jq -r '.assets[] | select(.name | test("^Mod\\.Organizer-[0-9.]+\\.7z$")) | .browser_download_url')
 
-        mkdir -p "$install_dir"
-        local filename=$(basename "$download_url")
-        local archive_path="$TEMP_DIR/$filename"
+    if [[ -z "$download_url" ]]; then
+        $GUM_BINARY style --foreground 196 "Could not find MO2 download URL!"
+        return 1
+    fi
 
-        echo "50"
-        echo "# Downloading MO2 v$version..."
+    $GUM_BINARY style --foreground 46 "Found MO2 version: $version"
 
+    # Confirm installation
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "Version: $version" \
+        "Install to: $install_dir"
+
+    $GUM_BINARY confirm "Proceed with installation?" || return
+
+    # Download
+    local filename="MO2-$version.7z"
+    local archive_path="$TEMP_DIR/$filename"
+
+    $GUM_BINARY spin --title "Downloading MO2 v$version..." --show-output -- \
         curl -L -o "$archive_path" "$download_url"
 
-        echo "80"
-        echo "# Extracting..."
+    # Extract
+    mkdir -p "$install_dir"
 
-        # Extract based on available tools
-        if command -v 7z &> /dev/null; then
-            7z x "$archive_path" -o"$install_dir" -y
-        else
-            # Fallback to Python py7zr if needed
-            install_py7zr_if_needed
-            python3 -m py7zr x "$archive_path" "$install_dir"
-        fi
+    $GUM_BINARY spin --title "Extracting MO2..." -- \
+        7z x "$archive_path" -o"$install_dir" -y
 
-        echo "100"
-        echo "# Installation complete!"
+    $GUM_BINARY style --foreground 46 --border double --padding "1 2" \
+        "✓ MO2 v$version installed successfully!" \
+        "" \
+        "Location: $install_dir"
 
-    } | whiptail --title "Downloading MO2" --gauge "Starting download..." 8 70 0
+    # Add to Steam?
+    if $GUM_BINARY confirm "Add MO2 to Steam?"; then
+        add_to_steam "Mod Organizer 2" "$install_dir/ModOrganizer.exe" "$install_dir"
+    fi
 
-    whiptail --title "Success" --msgbox "MO2 v$version installed to:\n$install_dir" 10 60
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
 
-    # Offer to add to Steam
-    if whiptail --title "Add to Steam?" --yesno "Add MO2 to Steam as non-Steam game?" 8 50; then
-        add_to_steam "Mod Organizer 2" "$install_dir/ModOrganizer.exe"
+# Setup existing MO2
+setup_existing_mo2() {
+    local mo2_exe=$($GUM_BINARY file)
+    [[ -z "$mo2_exe" ]] && return
+
+    # Check if user wants to rename
+    local exe_name=$(basename "$mo2_exe")
+    if [[ "$exe_name" != "ModOrganizer.exe" ]]; then
+        $GUM_BINARY style --foreground 196 "Please select ModOrganizer.exe!"
+        $GUM_BINARY input --placeholder "Press Enter to continue..."
+        return
+    fi
+
+    local mo2_dir=$(dirname "$mo2_exe")
+
+    $GUM_BINARY style --foreground 46 --border normal --padding "1 2" \
+        "Found MO2 at:" \
+        "$mo2_dir"
+
+    if $GUM_BINARY confirm "Add this MO2 to Steam?"; then
+        add_to_steam "Mod Organizer 2" "$mo2_exe" "$mo2_dir"
     fi
 }
 
 # ===================================================================
-# Proton/Wine Functions
+# Game Selection
+# ===================================================================
+
+select_game() {
+    $GUM_BINARY style --foreground 99 "Scanning for games..."
+
+    local games_output=$($PROTONTRICKS_CMD -l 2>&1)
+    local -a games=()
+
+    while IFS= read -r line; do
+        if [[ "$line" =~ (.*)\(([0-9]+)\) ]]; then
+            local name="${BASH_REMATCH[1]}"
+            local appid="${BASH_REMATCH[2]}"
+            name=$(echo "$name" | xargs)
+
+            if [[ ! "$name" =~ (SteamVR|Proton|Steam Linux Runtime) ]]; then
+                games+=("$appid:$name")
+            fi
+        fi
+    done <<< "$games_output"
+
+    if [[ ${#games[@]} -eq 0 ]]; then
+        $GUM_BINARY style --foreground 196 "No games found!"
+        return 1
+    fi
+
+    # Create display array
+    local -a display_games=()
+    for game in "${games[@]}"; do
+        IFS=':' read -r appid name <<< "$game"
+        display_games+=("$name [$appid]")
+    done
+
+    local selected=$($GUM_BINARY filter --placeholder "Type to search games..." <<< "$(printf '%s\n' "${display_games[@]}")")
+    [[ -z "$selected" ]] && return 1
+
+    # Extract appid from selection
+    SELECTED_APPID=$(echo "$selected" | grep -oP '\[\K[0-9]+(?=\])')
+    SELECTED_GAME=$(echo "$selected" | sed 's/ \[[0-9]*\]$//')
+
+    log "Selected game: $SELECTED_GAME (AppID: $SELECTED_APPID)"
+    return 0
+}
+
+# ===================================================================
+# Dependencies Installation
 # ===================================================================
 
 install_dependencies() {
@@ -337,42 +411,82 @@ install_dependencies() {
         "dotnet8"
     )
 
-    # Add game-specific components
+    # Game-specific components
     case "$SELECTED_APPID" in
-        22380) # Fallout NV
-            components+=("d3dx9")
-            ;;
-        976620) # Enderal SE
-            components+=("d3dx11_43" "d3dcompiler_43" "dotnet6" "dotnet7")
-            ;;
+        22380) components+=("d3dx9") ;; # Fallout NV
+        976620) components+=("d3dx11_43" "d3dcompiler_43" "dotnet6" "dotnet7") ;; # Enderal
     esac
 
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "Installing dependencies for:" \
+        "$SELECTED_GAME"
+
+    $GUM_BINARY confirm "Install ${#components[@]} components?" || return
+
+    # Install with progress
     local total=${#components[@]}
-    local count=0
+    local current=0
 
-    {
-        for comp in "${components[@]}"; do
-            ((count++))
-            local percent=$((count * 100 / total))
-            echo "$percent"
-            echo "# Installing $comp..."
+    for comp in "${components[@]}"; do
+        ((current++))
 
-            $PROTONTRICKS_CMD --no-bwrap "$SELECTED_APPID" -q "$comp" 2>&1 | tail -n 1
-        done
-    } | whiptail --title "Installing Dependencies" --gauge "Starting installation..." 8 70 0
+        $GUM_BINARY style --foreground 99 "[$current/$total] Installing: $comp"
 
-    whiptail --title "Complete" --msgbox "Dependencies installed for $SELECTED_GAME" 8 50
+        $GUM_BINARY spin --title "Installing $comp..." -- \
+            $PROTONTRICKS_CMD --no-bwrap "$SELECTED_APPID" -q "$comp"
+    done
+
+    # Enable dotfiles visibility
+    local prefix_path="$STEAM_ROOT/steamapps/compatdata/$SELECTED_APPID/pfx"
+    if [[ -d "$prefix_path" ]]; then
+        $GUM_BINARY spin --title "Enabling hidden files visibility..." -- \
+            run_with_proton_wine "$prefix_path" "reg" "add" "HKCU\\Software\\Wine" "/v" "ShowDotFiles" "/d" "Y" "/f"
+    fi
+
+    $GUM_BINARY style --foreground 46 --border double --padding "1 2" \
+        "✓ Dependencies installed successfully!"
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+# Run with Proton Wine
+run_with_proton_wine() {
+    local prefix_path="$1"
+    local command="$2"
+    shift 2
+
+    local proton_path=$(find_proton_path)
+
+    env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT" \
+        STEAM_COMPAT_DATA_PATH="$(dirname "$prefix_path")" \
+        "$proton_path" run "$command" "$@"
+}
+
+# Find Proton
+find_proton_path() {
+    find "$STEAM_ROOT" -name "proton" -path "*/Proton - Experimental/*" 2>/dev/null | head -1
 }
 
 # ===================================================================
-# NXM Handler Functions
+# NXM Handler
 # ===================================================================
 
 setup_nxm_handler() {
     [[ -z "$SELECTED_GAME" ]] && return
 
-    local handler_path=$(whiptail --inputbox "Enter path to nxmhandler.exe:" 10 60 3>&1 1>&2 2>&3)
-    [[ -z "$handler_path" || ! -f "$handler_path" ]] && return
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "Setting up NXM handler for:" \
+        "$SELECTED_GAME"
+
+    local handler_path=$($GUM_BINARY file)
+    [[ -z "$handler_path" ]] && return
+
+    # Validate file
+    if [[ "$(basename "$handler_path")" != "nxmhandler.exe" ]]; then
+        if ! $GUM_BINARY confirm "This doesn't look like nxmhandler.exe. Continue anyway?"; then
+            return
+        fi
+    fi
 
     local proton_path=$(find_proton_path)
     local compat_path="$STEAM_ROOT/steamapps/compatdata/$SELECTED_APPID"
@@ -392,20 +506,322 @@ EOF
 
     chmod +x "$desktop_file"
     xdg-mime default mo2-nxm-handler.desktop x-scheme-handler/nxm
-    update-desktop-database "$HOME/.local/share/applications"
+    update-desktop-database "$HOME/.local/share/applications" 2>/dev/null
 
-    whiptail --title "Success" --msgbox "NXM handler configured for $SELECTED_GAME" 8 50
+    $GUM_BINARY style --foreground 46 --border double --padding "1 2" \
+        "✓ NXM handler configured successfully!"
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
 }
 
-# Find Proton installation
-find_proton_path() {
-    local proton_dir="$STEAM_ROOT/steamapps/common/Proton - Experimental/proton"
-    if [[ -f "$proton_dir" ]]; then
-        echo "$proton_dir"
+# ===================================================================
+# DPI Scaling
+# ===================================================================
+
+setup_dpi_scaling() {
+    [[ -z "$SELECTED_GAME" ]] && return
+
+    local scale=$($GUM_BINARY choose \
+        "96 - Standard (100%)" \
+        "120 - Medium (125%)" \
+        "144 - Large (150%)" \
+        "192 - Extra Large (200%)" \
+        "Custom")
+
+    case "$scale" in
+        "96 -"*) scale=96 ;;
+        "120 -"*) scale=120 ;;
+        "144 -"*) scale=144 ;;
+        "192 -"*) scale=192 ;;
+        "Custom")
+            scale=$($GUM_BINARY input --placeholder "Enter DPI value (96-240)" --value "120")
+            ;;
+        *) return ;;
+    esac
+
+    local prefix_path="$STEAM_ROOT/steamapps/compatdata/$SELECTED_APPID/pfx"
+
+    $GUM_BINARY spin --title "Applying DPI scaling..." -- bash -c "
+        run_with_proton_wine '$prefix_path' reg add 'HKCU\\Control Panel\\Desktop' /v LogPixels /t REG_DWORD /d $scale /f
+        run_with_proton_wine '$prefix_path' reg add 'HKCU\\Software\\Wine\\X11 Driver' /v LogPixels /t REG_DWORD /d $scale /f
+    "
+
+    $GUM_BINARY style --foreground 46 --border double --padding "1 2" \
+        "✓ DPI scaling set to $scale" \
+        "" \
+        "Restart the application for changes to take effect"
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+# ===================================================================
+# Additional Menus (Placeholders)
+# ===================================================================
+
+vortex_menu() {
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "Vortex functionality coming soon!"
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+limo_menu() {
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "Limo functionality coming soon!"
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+ttw_menu() {
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "TTW functionality coming soon!"
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+hoolamike_menu() {
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "Hoolamike functionality coming soon!"
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+sky_tex_menu() {
+    $GUM_BINARY style --border normal --padding "1 2" \
+        "Sky Texture Optimizer functionality coming soon!"
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+game_fixes_menu() {
+    while true; do
+        clear
+        $GUM_BINARY style --foreground 212 --border normal --padding "1 2" \
+            "Game-Specific Fixes"
+
+        local choice=$($GUM_BINARY choose \
+            "🏜️  Fallout New Vegas" \
+            "🏔️  Enderal Special Edition" \
+            "🎲 Baldur's Gate 3" \
+            "📋 All Games Advice" \
+            "⬅️  Back to Main Menu")
+
+        case "$choice" in
+            "🏜️  Fallout New Vegas") fnv_fixes ;;
+            "🏔️  Enderal Special Edition") enderal_fixes ;;
+            "🎲 Baldur's Gate 3") bg3_fixes ;;
+            "📋 All Games Advice") show_all_advice ;;
+            "⬅️  Back"*|"") return ;;
+        esac
+    done
+}
+
+fnv_fixes() {
+    local compatdata=$(find_game_compatdata "22380")
+
+    if [[ -n "$compatdata" ]]; then
+        $GUM_BINARY style --border double --padding "1 2" \
+            "Fallout New Vegas Launch Options:" \
+            "" \
+            "STEAM_COMPAT_DATA_PATH=\"$compatdata\" %command%"
     else
-        # Search in other library folders
-        find "$STEAM_ROOT" -name "proton" -path "*/Proton - Experimental/*" 2>/dev/null | head -1
+        $GUM_BINARY style --foreground 196 \
+            "Fallout New Vegas not found or not run yet!"
     fi
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+enderal_fixes() {
+    local compatdata=$(find_game_compatdata "976620")
+
+    if [[ -n "$compatdata" ]]; then
+        $GUM_BINARY style --border double --padding "1 2" \
+            "Enderal SE Launch Options:" \
+            "" \
+            "STEAM_COMPAT_DATA_PATH=\"$compatdata\" %command%"
+    else
+        $GUM_BINARY style --foreground 196 \
+            "Enderal SE not found or not run yet!"
+    fi
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+bg3_fixes() {
+    local compatdata=$(find_game_compatdata "1086940")
+
+    if [[ -n "$compatdata" ]]; then
+        $GUM_BINARY style --border double --padding "1 2" \
+            "Baldur's Gate 3 Launch Options:" \
+            "" \
+            "WINEDLLOVERRIDES=\"DWrite.dll=n,b\" %command%"
+    else
+        $GUM_BINARY style --foreground 196 \
+            "Baldur's Gate 3 not found or not run yet!"
+    fi
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+show_all_advice() {
+    $GUM_BINARY style --border double --padding "1 2" \
+        "Checking all games..." \
+        "This feature is under development"
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+remove_nxm_handlers() {
+    local handlers=(
+        "$HOME/.local/share/applications/mo2-nxm-handler.desktop"
+        "$HOME/.local/share/applications/vortex-nxm-handler.desktop"
+        "$HOME/.local/share/applications/modorganizer2-nxm-handler.desktop"
+    )
+
+    local found=0
+    for handler in "${handlers[@]}"; do
+        [[ -f "$handler" ]] && rm -f "$handler" && ((found++))
+    done
+
+    if [[ $found -gt 0 ]]; then
+        update-desktop-database "$HOME/.local/share/applications" 2>/dev/null
+        $GUM_BINARY style --foreground 46 "✓ Removed $found NXM handler(s)"
+    else
+        $GUM_BINARY style --foreground 99 "No NXM handlers found"
+    fi
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
+}
+
+view_logs() {
+    if [[ -f "$LOG_FILE" ]]; then
+        $GUM_BINARY pager < "$LOG_FILE"
+    else
+        $GUM_BINARY style --foreground 196 "No log file found"
+        $GUM_BINARY input --placeholder "Press Enter to continue..."
+    fi
+}
+
+# ===================================================================
+# Utility Functions
+# ===================================================================
+
+find_game_compatdata() {
+    local appid="$1"
+    local paths=("$STEAM_ROOT")
+
+    # Check library folders
+    local libraryfolders="$STEAM_ROOT/steamapps/libraryfolders.vdf"
+    if [[ -f "$libraryfolders" ]]; then
+        while read -r line; do
+            [[ "$line" == *\"path\"* ]] && paths+=("$(echo "$line" | awk -F'"' '{print $4}')")
+        done < "$libraryfolders"
+    fi
+
+    # Search for compatdata
+    for path in "${paths[@]}"; do
+        local compatdata="$path/steamapps/compatdata/$appid"
+        [[ -d "$compatdata" ]] && echo "$compatdata" && return 0
+    done
+
+    return 1
+}
+
+# Add to Steam
+add_to_steam() {
+    local name="$1"
+    local exe_path="$2"
+    local start_dir="${3:-$(dirname "$exe_path")}"
+
+    log "Adding $name to Steam"
+
+    # Check Python
+    if ! command -v python3 &> /dev/null; then
+        $GUM_BINARY style --foreground 196 "Python 3 required to add games to Steam!"
+        return 1
+    fi
+
+    # Install vdf if needed
+    if ! python3 -c "import vdf" 2>/dev/null; then
+        $GUM_BINARY spin --title "Installing vdf module..." -- \
+            python3 -m pip install --user vdf
+    fi
+
+    # Run Python script to add to Steam
+    local result=$($GUM_BINARY spin --title "Adding to Steam..." --show-output -- python3 - << EOF
+import sys
+import os
+import vdf
+import time
+
+steam_root = "$STEAM_ROOT"
+game_name = "$name"
+exe_path = "$exe_path"
+start_dir = "$start_dir"
+
+app_id = abs(hash(game_name + exe_path)) % 1000000000
+shortcuts_path = os.path.join(steam_root, "userdata")
+
+success = False
+for user_dir in os.listdir(shortcuts_path):
+    shortcuts_file = os.path.join(shortcuts_path, user_dir, "config", "shortcuts.vdf")
+    os.makedirs(os.path.dirname(shortcuts_file), exist_ok=True)
+
+    data = {"shortcuts": {}}
+    if os.path.exists(shortcuts_file):
+        try:
+            with open(shortcuts_file, 'rb') as f:
+                loaded = vdf.binary_load(f)
+                if loaded and "shortcuts" in loaded:
+                    data = loaded
+        except:
+            pass
+
+    # Check if already exists
+    exists = False
+    for shortcut in data["shortcuts"].values():
+        if shortcut.get("AppName") == game_name:
+            exists = True
+            break
+
+    if not exists:
+        idx = str(len(data["shortcuts"]))
+        data["shortcuts"][idx] = {
+            "appid": app_id,
+            "AppName": game_name,
+            "Exe": f'"{exe_path}"',
+            "StartDir": f'"{start_dir}"',
+            "icon": "",
+            "ShortcutPath": "",
+            "LaunchOptions": "",
+            "IsHidden": 0,
+            "AllowDesktopConfig": 1,
+            "AllowOverlay": 1,
+            "OpenVR": 0,
+            "LastPlayTime": int(time.time())
+        }
+
+        with open(shortcuts_file, 'wb') as f:
+            vdf.binary_dump(data, f)
+
+        success = True
+        print(f"SUCCESS:{app_id}")
+
+if not success:
+    print("ALREADY_EXISTS")
+EOF
+)
+
+    if [[ "$result" == SUCCESS:* ]]; then
+        local app_id="${result#SUCCESS:}"
+        $GUM_BINARY style --foreground 46 --border double --padding "1 2" \
+            "✓ Added to Steam successfully!" \
+            "AppID: $app_id" \
+            "" \
+            "Restart Steam and set Proton compatibility"
+    elif [[ "$result" == "ALREADY_EXISTS" ]]; then
+        $GUM_BINARY style --foreground 99 "$name is already in Steam"
+    else
+        $GUM_BINARY style --foreground 196 "Failed to add to Steam"
+    fi
+
+    $GUM_BINARY input --placeholder "Press Enter to continue..."
 }
 
 # ===================================================================
