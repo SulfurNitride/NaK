@@ -1,11 +1,11 @@
 #!/bin/bash
 # ===================================================================
-# NaK (Linux Modding Helper) - Whiptail Edition
-# Version: 2.0.2 - Fixed for spaces in paths
+# NaK (Linux Modding Helper) - Gum Edition
+# Version: 3.0.0 - Modern TUI with Gum
 # ===================================================================
 
 # Script metadata
-readonly SCRIPT_VERSION="2.0.2"
+readonly SCRIPT_VERSION="3.0.0"
 readonly SCRIPT_NAME="NaK - Linux Modding Helper"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -20,33 +20,132 @@ declare -g SELECTED_GAME=""
 declare -g SELECTED_APPID=""
 declare -g STEAM_ROOT=""
 declare -g PROTONTRICKS_CMD=""
+declare -g DEFAULT_SCALING="96"
+declare -g GUM_BIN=""
 
-# Portable Python setup - QUOTED PROPERLY
-PORTABLE_PYTHON_URL="https://github.com/bjia56/portable-python/releases/download/cpython-v3.13.1-build.3/python-full-3.13.1-linux-x86_64.zip"
-PORTABLE_PYTHON_DIR="$SCRIPT_DIR/lib/portable_python"
-PORTABLE_PYTHON_ZIP="$PORTABLE_PYTHON_DIR/python-full.zip"
-PORTABLE_PYTHON_EXTRACT_DIR="$PORTABLE_PYTHON_DIR/python-full-3.13.1-linux-x86_64"
-PORTABLE_PYTHON_BINARY="$PORTABLE_PYTHON_EXTRACT_DIR/bin/python3"
+# Gum download info
+readonly GUM_VERSION="0.16.1"
+readonly GUM_URL="https://github.com/charmbracelet/gum/releases/download/v${GUM_VERSION}/gum_${GUM_VERSION}_Linux_x86_64.tar.gz"
+readonly GUM_DIR="$SCRIPT_DIR/lib/gum"
+readonly GUM_ARCHIVE="$GUM_DIR/gum.tar.gz"
 
-# Colors for terminal output
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m' # No Color
+# Colors for gum (using their built-in theming)
+export GUM_CHOOSE_CURSOR_FOREGROUND="212"
+export GUM_CHOOSE_SELECTED_FOREGROUND="212"
+export GUM_CHOOSE_HEADER_FOREGROUND="99"
+export GUM_SPIN_SPINNER_FOREGROUND="212"
+export GUM_SPIN_TITLE_FOREGROUND="99"
+
+# Terminal size check
+check_terminal_size() {
+    local cols=$(tput cols)
+    local lines=$(tput lines)
+
+    if [[ $cols -lt 80 ]] || [[ $lines -lt 24 ]]; then
+        echo "Warning: Terminal size is ${cols}x${lines}"
+        echo "Recommended minimum: 80x24"
+        echo "Some menus may not display correctly."
+        read -p "Press Enter to continue anyway..."
+    fi
+}
+
+# ===================================================================
+# Gum Setup
+# ===================================================================
+
+setup_gum() {
+    echo "Setting up Gum TUI framework..."
+
+    mkdir -p "$GUM_DIR"
+
+    # Check if gum already exists
+    if [[ -f "$GUM_DIR/gum" ]] && [[ -x "$GUM_DIR/gum" ]]; then
+        GUM_BIN="$GUM_DIR/gum"
+        return 0
+    fi
+
+    # Download gum
+    echo "Downloading Gum v${GUM_VERSION}..."
+    if command -v curl &>/dev/null; then
+        curl -L -o "$GUM_ARCHIVE" "$GUM_URL" || return 1
+    elif command -v wget &>/dev/null; then
+        wget -O "$GUM_ARCHIVE" "$GUM_URL" || return 1
+    else
+        echo "Error: Neither curl nor wget found!"
+        return 1
+    fi
+
+    # Extract
+    echo "Extracting Gum..."
+    tar -xzf "$GUM_ARCHIVE" -C "$GUM_DIR" || return 1
+
+    # Clean up
+    rm -f "$GUM_ARCHIVE"
+
+    # Make executable
+    chmod +x "$GUM_DIR/gum"
+
+    # Verify
+    if [[ -x "$GUM_DIR/gum" ]]; then
+        GUM_BIN="$GUM_DIR/gum"
+        echo "Gum installed successfully!"
+        return 0
+    else
+        echo "Error: Gum installation failed!"
+        return 1
+    fi
+}
+
+# Gum wrapper functions for consistent styling
+gum_choose() {
+    "$GUM_BIN" choose --height 15 "$@"
+}
+
+gum_input() {
+    local prompt="$1"
+    shift
+    "$GUM_BIN" input --prompt "$prompt " --placeholder "$@"
+}
+
+gum_confirm() {
+    "$GUM_BIN" confirm "$@"
+}
+
+gum_spin() {
+    "$GUM_BIN" spin --spinner dot --title "$1" -- "${@:2}"
+}
+
+gum_style() {
+    "$GUM_BIN" style "$@"
+}
+
+gum_format() {
+    "$GUM_BIN" format "$@"
+}
 
 # ===================================================================
 # Core Functions
 # ===================================================================
 
-# Initialize
 init() {
+    # Check terminal size
+    check_terminal_size
+
     # Create directories
     mkdir -p "$CONFIG_DIR" "$TEMP_DIR" "$SCRIPT_DIR/lib"
 
     # Setup logging
     exec 2> >(tee -a "$LOG_FILE")
     echo "[$(date)] Starting $SCRIPT_NAME v$SCRIPT_VERSION" >> "$LOG_FILE"
+
+    # Setup gum
+    if ! setup_gum; then
+        echo "Failed to set up Gum. Please check your internet connection."
+        exit 1
+    fi
+
+    # Clear screen
+    clear
 
     # Check dependencies
     check_dependencies
@@ -61,7 +160,6 @@ init() {
     trap cleanup EXIT INT TERM
 }
 
-# Cleanup
 cleanup() {
     rm -rf "$TEMP_DIR"
     echo "[$(date)] Cleanup completed" >> "$LOG_FILE"
@@ -70,13 +168,6 @@ cleanup() {
 # Check dependencies
 check_dependencies() {
     local missing=()
-
-    # Check for whiptail
-    if ! command -v whiptail &> /dev/null; then
-        echo -e "${RED}Error: whiptail is not installed${NC}"
-        echo "Install with: sudo apt install whiptail"
-        exit 1
-    fi
 
     # Check protontricks
     if command -v protontricks &> /dev/null; then
@@ -88,14 +179,14 @@ check_dependencies() {
     fi
 
     # Check other deps
-    for cmd in curl jq unzip; do
+    for cmd in curl jq unzip wget; do
         command -v "$cmd" &> /dev/null || missing+=("$cmd")
     done
 
     # Check for 7z
     local has_7z=false
     for variant in 7z 7za 7zr p7zip; do
-        if command -v "$variant" &> /dev/null; then
+        if command -v "$variant" &>/dev/null; then
             has_7z=true
             break
         fi
@@ -103,8 +194,18 @@ check_dependencies() {
     [[ "$has_7z" == "false" ]] && missing+=("p7zip-full")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        whiptail --title "Missing Dependencies" --msgbox \
-            "Please install: ${missing[*]}\n\nExample:\nsudo apt install ${missing[*]}" 10 60
+        gum_style \
+            --foreground 196 \
+            --border double \
+            --border-foreground 196 \
+            --padding "1 2" \
+            --margin "1" \
+            "Missing Dependencies" \
+            "" \
+            "Please install: ${missing[*]}" \
+            "" \
+            "Example:" \
+            "sudo apt install ${missing[*]}"
         exit 1
     fi
 }
@@ -124,296 +225,25 @@ find_steam_root() {
         fi
     done
 
-    whiptail --title "Error" --msgbox "Steam installation not found!" 8 50
+    gum_style --foreground 196 "Error: Steam installation not found!"
     exit 1
 }
 
 # Load configuration
 load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
-        # Clean the config file first
-        local temp_config=$(mktemp)
-        grep -E '^[A-Z_]+=' "$CONFIG_FILE" > "$temp_config" 2>/dev/null || true
-        mv "$temp_config" "$CONFIG_FILE"
-
-        # Source cleaned config
-        source "$CONFIG_FILE" 2>/dev/null || {
-            echo "[$(date)] Config file corrupted, recreating" >> "$LOG_FILE"
-            rm -f "$CONFIG_FILE"
-            create_default_config
-        }
+        source "$CONFIG_FILE" 2>/dev/null || create_default_config
     else
         create_default_config
     fi
 }
 
-# Create default config
 create_default_config() {
     cat > "$CONFIG_FILE" << EOF
 # NaK Configuration
 DEFAULT_SCALING=96
-SHOW_ADVANCED=false
 CHECK_UPDATES=true
 EOF
-}
-
-# Save configuration
-save_config() {
-    local key="$1"
-    local value="$2"
-
-    # Escape special characters
-    value="${value//\"/\\\"}"
-
-    if grep -q "^$key=" "$CONFIG_FILE" 2>/dev/null; then
-        sed -i "s/^$key=.*/$key=\"$value\"/" "$CONFIG_FILE"
-    else
-        echo "$key=\"$value\"" >> "$CONFIG_FILE"
-    fi
-}
-
-# Setup portable Python - FIXED FOR SPACES
-setup_portable_python() {
-    echo "[$(date)] Setting up portable Python" >> "$LOG_FILE"
-
-    # Create directory
-    mkdir -p "$PORTABLE_PYTHON_DIR"
-
-    # Check if already exists
-    if [[ -f "$PORTABLE_PYTHON_BINARY" ]] && [[ -x "$PORTABLE_PYTHON_BINARY" ]]; then
-        echo "[$(date)] Python already installed" >> "$LOG_FILE"
-        return 0
-    fi
-
-    # Download
-    echo "Downloading Python..."
-    if command -v curl &>/dev/null; then
-        curl -L -o "$PORTABLE_PYTHON_ZIP" "$PORTABLE_PYTHON_URL" 2>&1 | tee -a "$LOG_FILE"
-    elif command -v wget &>/dev/null; then
-        wget -O "$PORTABLE_PYTHON_ZIP" "$PORTABLE_PYTHON_URL" 2>&1 | tee -a "$LOG_FILE"
-    else
-        echo "[$(date)] No download tool available" >> "$LOG_FILE"
-        return 1
-    fi
-
-    # Extract
-    echo "Extracting Python..."
-    unzip -o "$PORTABLE_PYTHON_ZIP" -d "$PORTABLE_PYTHON_DIR" 2>&1 | tee -a "$LOG_FILE"
-
-    # Make executable
-    chmod +x "$PORTABLE_PYTHON_BINARY"
-
-    # Cleanup
-    rm -f "$PORTABLE_PYTHON_ZIP"
-
-    # Verify
-    if [[ -x "$PORTABLE_PYTHON_BINARY" ]]; then
-        echo "[$(date)] Python setup complete" >> "$LOG_FILE"
-        return 0
-    else
-        echo "[$(date)] Python setup failed" >> "$LOG_FILE"
-        return 1
-    fi
-}
-
-# Get portable Python - ALWAYS QUOTE
-get_portable_python() {
-    if [[ ! -f "$PORTABLE_PYTHON_BINARY" ]] || [[ ! -x "$PORTABLE_PYTHON_BINARY" ]]; then
-        setup_portable_python || return 1
-    fi
-    echo "$PORTABLE_PYTHON_BINARY"
-    return 0
-}
-
-# ===================================================================
-# VDF Functions - FIXED FOR SPACES
-# ===================================================================
-
-# Install VDF package - PROPERLY QUOTED
-install_vdf_package() {
-    echo "[$(date)] Installing VDF package" >> "$LOG_FILE"
-
-    local python_bin="$(get_portable_python)"
-    if [[ $? -ne 0 ]]; then
-        echo "[$(date)] Failed to get Python" >> "$LOG_FILE"
-        return 1
-    fi
-
-    # Install pip if needed - QUOTED
-    if [[ ! -f "$PORTABLE_PYTHON_EXTRACT_DIR/bin/pip" ]]; then
-        echo "[$(date)] Installing pip" >> "$LOG_FILE"
-        "$python_bin" -m ensurepip --upgrade 2>&1 | tee -a "$LOG_FILE"
-    fi
-
-    # Install vdf - QUOTED
-    echo "[$(date)] Installing vdf module" >> "$LOG_FILE"
-    "$python_bin" -m pip install vdf 2>&1 | tee -a "$LOG_FILE"
-
-    # Verify installation - QUOTED
-    if "$python_bin" -c "import vdf" 2>/dev/null; then
-        echo "[$(date)] VDF installed successfully" >> "$LOG_FILE"
-        return 0
-    else
-        echo "[$(date)] VDF installation failed" >> "$LOG_FILE"
-        return 1
-    fi
-}
-
-# Check VDF installed - QUOTED
-check_vdf_installed() {
-    local python_bin="$(get_portable_python)"
-    [[ $? -ne 0 ]] && return 1
-
-    "$python_bin" -c "import vdf" 2>/dev/null
-}
-
-# ===================================================================
-# Add to Steam - FIXED FOR SPACES
-# ===================================================================
-
-add_game_to_steam() {
-    local game_name="$1"
-    local exe_path="$2"
-    local start_dir="${3:-$(dirname "$exe_path")}"
-
-    # Setup Python and VDF with progress
-    (
-        echo "10"
-        echo "# Setting up Python environment..."
-
-        local python_bin="$(get_portable_python)"
-        if [[ $? -ne 0 ]]; then
-            echo "100"
-            whiptail --title "Error" --msgbox "Failed to setup Python environment!" 8 50
-            return 1
-        fi
-
-        echo "50"
-        echo "# Installing required modules..."
-
-        if ! check_vdf_installed; then
-            install_vdf_package >/dev/null 2>&1
-        fi
-
-        echo "100"
-        echo "# Ready to add to Steam..."
-    ) | whiptail --gauge "Preparing Steam integration..." 8 60 0
-
-    local python_bin="$(get_portable_python)"
-    if [[ $? -ne 0 ]]; then
-        whiptail --title "Error" --msgbox "Python environment not available!" 8 50
-        return 1
-    fi
-
-    # Create Python script
-    local temp_script=$(mktemp)
-    cat > "$temp_script" << 'EOF'
-import sys
-import os
-import vdf
-import time
-
-steam_root = sys.argv[1]
-game_name = sys.argv[2]
-exe_path = sys.argv[3]
-start_dir = sys.argv[4]
-
-shortcuts_path = os.path.join(steam_root, "userdata")
-
-if not os.path.exists(shortcuts_path):
-    print("ERROR: userdata directory not found")
-    sys.exit(1)
-
-user_dirs = [d for d in os.listdir(shortcuts_path) if os.path.isdir(os.path.join(shortcuts_path, d))]
-if not user_dirs:
-    print("ERROR: No user directories found")
-    sys.exit(1)
-
-def generate_app_id(name, exe):
-    return abs(hash(name + exe)) % 1000000000
-
-app_id = generate_app_id(game_name, exe_path)
-modified = False
-
-for user_dir in user_dirs:
-    shortcuts_file = os.path.join(shortcuts_path, user_dir, "config", "shortcuts.vdf")
-
-    if not os.path.exists(os.path.dirname(shortcuts_file)):
-        os.makedirs(os.path.dirname(shortcuts_file), exist_ok=True)
-
-    data = {"shortcuts": {}}
-    if os.path.exists(shortcuts_file):
-        try:
-            with open(shortcuts_file, 'rb') as f:
-                loaded_data = vdf.binary_load(f)
-                if loaded_data and "shortcuts" in loaded_data:
-                    data = loaded_data
-        except Exception as e:
-            print(f"Warning: Could not read existing shortcuts: {e}")
-
-    # Check if already exists
-    game_already_added = False
-    for idx, shortcut in data.get("shortcuts", {}).items():
-        if shortcut.get("AppName") == game_name:
-            game_already_added = True
-            break
-
-    if game_already_added:
-        continue
-
-    # Add new shortcut
-    shortcut_index = str(len(data.get("shortcuts", {})))
-
-    if "shortcuts" not in data:
-        data["shortcuts"] = {}
-
-    data["shortcuts"][shortcut_index] = {
-        "appid": app_id,
-        "AppName": game_name,
-        "Exe": f'"{exe_path}"',
-        "StartDir": f'"{start_dir}"',
-        "icon": "",
-        "ShortcutPath": "",
-        "LaunchOptions": "",
-        "IsHidden": 0,
-        "AllowDesktopConfig": 1,
-        "AllowOverlay": 1,
-        "OpenVR": 0,
-        "LastPlayTime": int(time.time())
-    }
-
-    try:
-        with open(shortcuts_file, 'wb') as f:
-            vdf.binary_dump(data, f)
-        modified = True
-        print(f"SUCCESS:{app_id}")
-    except Exception as e:
-        print(f"ERROR: Failed to write shortcuts: {e}")
-
-if not modified:
-    print("ERROR: No changes made")
-EOF
-
-    # Run the script - PROPERLY QUOTED
-    whiptail --infobox "Adding to Steam..." 8 40
-    local output=$("$python_bin" "$temp_script" "$STEAM_ROOT" "$game_name" "$exe_path" "$start_dir" 2>&1)
-    rm -f "$temp_script"
-
-    echo "[$(date)] Add to Steam output: $output" >> "$LOG_FILE"
-
-    if [[ "$output" == SUCCESS:* ]]; then
-        local appid=${output#SUCCESS:}
-        whiptail --title "Success" --msgbox \
-            "Added to Steam successfully!\n\nApp ID: $appid\n\nRestart Steam and set Proton compatibility." 12 60
-        return 0
-    else
-        local error_msg="Failed to add to Steam!"
-        if [[ "$output" == ERROR:* ]]; then
-            error_msg="${output#ERROR: }"
-        fi
-        whiptail --title "Error" --msgbox "$error_msg" 10 60
-        return 1
-    fi
 }
 
 # ===================================================================
@@ -422,31 +252,43 @@ EOF
 
 show_main_menu() {
     while true; do
-        local choice=$(whiptail --title "$SCRIPT_NAME v$SCRIPT_VERSION" \
-            --menu "Choose an option:" 20 70 12 \
-            "1" "Mod Organizer 2 Setup" \
-            "2" "Vortex Setup" \
-            "3" "Limo Setup (Native Linux)" \
-            "4" "Tale of Two Wastelands" \
-            "5" "Hoolamike Tools" \
-            "6" "Sky Texture Optimizer" \
-            "7" "Game-Specific Fixes" \
-            "8" "Remove NXM Handlers" \
-            "9" "Settings" \
-            "0" "Exit" \
-            3>&1 1>&2 2>&3)
+        clear
 
-        case $choice in
-            1) mo2_menu ;;
-            2) vortex_menu ;;
-            3) limo_menu ;;
-            4) ttw_menu ;;
-            5) hoolamike_menu ;;
-            6) sky_tex_menu ;;
-            7) game_fixes_menu ;;
-            8) remove_nxm_handlers ;;
-            9) settings_menu ;;
-            0|"") exit 0 ;;
+        # Header
+        gum_style \
+            --foreground 212 \
+            --border double \
+            --border-foreground 99 \
+            --padding "1 2" \
+            --margin "1" \
+            --align center \
+            "$SCRIPT_NAME v$SCRIPT_VERSION" \
+            "Modern Linux Modding Tools"
+
+        # Menu
+        local choice=$(gum_choose \
+            "Mod Organizer 2 Setup" \
+            "Vortex Setup" \
+            "Limo Setup (Native Linux)" \
+            "Tale of Two Wastelands" \
+            "Hoolamike Tools" \
+            "Sky Texture Optimizer" \
+            "Game-Specific Fixes" \
+            "Remove NXM Handlers" \
+            "Settings" \
+            "Exit")
+
+        case "$choice" in
+            "Mod Organizer 2 Setup") mo2_menu ;;
+            "Vortex Setup") vortex_menu ;;
+            "Limo Setup"*) limo_menu ;;
+            "Tale of Two Wastelands") ttw_menu ;;
+            "Hoolamike Tools") hoolamike_menu ;;
+            "Sky Texture Optimizer") sky_tex_menu ;;
+            "Game-Specific Fixes") game_fixes_menu ;;
+            "Remove NXM Handlers") remove_nxm_handlers ;;
+            "Settings") settings_menu ;;
+            "Exit"|"") exit 0 ;;
         esac
     done
 }
@@ -457,37 +299,46 @@ show_main_menu() {
 
 mo2_menu() {
     while true; do
-        local choice=$(whiptail --title "Mod Organizer 2 Setup" \
-            --menu "Choose an option:" 16 60 8 \
-            "1" "Download Latest MO2" \
-            "2" "Setup Existing MO2" \
-            "3" "Install Dependencies" \
-            "4" "Configure NXM Handler" \
-            "5" "Configure DPI Scaling" \
-            "B" "Back to Main Menu" \
-            3>&1 1>&2 2>&3)
+        clear
 
-        case $choice in
-            1) download_mo2 ;;
-            2) setup_existing_mo2 ;;
-            3) select_game && install_dependencies ;;
-            4) select_game && setup_nxm_handler ;;
-            5) select_game && setup_dpi_scaling ;;
-            B|"") return ;;
+        gum_style \
+            --foreground 212 \
+            --border rounded \
+            --padding "1 2" \
+            --margin "1" \
+            "Mod Organizer 2 Setup"
+
+        local choice=$(gum_choose \
+            "Download Latest MO2" \
+            "Setup Existing MO2" \
+            "Install Dependencies" \
+            "Configure NXM Handler" \
+            "Configure DPI Scaling" \
+            "Back to Main Menu")
+
+        case "$choice" in
+            "Download Latest MO2") download_mo2 ;;
+            "Setup Existing MO2") setup_existing_mo2 ;;
+            "Install Dependencies") select_game && install_dependencies ;;
+            "Configure NXM Handler") select_game && setup_nxm_handler ;;
+            "Configure DPI Scaling") select_game && setup_dpi_scaling ;;
+            "Back"*|"") return ;;
         esac
     done
 }
 
-# Download MO2 with proper progress
 download_mo2() {
-    local install_dir=$(whiptail --inputbox "Installation directory:" 8 60 "$HOME/ModOrganizer2" 3>&1 1>&2 2>&3)
+    clear
+
+    # Get installation directory with tab completion
+    local install_dir=$(gum_input "Installation directory:" "$HOME/ModOrganizer2")
     [[ -z "$install_dir" ]] && return
 
     # Expand tilde
     install_dir="${install_dir/#\~/$HOME}"
 
     if [[ -d "$install_dir" ]]; then
-        if ! whiptail --yesno "Directory exists. Overwrite?" 8 50; then
+        if ! gum_confirm "Directory exists. Overwrite?"; then
             return
         fi
         rm -rf "$install_dir"
@@ -495,62 +346,47 @@ download_mo2() {
 
     mkdir -p "$install_dir"
 
-    # Get release info
-    whiptail --infobox "Fetching latest release info..." 8 40
+    # Fetch release info
+    echo "Fetching latest release info..."
     local release_info=$(curl -s https://api.github.com/repos/ModOrganizer2/modorganizer/releases/latest)
 
     local version=$(echo "$release_info" | jq -r '.tag_name' | sed 's/^v//')
     local download_url=$(echo "$release_info" | jq -r '.assets[] | select(.name | test("^Mod\\.Organizer-[0-9.]+\\.7z$")) | .browser_download_url')
 
     if [[ -z "$download_url" ]] || [[ "$download_url" == "null" ]]; then
-        whiptail --title "Error" --msgbox "Could not find MO2 download URL!" 8 50
+        gum_style --foreground 196 "Error: Could not find MO2 download URL!"
+        read -p "Press Enter to continue..."
         return 1
     fi
 
     # Download with progress
     local archive="$TEMP_DIR/MO2-$version.7z"
 
-    # Use curl with progress callback
-    (
-        curl -L -o "$archive" "$download_url" 2>&1 | \
-        grep --line-buffered "%" | \
-        sed -u -e "s,.*\([0-9]\+\)%.*,\1," | \
-        whiptail --gauge "Downloading MO2 v$version..." 8 70 0
-    )
+    gum_spin "Downloading MO2 v$version..." \
+        curl -L -o "$archive" "$download_url"
 
     # Extract
-    whiptail --infobox "Extracting MO2..." 8 40
-
-    # Find 7z command
-    local extract_cmd=""
-    for cmd in 7z 7za 7zr; do
-        if command -v "$cmd" &>/dev/null; then
-            extract_cmd="$cmd"
-            break
-        fi
-    done
-
-    if [[ -z "$extract_cmd" ]]; then
-        whiptail --title "Error" --msgbox "7-Zip not found! Install with: sudo apt install p7zip-full" 8 60
-        return 1
-    fi
-
-    # Extract to install directory
-    $extract_cmd x "$archive" -o"$install_dir" -y >/dev/null 2>&1
+    gum_spin "Extracting MO2..." \
+        7z x "$archive" -o"$install_dir" -y
 
     # Verify installation
     if [[ -f "$install_dir/ModOrganizer.exe" ]]; then
-        whiptail --title "Success" --msgbox "MO2 v$version installed to:\n$install_dir" 10 60
+        gum_style --foreground 82 "MO2 v$version installed successfully!"
+        echo "Location: $install_dir"
 
-        if whiptail --yesno "Add MO2 to Steam?" 8 50; then
-            add_game_to_steam "Mod Organizer 2" "$install_dir/ModOrganizer.exe" "$install_dir"
+        if gum_confirm "Add MO2 to Steam?"; then
+            # Ask for custom name
+            local mo2_name=$(gum_input "Name for Steam:" "Mod Organizer 2")
+            [[ -z "$mo2_name" ]] && mo2_name="Mod Organizer 2"
+
+            add_game_to_steam "$mo2_name" "$install_dir/ModOrganizer.exe" "$install_dir"
         fi
     else
-        whiptail --title "Error" --msgbox "Installation failed! ModOrganizer.exe not found." 8 50
+        gum_style --foreground 196 "Installation failed! ModOrganizer.exe not found."
     fi
 
-    # Cleanup
     rm -f "$archive"
+    read -p "Press Enter to continue..."
 }
 
 # ===================================================================
@@ -584,7 +420,7 @@ get_steam_games() {
                 fi
 
                 if [[ ! "$name" =~ (SteamVR|Proton|Steam Linux Runtime) ]]; then
-                    games+=("$appid" "$name")
+                    games+=("$appid:$name")
                 fi
             fi
         fi
@@ -594,88 +430,229 @@ get_steam_games() {
 }
 
 select_game() {
-    whiptail --infobox "Fetching game list..." 8 40
+    clear
+
+    gum_style \
+        --foreground 99 \
+        --border rounded \
+        --padding "1 2" \
+        "Select Game"
+
+    echo "Fetching game list..."
     local games=($(get_steam_games))
 
     if [[ ${#games[@]} -eq 0 ]]; then
-        whiptail --title "Error" --msgbox "No games found!" 8 50
+        gum_style --foreground 196 "No games found!"
+        read -p "Press Enter to continue..."
         return 1
     fi
 
-    local choice=$(whiptail --title "Select Game" \
-        --menu "Choose a game:" 20 70 12 \
-        "${games[@]}" \
-        3>&1 1>&2 2>&3)
+    # Build display array
+    local display_games=()
+    for game in "${games[@]}"; do
+        local appid="${game%%:*}"
+        local name="${game#*:}"
+        display_games+=("$name [$appid]")
+    done
 
-    if [[ -n "$choice" ]]; then
-        SELECTED_APPID="$choice"
-        for ((i=0; i<${#games[@]}; i+=2)); do
-            if [[ "${games[i]}" == "$choice" ]]; then
-                SELECTED_GAME="${games[i+1]}"
-                break
-            fi
-        done
+    local choice=$(printf '%s\n' "${display_games[@]}" | gum_choose)
+    [[ -z "$choice" ]] && return 1
+
+    # Extract appid from choice
+    if [[ "$choice" =~ \[([0-9]+)\]$ ]]; then
+        SELECTED_APPID="${BASH_REMATCH[1]}"
+        SELECTED_GAME="${choice% \[*\]}"
+
+        gum_style --foreground 82 "Selected: $SELECTED_GAME"
+        sleep 1
         return 0
     fi
+
     return 1
 }
 
 # ===================================================================
-# Other menu functions (placeholders)
+# Dependency Installation
 # ===================================================================
 
-setup_existing_mo2() {
-    local mo2_dir=$(whiptail --inputbox "Path to MO2 directory:" 10 60 3>&1 1>&2 2>&3)
-    [[ -z "$mo2_dir" ]] && return
-
-    mo2_dir="${mo2_dir/#\~/$HOME}"
-
-    if [[ ! -f "$mo2_dir/ModOrganizer.exe" ]]; then
-        whiptail --title "Error" --msgbox "ModOrganizer.exe not found!" 8 50
-        return
-    fi
-
-    whiptail --title "Success" --msgbox "Found MO2 at:\n$mo2_dir" 8 60
-
-    if whiptail --yesno "Add to Steam?" 8 50; then
-        add_game_to_steam "Mod Organizer 2" "$mo2_dir/ModOrganizer.exe" "$mo2_dir"
-    fi
-}
-
 install_dependencies() {
-    whiptail --title "Dependencies" --msgbox "Dependencies installation coming soon!" 8 50
+    [[ -z "$SELECTED_GAME" ]] && return
+
+    clear
+
+    gum_style \
+        --foreground 99 \
+        --border rounded \
+        --padding "1 2" \
+        "Installing Dependencies for $SELECTED_GAME"
+
+    local components=(
+        fontsmooth=rgb
+        xact
+        xact_x64
+        d3dx9_43
+        d3dx9
+        vcrun2022
+        dotnet6
+        dotnet7
+        dotnet8
+        d3dcompiler_47
+        d3dx11_43
+    )
+
+    # Special components for specific games
+    if [[ "$SELECTED_APPID" == "22380" ]]; then  # FNV
+        components=(fontsmooth=rgb xact xact_x64 d3dx9_43 d3dx9 vcrun2022)
+    elif [[ "$SELECTED_APPID" == "976620" ]]; then  # Enderal
+        components+=(winhttp)
+    fi
+
+    echo "Components to install:"
+    printf '%s\n' "${components[@]}"
+    echo ""
+
+    if gum_confirm "Continue with installation?"; then
+        # Run protontricks with spinner
+        gum_spin "Installing dependencies..." \
+            $PROTONTRICKS_CMD --no-bwrap "$SELECTED_APPID" -q "${components[@]}"
+
+        # Additional fixes
+        local prefix_path="$STEAM_ROOT/steamapps/compatdata/$SELECTED_APPID/pfx"
+        if [[ -d "$prefix_path" ]]; then
+            # Enable dotfiles
+            local proton_path=$(find_proton_path)
+            gum_spin "Enabling dotfiles visibility..." \
+                env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT" \
+                    STEAM_COMPAT_DATA_PATH="$STEAM_ROOT/steamapps/compatdata/$SELECTED_APPID" \
+                    "$proton_path" run reg add "HKCU\\Software\\Wine" /v ShowDotFiles /d Y /f
+        fi
+
+        gum_style --foreground 82 "Dependencies installed successfully!"
+    fi
+
+    read -p "Press Enter to continue..."
 }
+
+# ===================================================================
+# NXM Handler Setup
+# ===================================================================
 
 setup_nxm_handler() {
-    whiptail --title "NXM Handler" --msgbox "NXM handler setup coming soon!" 8 50
+    [[ -z "$SELECTED_GAME" ]] && return
+
+    clear
+
+    gum_style \
+        --foreground 99 \
+        --border rounded \
+        --padding "1 2" \
+        "Configure NXM Handler for $SELECTED_GAME"
+
+    local nxmhandler_path=$(gum_input "Path to nxmhandler.exe:")
+    [[ -z "$nxmhandler_path" || ! -f "$nxmhandler_path" ]] && return
+
+    local proton_path=$(find_proton_path)
+    local compat_path="$STEAM_ROOT/steamapps/compatdata/$SELECTED_APPID"
+    local desktop_file="$HOME/.local/share/applications/mo2-nxm-handler.desktop"
+
+    mkdir -p "$(dirname "$desktop_file")"
+
+    cat > "$desktop_file" << EOF
+[Desktop Entry]
+Type=Application
+Categories=Game;
+Exec=bash -c 'env "STEAM_COMPAT_CLIENT_INSTALL_PATH=$STEAM_ROOT" "STEAM_COMPAT_DATA_PATH=$compat_path" "$proton_path" run "$nxmhandler_path" "%u"'
+Name=Mod Organizer 2 NXM Handler
+MimeType=x-scheme-handler/nxm;
+NoDisplay=true
+EOF
+
+    chmod +x "$desktop_file"
+    xdg-mime default mo2-nxm-handler.desktop x-scheme-handler/nxm
+    update-desktop-database "$HOME/.local/share/applications"
+
+    gum_style --foreground 82 "NXM handler configured successfully!"
+    read -p "Press Enter to continue..."
 }
+
+# ===================================================================
+# DPI Scaling Setup
+# ===================================================================
 
 setup_dpi_scaling() {
-    whiptail --title "DPI Scaling" --msgbox "DPI scaling setup coming soon!" 8 50
+    [[ -z "$SELECTED_GAME" ]] && return
+
+    clear
+
+    gum_style \
+        --foreground 99 \
+        --border rounded \
+        --padding "1 2" \
+        "Configure DPI Scaling for $SELECTED_GAME"
+
+    local scales=("96 - Standard (100%)" "120 - Medium (125%)" "144 - Large (150%)" "192 - Extra Large (200%)")
+
+    local choice=$(printf '%s\n' "${scales[@]}" | gum_choose)
+    [[ -z "$choice" ]] && return
+
+    # Extract number from choice
+    local scale="${choice%% *}"
+
+    # Create batch file for registry changes
+    local batch_file="$TEMP_DIR/dpi.bat"
+    cat > "$batch_file" << EOF
+@echo off
+reg add "HKCU\\Control Panel\\Desktop" /v LogPixels /t REG_DWORD /d $scale /f
+reg add "HKCU\\Software\\Wine\\X11 Driver" /v LogPixels /t REG_DWORD /d $scale /f
+exit 0
+EOF
+
+    # Run with Proton
+    local proton_path=$(find_proton_path)
+    gum_spin "Applying DPI scaling..." \
+        env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT" \
+            STEAM_COMPAT_DATA_PATH="$STEAM_ROOT/steamapps/compatdata/$SELECTED_APPID" \
+            "$proton_path" run cmd /c "$(winepath -w "$batch_file")"
+
+    rm -f "$batch_file"
+
+    gum_style --foreground 82 "DPI scaling set to $scale"
+    echo "Restart the application to see changes."
+    read -p "Press Enter to continue..."
 }
 
+# ===================================================================
+# Other Menu Stubs
+# ===================================================================
+
 vortex_menu() {
-    whiptail --title "Vortex" --msgbox "Vortex functionality coming soon!" 8 50
+    gum_style --foreground 214 "Vortex functionality coming soon!"
+    read -p "Press Enter to continue..."
 }
 
 limo_menu() {
-    whiptail --title "Limo" --msgbox "Limo functionality coming soon!" 8 50
+    gum_style --foreground 214 "Limo functionality coming soon!"
+    read -p "Press Enter to continue..."
 }
 
 ttw_menu() {
-    whiptail --title "TTW" --msgbox "TTW functionality coming soon!" 8 50
+    gum_style --foreground 214 "TTW functionality coming soon!"
+    read -p "Press Enter to continue..."
 }
 
 hoolamike_menu() {
-    whiptail --title "Hoolamike" --msgbox "Hoolamike functionality coming soon!" 8 50
+    gum_style --foreground 214 "Hoolamike functionality coming soon!"
+    read -p "Press Enter to continue..."
 }
 
 sky_tex_menu() {
-    whiptail --title "Sky Texture" --msgbox "Sky Texture Optimizer coming soon!" 8 50
+    gum_style --foreground 214 "Sky Texture Optimizer coming soon!"
+    read -p "Press Enter to continue..."
 }
 
 game_fixes_menu() {
-    whiptail --title "Game Fixes" --msgbox "Game fixes coming soon!" 8 50
+    gum_style --foreground 214 "Game fixes coming soon!"
+    read -p "Press Enter to continue..."
 }
 
 remove_nxm_handlers() {
@@ -686,18 +663,56 @@ remove_nxm_handlers() {
 
     if [[ $found -gt 0 ]]; then
         update-desktop-database "$HOME/.local/share/applications" 2>/dev/null
-        whiptail --title "Success" --msgbox "Removed $found NXM handler(s)" 8 50
+        gum_style --foreground 82 "Removed $found NXM handler(s)"
     else
-        whiptail --title "Info" --msgbox "No NXM handlers found" 8 50
+        gum_style --foreground 214 "No NXM handlers found"
     fi
+
+    read -p "Press Enter to continue..."
 }
 
 settings_menu() {
-    whiptail --title "Settings" --msgbox "Settings menu coming soon!" 8 50
+    gum_style --foreground 214 "Settings menu coming soon!"
+    read -p "Press Enter to continue..."
 }
+
+# ===================================================================
+# Helper Functions
+# ===================================================================
 
 find_proton_path() {
     find "$STEAM_ROOT" -name "proton" -path "*/Proton - Experimental/*" 2>/dev/null | head -1
+}
+
+setup_existing_mo2() {
+    clear
+
+    local mo2_dir=$(gum_input "Path to MO2 directory:")
+    [[ -z "$mo2_dir" ]] && return
+
+    mo2_dir="${mo2_dir/#\~/$HOME}"
+
+    if [[ ! -f "$mo2_dir/ModOrganizer.exe" ]]; then
+        gum_style --foreground 196 "ModOrganizer.exe not found!"
+        read -p "Press Enter to continue..."
+        return
+    fi
+
+    gum_style --foreground 82 "Found MO2 at: $mo2_dir"
+
+    if gum_confirm "Add to Steam?"; then
+        local mo2_name=$(gum_input "Name for Steam:" "Mod Organizer 2")
+        [[ -z "$mo2_name" ]] && mo2_name="Mod Organizer 2"
+
+        add_game_to_steam "$mo2_name" "$mo2_dir/ModOrganizer.exe" "$mo2_dir"
+    fi
+}
+
+add_game_to_steam() {
+    # Stub for now
+    gum_style --foreground 214 "Add to Steam functionality coming soon!"
+    echo "Would add: $1"
+    read -p "Press Enter to continue..."
 }
 
 # ===================================================================
