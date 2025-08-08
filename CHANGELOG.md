@@ -7,7 +7,7 @@ Synthesis also has a few fixes (if anyone knows how to fix this process is being
 I've now added the ability to auto select proton versions to experimental (credit to STL for having a small portable binary for me to use). It also has a automatic setup where you can go through the entire process of install dependencies as well now.
 
 Cyberpunk and Baldur's Gate 3 no longer need you to add launch options, I believe I have it in a state where everything should work and be automatically added to the winecfg see list below:
-
+```
 dwrite(dwrite.dll)
 winmm(winmm.dll)
 version(version.dll)
@@ -18,7 +18,7 @@ input_loader(input_loader.dll)
 RED4ext(RED4ext.dll)
 mod_settings(mod_settings.dll)
 scc_lib(scc_lib.dll)
-
+```
 For now Hoolamike and Sky Tex Opti are missing until they are updated some more.
 
 Revamped the menus to make them feel less cluttered.
