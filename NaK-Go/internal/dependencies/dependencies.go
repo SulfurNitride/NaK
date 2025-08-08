@@ -156,6 +156,7 @@ func (d *DependencyInstaller) GetGameComponents(appID string) []string {
 			"dotnet6",
 			"dotnet7",
 			"dotnet8",
+			"dotnetdesktop6",
 			"d3dcompiler_47",
 			"d3dx11_43",
 			"d3dcompiler_43",

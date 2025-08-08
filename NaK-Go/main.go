@@ -18,6 +18,9 @@ const (
 //go:embed portable_stl
 var embeddedSTL embed.FS
 
+//go:embed internal/utils/wine_settings.reg
+var embeddedWineSettings embed.FS
+
 func main() {
 	// Initialize logging
 	logging.Init()
@@ -30,6 +33,7 @@ func main() {
 	// Set the embedded STL for the app and utils to use
 	application.SetEmbeddedSTL(embeddedSTL)
 	utils.SetEmbeddedSTL(embeddedSTL)
+	utils.SetEmbeddedWineSettings(embeddedWineSettings)
 
 	if err := application.Run(); err != nil {
 		logger.Error("Application error: " + err.Error())

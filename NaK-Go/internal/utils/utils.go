@@ -3,6 +3,7 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"embed"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,30 @@ import (
 )
 
 var logger = logging.GetLogger()
+
+// Global variable to store the embedded wine settings filesystem
+var embeddedWineSettingsFS embed.FS
+
+// SetEmbeddedWineSettings sets the embedded wine settings filesystem
+func SetEmbeddedWineSettings(wineSettings embed.FS) {
+	embeddedWineSettingsFS = wineSettings
+}
+
+// extractEmbeddedWineSettings extracts the embedded wine settings file to the target path
+func extractEmbeddedWineSettings(targetPath string) error {
+	// Read the embedded wine settings file
+	wineSettingsContent, err := embeddedWineSettingsFS.ReadFile("internal/utils/wine_settings.reg")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded wine settings: %w", err)
+	}
+
+	// Write the wine settings to the target path
+	if err := os.WriteFile(targetPath, wineSettingsContent, 0644); err != nil {
+		return fmt.Errorf("failed to write wine settings file: %w", err)
+	}
+
+	return nil
+}
 
 // CommandExists checks if a command exists in PATH
 func CommandExists(command string) bool {
@@ -636,20 +661,6 @@ func LoadWineRegistrySettings(prefixPath string) error {
 	logger.Info("Loading wine registry settings...")
 	logger.Info(fmt.Sprintf("Prefix path: %s", prefixPath))
 
-	// Get the path to the embedded wine settings file
-	executablePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("could not get executable path: %w", err)
-	}
-
-	executableDir := filepath.Dir(executablePath)
-	wineSettingsPath := filepath.Join(executableDir, "internal", "utils", "wine_settings.reg")
-	// Check if the file exists
-	if !FileExists(wineSettingsPath) {
-		logger.Error(fmt.Sprintf("Wine settings file not found at: %s", wineSettingsPath))
-		return fmt.Errorf("wine settings file not found at: %s", wineSettingsPath)
-	}
-
 	// Get Steam root and Proton path
 	steamRoot, err := GetSteamRoot()
 	if err != nil {
@@ -671,12 +682,12 @@ func LoadWineRegistrySettings(prefixPath string) error {
 	defer os.RemoveAll(tempDir)
 	logger.Info(fmt.Sprintf("Created temp directory: %s", tempDir))
 
-	// Copy the registry file to the temp directory
+	// Extract the embedded wine settings file to the temp directory
 	tempRegFile := filepath.Join(tempDir, "wine_settings.reg")
-	if err := CopyFile(wineSettingsPath, tempRegFile); err != nil {
-		return fmt.Errorf("could not copy registry file: %w", err)
+	if err := extractEmbeddedWineSettings(tempRegFile); err != nil {
+		return fmt.Errorf("could not extract embedded wine settings: %w", err)
 	}
-	logger.Info(fmt.Sprintf("Copied registry file to: %s", tempRegFile))
+	logger.Info(fmt.Sprintf("Extracted wine settings to: %s", tempRegFile))
 
 	// Build the command
 	logger.Info(fmt.Sprintf("STEAM_COMPAT_DATA_PATH: %s", prefixPath))
