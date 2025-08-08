@@ -1,3 +1,9 @@
+2.0.1 /8/8/25
+
+Added a few fixes for regedits (forgot to export them lol)
+
+Vortext will now install dotnetdekstop6, and will no longer complain about it.
+
 2.0.0 8/7/25
 
 Regedits should now work!
