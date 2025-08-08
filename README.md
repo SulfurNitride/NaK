@@ -7,6 +7,16 @@ NaK, is a modding helper. It automatically setup's up MO2, Vortex, and Limo to t
 
 If you have any requests or anything just let me know or open up an issue!
 
+----------------------------------------------------------------------------------------------------------------------------
+
+To run it:
+
+Download the latest version from the [releases](https://github.com/SulfurNitride/NaK/releases) tab. Then open up your terminal of choice, where you downloaded NaK. Then run these 2 commands,
+```
+chmod +x nak
+./nak
+```
+
 Requirements: Flatpak or system package of protontricks, and only system binary of steam! (flatpak steam is not supported), and have Proton Experimental.
 
 
