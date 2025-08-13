@@ -7,6 +7,8 @@ NaK, is a modding helper. It automatically setup's up MO2, Vortex, and Limo to t
 
 If you have any requests or anything just let me know or open up an issue!
 
+You can find me in the [NaK Discord](https://discord.gg/9JWQzSeUWt)
+
 ----------------------------------------------------------------------------------------------------------------------------
 
 To run it:
@@ -23,8 +25,6 @@ Requirements: Flatpak or system package of protontricks, and only system binary 
 <img width="1274" height="1084" alt="image" src="https://github.com/user-attachments/assets/f776ff53-c58c-48af-aa0d-aaa85ebb7488" />
 
 
-
-You can find me in the [NaK Discord](https://discord.gg/9JWQzSeUWt)
 
 My YT: https://www.youtube.com/@sulfurnitride
 
