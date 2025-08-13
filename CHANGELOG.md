@@ -1,4 +1,9 @@
-2.0.1 /8/8/25
+2.0.2 8/13/25
+
+Added the ability to find proton experimental, proton file on other drives. Should fix regedits from not installing if your proton was on another drive.
+
+
+2.0.1 8/8/25
 
 Added a few fixes for regedits (forgot to export them lol)
 
