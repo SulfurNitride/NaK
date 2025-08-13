@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	Version = "2.0.0"
-	Date    = "2025-08-07"
+	Version = "2.0.2"
+	Date    = "2025-08-13"
 )
 
 //go:embed portable_stl

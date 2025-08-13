@@ -585,6 +585,31 @@ func FindProtonInstallation(protonVersion string) (string, error) {
 		return steamProtonPath, nil
 	}
 
+	// Check additional Steam libraries from libraryfolders.vdf for Proton installations
+	libraryFoldersPath := filepath.Join(steamRoot, "steamapps", "libraryfolders.vdf")
+	if FileExists(libraryFoldersPath) {
+		content, err := os.ReadFile(libraryFoldersPath)
+		if err == nil {
+			// Parse libraryfolders.vdf to find additional Steam library paths
+			lines := strings.Split(string(content), "\n")
+			for _, line := range lines {
+				if strings.Contains(line, "\"path\"") {
+					// Extract path from the line
+					parts := strings.Split(line, "\"")
+					if len(parts) >= 4 {
+						libraryPath := parts[3]
+						// Check for Proton installation in this library
+						protonPath := filepath.Join(libraryPath, "steamapps", "common", protonVersion, "proton")
+						if FileExists(protonPath) {
+							logger.Info(fmt.Sprintf("Found Proton in Steam library: %s", protonPath))
+							return protonPath, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return "", fmt.Errorf("Proton version %s not found in any location", protonVersion)
 }
 
@@ -637,6 +662,41 @@ func GetAllAvailableProtonVersions() ([]string, error) {
 					if FileExists(protonPath) {
 						versions = append(versions, entry.Name())
 						logger.Info(fmt.Sprintf("Found Proton in Steam: %s", entry.Name()))
+					}
+				}
+			}
+		}
+	}
+
+	// Check additional Steam libraries from libraryfolders.vdf for Proton installations
+	libraryFoldersPath := filepath.Join(steamRoot, "steamapps", "libraryfolders.vdf")
+	if FileExists(libraryFoldersPath) {
+		content, err := os.ReadFile(libraryFoldersPath)
+		if err == nil {
+			// Parse libraryfolders.vdf to find additional Steam library paths
+			lines := strings.Split(string(content), "\n")
+			for _, line := range lines {
+				if strings.Contains(line, "\"path\"") {
+					// Extract path from the line
+					parts := strings.Split(line, "\"")
+					if len(parts) >= 4 {
+						libraryPath := parts[3]
+						// Check for Proton installations in this library
+						libraryProtonDir := filepath.Join(libraryPath, "steamapps", "common")
+						if DirectoryExists(libraryProtonDir) {
+							entries, err := os.ReadDir(libraryProtonDir)
+							if err == nil {
+								for _, entry := range entries {
+									if entry.IsDir() && strings.HasPrefix(entry.Name(), "Proton") {
+										protonPath := filepath.Join(libraryProtonDir, entry.Name(), "proton")
+										if FileExists(protonPath) {
+											versions = append(versions, entry.Name())
+											logger.Info(fmt.Sprintf("Found Proton in Steam library: %s", entry.Name()))
+										}
+									}
+								}
+							}
+						}
 					}
 				}
 			}
