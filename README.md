@@ -24,7 +24,7 @@ Requirements: Flatpak or system package of protontricks, and only system binary 
 
 
 
-You can find me in the [Wabbajack Discord](https://discord.gg/wabbajack) in the `unofficial-linux-help` channel until I make a dedicated Discord or something.
+You can find me in the [NaK Discord](https://discord.gg/9JWQzSeUWt)
 
 My YT: https://www.youtube.com/@sulfurnitride
 
