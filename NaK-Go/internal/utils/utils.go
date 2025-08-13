@@ -590,24 +590,47 @@ func FindProtonInstallation(protonVersion string) (string, error) {
 	if FileExists(libraryFoldersPath) {
 		content, err := os.ReadFile(libraryFoldersPath)
 		if err == nil {
+			logger.Info(fmt.Sprintf("Reading libraryfolders.vdf from: %s", libraryFoldersPath))
 			// Parse libraryfolders.vdf to find additional Steam library paths
 			lines := strings.Split(string(content), "\n")
 			for _, line := range lines {
+				line = strings.TrimSpace(line)
 				if strings.Contains(line, "\"path\"") {
-					// Extract path from the line
-					parts := strings.Split(line, "\"")
-					if len(parts) >= 4 {
-						libraryPath := parts[3]
+					// Extract path from the line - handle both quoted and unquoted formats
+					var libraryPath string
+					if strings.Contains(line, "\"") {
+						// Quoted format: "path"          "/home/luke/Downloads/TempSteamFolder"
+						parts := strings.Split(line, "\"")
+						if len(parts) >= 4 {
+							libraryPath = parts[3]
+						}
+					} else {
+						// Unquoted format: path          /home/luke/Downloads/TempSteamFolder
+						parts := strings.Fields(line)
+						if len(parts) >= 2 {
+							libraryPath = parts[1]
+						}
+					}
+
+					if libraryPath != "" {
+						logger.Info(fmt.Sprintf("Found Steam library path: %s", libraryPath))
 						// Check for Proton installation in this library
 						protonPath := filepath.Join(libraryPath, "steamapps", "common", protonVersion, "proton")
+						logger.Info(fmt.Sprintf("Checking for Proton at: %s", protonPath))
 						if FileExists(protonPath) {
 							logger.Info(fmt.Sprintf("Found Proton in Steam library: %s", protonPath))
 							return protonPath, nil
+						} else {
+							logger.Info(fmt.Sprintf("Proton not found at: %s", protonPath))
 						}
 					}
 				}
 			}
+		} else {
+			logger.Error(fmt.Sprintf("Failed to read libraryfolders.vdf: %v", err))
 		}
+	} else {
+		logger.Info("libraryfolders.vdf not found")
 	}
 
 	return "", fmt.Errorf("Proton version %s not found in any location", protonVersion)
@@ -673,16 +696,33 @@ func GetAllAvailableProtonVersions() ([]string, error) {
 	if FileExists(libraryFoldersPath) {
 		content, err := os.ReadFile(libraryFoldersPath)
 		if err == nil {
+			logger.Info(fmt.Sprintf("Reading libraryfolders.vdf for version discovery from: %s", libraryFoldersPath))
 			// Parse libraryfolders.vdf to find additional Steam library paths
 			lines := strings.Split(string(content), "\n")
 			for _, line := range lines {
+				line = strings.TrimSpace(line)
 				if strings.Contains(line, "\"path\"") {
-					// Extract path from the line
-					parts := strings.Split(line, "\"")
-					if len(parts) >= 4 {
-						libraryPath := parts[3]
+					// Extract path from the line - handle both quoted and unquoted formats
+					var libraryPath string
+					if strings.Contains(line, "\"") {
+						// Quoted format: "path"          "/home/luke/Downloads/TempSteamFolder"
+						parts := strings.Split(line, "\"")
+						if len(parts) >= 4 {
+							libraryPath = parts[3]
+						}
+					} else {
+						// Unquoted format: path          /home/luke/Downloads/TempSteamFolder
+						parts := strings.Fields(line)
+						if len(parts) >= 2 {
+							libraryPath = parts[1]
+						}
+					}
+
+					if libraryPath != "" {
+						logger.Info(fmt.Sprintf("Found Steam library path for version discovery: %s", libraryPath))
 						// Check for Proton installations in this library
 						libraryProtonDir := filepath.Join(libraryPath, "steamapps", "common")
+						logger.Info(fmt.Sprintf("Checking Proton directory: %s", libraryProtonDir))
 						if DirectoryExists(libraryProtonDir) {
 							entries, err := os.ReadDir(libraryProtonDir)
 							if err == nil {
@@ -696,11 +736,17 @@ func GetAllAvailableProtonVersions() ([]string, error) {
 									}
 								}
 							}
+						} else {
+							logger.Info(fmt.Sprintf("Proton directory does not exist: %s", libraryProtonDir))
 						}
 					}
 				}
 			}
+		} else {
+			logger.Error(fmt.Sprintf("Failed to read libraryfolders.vdf for version discovery: %v", err))
 		}
+	} else {
+		logger.Info("libraryfolders.vdf not found for version discovery")
 	}
 
 	// Remove duplicates

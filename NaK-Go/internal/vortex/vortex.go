@@ -321,12 +321,26 @@ func (v *VortexInstaller) findProtonPath(steamRoot string) (string, error) {
 		if err == nil {
 			lines := strings.Split(string(content), "\n")
 			for _, line := range lines {
+				line = strings.TrimSpace(line)
 				if strings.Contains(line, "\"path\"") {
-					// Extract path from line like: "path"		"/path/to/library"
-					parts := strings.Split(strings.TrimSpace(line), "\t")
-					if len(parts) >= 2 {
-						path := strings.Trim(parts[1], "\"")
-						steamPaths = append(steamPaths, path)
+					// Extract path from the line - handle both quoted and unquoted formats
+					var libraryPath string
+					if strings.Contains(line, "\"") {
+						// Quoted format: "path"          "/home/luke/Downloads/TempSteamFolder"
+						parts := strings.Split(line, "\"")
+						if len(parts) >= 4 {
+							libraryPath = parts[3]
+						}
+					} else {
+						// Unquoted format: path          /home/luke/Downloads/TempSteamFolder
+						parts := strings.Fields(line)
+						if len(parts) >= 2 {
+							libraryPath = parts[1]
+						}
+					}
+
+					if libraryPath != "" {
+						steamPaths = append(steamPaths, libraryPath)
 					}
 				}
 			}
