@@ -1,3 +1,7 @@
+2.0.3 8/22/25
+
+Updated flatpak support, so now protontricks should fully work if you installed it via flatpak. (Thanks to `_max___` for pointing this out to me on discord.)
+
 2.0.2 8/13/25
 
 Added the ability to find proton experimental, proton file on other drives. Should fix regedits from not installing if your proton was on another drive.
