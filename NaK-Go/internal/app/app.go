@@ -17,7 +17,6 @@ import (
 	"github.com/sulfurnitride/nak/internal/mo2"
 	"github.com/sulfurnitride/nak/internal/ui"
 	"github.com/sulfurnitride/nak/internal/utils"
-	"github.com/sulfurnitride/nak/internal/vortex"
 )
 
 type App struct {
@@ -82,7 +81,7 @@ func (a *App) mainMenu() error {
 				{
 					ID:          1,
 					Title:       "Mod Managers",
-					Description: "Set up MO2, Vortex, Limo, and manage NXM handlers",
+					Description: "Set up MO2, Limo, and manage NXM handlers (Vortex being replaced by NMA)",
 					Action:      a.modManagersMenu,
 				},
 				{
@@ -131,8 +130,8 @@ func (a *App) modManagersMenu() error {
 			{
 				ID:          2,
 				Title:       "Vortex Setup",
-				Description: "Set up Vortex with Proton, NXM handler, and dependencies",
-				Action:      a.vortexSetupMenu,
+				Description: "Soon to be replaced by the NMA (Nexus Mods App) because vortex is bad.",
+				Action:      a.vortexPlaceholderMenu,
 			},
 			{
 				ID:          3,
@@ -159,7 +158,7 @@ func (a *App) modManagersMenu() error {
 	case 1:
 		return a.mo2SetupMenu()
 	case 2:
-		return a.vortexSetupMenu()
+		return a.vortexPlaceholderMenu()
 	case 3:
 		return a.limoSetupMenu()
 	case 4:
@@ -168,6 +167,18 @@ func (a *App) modManagersMenu() error {
 		return nil // Back to main menu
 	}
 
+	return nil
+}
+
+func (a *App) vortexPlaceholderMenu() error {
+	ui.ClearScreenAndShowHeader(a.version, a.date)
+
+	ui.PrintSection("Vortex Setup - Coming Soon")
+	ui.PrintInfo("Soon to be replaced by the NMA (Nexus Mods App) because vortex is bad.")
+	ui.PrintInfo("")
+	ui.PrintInfo("The NMA will provide a better, more modern mod management experience.")
+	ui.PrintInfo("")
+	ui.Pause("Press Enter to return to the main menu...")
 	return nil
 }
 
@@ -200,59 +211,6 @@ func (a *App) mo2SetupMenu() error {
 				Title:       "Configure NXM Handler",
 				Description: "Set up Nexus Mod Manager link handling",
 				Action:      a.configureNxmHandler,
-			},
-		},
-		ExitText: "Back to Main Menu",
-	}
-
-	for {
-		choice, err := ui.DisplayMenu(menu)
-		if err != nil {
-			return fmt.Errorf("menu error: %w", err)
-		}
-
-		if choice == len(menu.Items)+1 {
-			return nil
-		}
-
-		if choice > 0 && choice <= len(menu.Items) {
-			if err := menu.Items[choice-1].Action(); err != nil {
-				ui.PrintError("Error: " + err.Error())
-			}
-			ui.Pause("Press Enter to continue...")
-		}
-	}
-}
-
-func (a *App) vortexSetupMenu() error {
-	ui.ClearScreenAndShowHeader(a.version, a.date)
-
-	menu := ui.Menu{
-		Title: "Vortex Setup",
-		Items: []ui.MenuItem{
-			{
-				ID:          1,
-				Title:       "Download Vortex",
-				Description: "Download and install the latest version",
-				Action:      a.downloadVortex,
-			},
-			{
-				ID:          2,
-				Title:       "Set Up Existing Installation",
-				Description: "Configure an existing Vortex installation",
-				Action:      a.setupExistingVortex,
-			},
-			{
-				ID:          3,
-				Title:       "Install Basic Dependencies",
-				Description: "Install common Proton components for Vortex",
-				Action:      a.installBasicDependencies,
-			},
-			{
-				ID:          4,
-				Title:       "Configure NXM Handler",
-				Description: "Set up Nexus Mod Manager link handling",
-				Action:      a.configureVortexNxmHandler,
 			},
 		},
 		ExitText: "Back to Main Menu",
@@ -1070,12 +1028,15 @@ func (a *App) checkForUpdates() {
 func (a *App) checkDependencies() {
 	ui.PrintInfo("Checking system dependencies...")
 
-	// Check for protontricks
-	if !utils.CommandExists("protontricks") {
+	// Check for protontricks (native or flatpak)
+	protontricksCmd, protontricksErr := utils.GetProtontricksCommand()
+	if protontricksErr != nil {
 		ui.PrintWarning("Protontricks is not installed.")
-		ui.PrintInfo("Install it with: sudo apt install protontricks")
+		ui.PrintInfo("Install it with:")
+		ui.PrintInfo("- Native: sudo apt install protontricks")
+		ui.PrintInfo("- Flatpak: flatpak install com.github.Matoking.protontricks")
 	} else {
-		ui.PrintSuccess("✓ Protontricks: Available")
+		ui.PrintSuccess("✓ Protontricks: Available (" + protontricksCmd + ")")
 	}
 
 	// Check for Steam
@@ -1106,20 +1067,4 @@ func (a *App) logSystemInfo() {
 	for key, value := range info {
 		a.logger.Info(fmt.Sprintf("  %s: %s", key, value))
 	}
-}
-
-// Vortex Setup Actions
-func (a *App) downloadVortex() error {
-	installer := vortex.NewVortexInstaller()
-	return installer.DownloadVortex()
-}
-
-func (a *App) setupExistingVortex() error {
-	installer := vortex.NewVortexInstaller()
-	return installer.SetupExistingVortex()
-}
-
-func (a *App) configureVortexNxmHandler() error {
-	installer := vortex.NewVortexInstaller()
-	return installer.SetupVortexNxmHandler()
 }

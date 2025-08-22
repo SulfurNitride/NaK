@@ -34,10 +34,10 @@ func (d *DependencyInstaller) InstallBasicDependencies() error {
 		protontricksCmd = "protontricks"
 		d.logger.Info("Using native protontricks")
 	} else if utils.CommandExists("flatpak") {
-		// Check if protontricks flatpak is installed
-		cmd := exec.Command("flatpak", "list", "--app", "--columns=application")
+		// Check if protontricks flatpak is installed using grep for efficiency
+		cmd := exec.Command("sh", "-c", "flatpak list --app --columns=application | grep -q com.github.Matoking.protontricks && echo 'found'")
 		output, err := cmd.Output()
-		if err == nil && strings.Contains(string(output), "com.github.Matoking.protontricks") {
+		if err == nil && strings.Contains(string(output), "found") {
 			protontricksCmd = "flatpak run com.github.Matoking.protontricks"
 			d.logger.Info("Using flatpak protontricks")
 		}

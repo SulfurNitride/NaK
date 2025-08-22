@@ -215,5 +215,5 @@ func (l *LimoConfigurator) printLimoInstructions(game utils.Game) {
 
 	ui.PrintInfo("")
 	ui.PrintInfo("Note: Some mods may still require Windows-specific tools.")
-	ui.PrintInfo("For those cases, you can still use MO2 or Vortex alongside Limo.")
+	ui.PrintInfo("For those cases, you can still use MO2 alongside Limo.")
 }

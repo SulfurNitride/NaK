@@ -114,10 +114,10 @@ func GetProtontricksCommand() (string, error) {
 		return "protontricks", nil
 	}
 
-	// Check for flatpak protontricks
-	cmd := exec.Command("flatpak", "list", "--app", "--columns=application")
+	// Check for flatpak protontricks using grep for efficiency
+	cmd := exec.Command("sh", "-c", "flatpak list --app --columns=application | grep -q com.github.Matoking.protontricks && echo 'found'")
 	output, err := cmd.Output()
-	if err == nil && strings.Contains(string(output), "com.github.Matoking.protontricks") {
+	if err == nil && strings.Contains(string(output), "found") {
 		logger.Info("Using flatpak protontricks")
 		return "flatpak run com.github.Matoking.protontricks", nil
 	}
@@ -216,13 +216,25 @@ func GetNonSteamGames() ([]Game, error) {
 		return nil, err
 	}
 
-	output, err := RunCommand(protontricks, "-l")
-	if err != nil {
-		return nil, fmt.Errorf("failed to run protontricks: %w", err)
+	// Run protontricks -l to get list of games
+	var protontricksOutput string
+	if strings.HasPrefix(protontricks, "flatpak run") {
+		parts := strings.Fields(protontricks)
+		output, err := RunCommand(parts[0], append(parts[1:], "-l")...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to run protontricks: %w", err)
+		}
+		protontricksOutput = output
+	} else {
+		output, err := RunCommand(protontricks, "-l")
+		if err != nil {
+			return nil, fmt.Errorf("failed to run protontricks: %w", err)
+		}
+		protontricksOutput = output
 	}
 
 	var games []Game
-	scanner := bufio.NewScanner(strings.NewReader(output))
+	scanner := bufio.NewScanner(strings.NewReader(protontricksOutput))
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -979,8 +991,22 @@ func RestartSteam() error {
 func GetNonSteamGamesFromProtontricks() ([]Game, error) {
 	// logger.Info("Getting non-Steam games from protontricks...")
 
-	cmd := exec.Command("protontricks", "-l")
-	output, err := cmd.CombinedOutput()
+	protontricks, err := GetProtontricksCommand()
+	if err != nil {
+		return nil, fmt.Errorf("protontricks not available: %w", err)
+	}
+
+	// Run protontricks -l to get list of games
+	var output []byte
+	if strings.HasPrefix(protontricks, "flatpak run") {
+		parts := strings.Fields(protontricks)
+		cmd := exec.Command(parts[0], append(parts[1:], "-l")...)
+		output, err = cmd.CombinedOutput()
+	} else {
+		cmd := exec.Command(protontricks, "-l")
+		output, err = cmd.CombinedOutput()
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to run protontricks -l: %w", err)
 	}
