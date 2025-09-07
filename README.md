@@ -4,7 +4,7 @@
 
 NaK, is a sodium and potassium alloy. Highly reactive.
 
-NaK, is a modding helper. It automatically setup's up MO2 to the best of my abilities for you. Using the python vdf editor for adding things to steam as a non steam game, auto installs dependencies for you. Sets up NXM Links as well. Includes fixes for XEdit, Synthesis, Baldur's Gate 3, Cyberpunk 2077. 
+NaK, is a modding helper. It automatically setup MO2 to the best of my abilities for you. Using the python vdf editor for adding things to steam as a non steam game, auto installs dependencies for you. Sets up NXM Links as well. Includes fixes for XEdit, Synthesis, Baldur's Gate 3, Cyberpunk 2077. 
 
 If you have any requests or anything just let me know or open up an issue!
 
