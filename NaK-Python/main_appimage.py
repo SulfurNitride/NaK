@@ -246,6 +246,12 @@ def app_main():
         logger = logging.getLogger(__name__)
         logger.info("Starting NaK - Linux Modding Helper (Python AppImage)")
         
+        # Debug display environment
+        import os
+        logger.info(f"DISPLAY environment: {os.environ.get('DISPLAY', 'Not set')}")
+        logger.info(f"WAYLAND_DISPLAY environment: {os.environ.get('WAYLAND_DISPLAY', 'Not set')}")
+        logger.info(f"QT_QPA_PLATFORM environment: {os.environ.get('QT_QPA_PLATFORM', 'Not set')}")
+        
         # Create core application
         core = Core()
         

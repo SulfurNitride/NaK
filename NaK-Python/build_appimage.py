@@ -10,14 +10,15 @@ import subprocess
 import shutil
 from pathlib import Path
 
-def run_command(cmd, cwd=None):
+def run_command(cmd, cwd=None, env=None):
     """Run a command and return the result"""
     print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Error: {result.stderr}")
         sys.exit(1)
     return result.stdout
+
 
 def build_appimage():
     """Build the AppImage package"""
@@ -120,6 +121,16 @@ def build_appimage():
     
     # Make main script executable
     os.chmod(usr_bin / "main_appimage.py", 0o755)
+    
+    # Copy compatibility wrapper
+    compat_wrapper_src = Path("APPIMAGEBUILDER/AppDir/usr/bin/python3_compat")
+    if compat_wrapper_src.exists():
+        shutil.copy(compat_wrapper_src, usr_bin / "python3_compat")
+        os.chmod(usr_bin / "python3_compat", 0o755)
+        print("✓ Copied CPU compatibility wrapper")
+    else:
+        print("⚠ Compatibility wrapper not found - will use fallback method")
+    
     
     # Create icon directory
     icon_dir = appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps"

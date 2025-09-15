@@ -1189,6 +1189,10 @@ fi
             from .dependency_installer import DependencyInstaller
             deps = DependencyInstaller()
             
+            # Set up callback for live logging to GUI
+            if self.log_callback:
+                deps.set_log_callback(self.log_callback)
+            
             # Install MO2 dependencies for this game
             result = deps.install_mo2_dependencies_for_game(str(app_id))
             if not result["success"]:
@@ -1200,7 +1204,9 @@ fi
                 "success": True,
                 "message": f"Successfully installed MO2 dependencies for {app_name}!",
                 "app_id": app_id,
-                "game_name": app_name
+                "game_name": app_name,
+                "debug_log": deps.debug_log_path,  # Include debug log path
+                "dependency_result": result  # Include full dependency result
             }
             
         except Exception as e:

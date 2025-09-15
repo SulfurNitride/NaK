@@ -36,12 +36,8 @@ class MO2InstallThread(QThread):
             # Call the MO2 download with detailed progress tracking
             result = self._run_mo2_download_with_progress()
             
-            if result["success"]:
-                self.log_updated.emit("✅ MO2 download and installation completed successfully!")
-                self.progress_updated.emit(100)
-            else:
-                self.log_updated.emit(f"❌ Installation failed: {result.get('error', 'Unknown error')}")
-            
+            # The _run_mo2_download_with_progress method already handles all the logging and progress updates
+            # Just emit the finished signal with the result
             self.finished.emit(result)
             
         except Exception as e:
@@ -148,6 +144,9 @@ class MO2InstallThread(QThread):
             self.log_updated.emit("📦 Installing dependencies with protontricks...")
             self.log_updated.emit("🔄 This may take a few minutes...")
             self.progress_updated.emit(95)
+            
+            # Set up log callback for live dependency installation updates
+            self.core.mo2.set_log_callback(self.log_updated.emit)
             
             dependency_result = self.core.mo2._auto_install_dependencies(app_id, self.custom_name)
             if not dependency_result["success"]:
@@ -263,12 +262,8 @@ class MO2SetupThread(QThread):
             # Call the MO2 setup with detailed progress tracking
             result = self._run_mo2_setup_with_progress()
             
-            if result["success"]:
-                self.log_updated.emit("✅ MO2 setup completed successfully!")
-                self.progress_updated.emit(100)
-            else:
-                self.log_updated.emit(f"❌ Setup failed: {result.get('error', 'Unknown error')}")
-            
+            # The _run_mo2_setup_with_progress method already handles all the logging and progress updates
+            # Just emit the finished signal with the result
             self.finished.emit(result)
             
         except Exception as e:
@@ -322,6 +317,9 @@ class MO2SetupThread(QThread):
             # Step 4: Install dependencies (80-95%)
             self.log_updated.emit("📦 Installing dependencies with protontricks...")
             self.log_updated.emit("🔄 This may take a few minutes...")
+            
+            # Set up log callback for live dependency installation updates
+            self.core.mo2.set_log_callback(self.log_updated.emit)
             
             dependency_result = self.core.mo2._auto_install_dependencies(app_id, self.custom_name)
             if not dependency_result["success"]:
@@ -764,11 +762,11 @@ class ModOrganizer2View(QWidget):
                 custom_name
             )
             
-            # Connect signals
-            self.install_thread.progress_updated.connect(self.progress_bar.setValue)
-            self.install_thread.log_updated.connect(self._update_log)
-            self.install_thread.progress_line_updated.connect(self._update_progress_line)
-            self.install_thread.finished.connect(self._on_installation_finished)
+            # Connect signals with QueuedConnection to ensure proper threading
+            self.install_thread.progress_updated.connect(self.progress_bar.setValue, Qt.QueuedConnection)
+            self.install_thread.log_updated.connect(self._update_log, Qt.QueuedConnection)
+            self.install_thread.progress_line_updated.connect(self._update_progress_line, Qt.QueuedConnection)
+            self.install_thread.finished.connect(self._on_installation_finished, Qt.QueuedConnection)
             
             # Start the thread
             self.install_thread.start()
@@ -780,11 +778,22 @@ class ModOrganizer2View(QWidget):
             
     def _update_log(self, message):
         """Update the log area with a message"""
+        # Force GUI update by using QApplication.processEvents()
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        
         self.log_area.append(message)
+        
+        # Force another process events to ensure the append is processed
+        QApplication.processEvents()
+        
         # Auto-scroll to bottom
         self.log_area.verticalScrollBar().setValue(
             self.log_area.verticalScrollBar().maximum()
         )
+        
+        # Final process events to ensure scroll happens
+        QApplication.processEvents()
     
     def _update_progress_line(self, progress_text):
         """Update the progress line (replace last line if it's a progress line)"""
@@ -831,10 +840,18 @@ class ModOrganizer2View(QWidget):
             dep_result = result.get("dependency_installation", {})
             if dep_result.get("success"):
                 message += f"\n\n✅ Dependencies installed successfully!"
+                # Add debug log path if available
+                debug_log = dep_result.get("debug_log", "")
+                if debug_log:
+                    message += f"\n\n🐛 Debug log: {debug_log}"
             else:
                 dep_note = dep_result.get("note", "")
                 if dep_note:
                     message += f"\n\nℹ️ {dep_note}"
+                # Add debug log path even for failures
+                debug_log = dep_result.get("debug_log", "")
+                if debug_log:
+                    message += f"\n\n🐛 Debug log: {debug_log}"
             
             # Show success dialog and wait for user to close it
             msg_box = QMessageBox(self)
@@ -1091,10 +1108,10 @@ class ModOrganizer2View(QWidget):
                 custom_name
             )
             
-            # Connect signals
-            self.setup_thread.progress_updated.connect(self.setup_progress_bar.setValue)
-            self.setup_thread.log_updated.connect(self._update_setup_log)
-            self.setup_thread.finished.connect(self._on_setup_existing_finished)
+            # Connect signals with QueuedConnection to ensure proper threading
+            self.setup_thread.progress_updated.connect(self.setup_progress_bar.setValue, Qt.QueuedConnection)
+            self.setup_thread.log_updated.connect(self._update_setup_log, Qt.QueuedConnection)
+            self.setup_thread.finished.connect(self._on_setup_existing_finished, Qt.QueuedConnection)
             
             # Start the thread
             self.setup_thread.start()
@@ -1106,11 +1123,22 @@ class ModOrganizer2View(QWidget):
     
     def _update_setup_log(self, message):
         """Update the setup log area with a message"""
+        # Force GUI update by using QApplication.processEvents()
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        
         self.setup_log_area.append(message)
+        
+        # Force another process events to ensure the append is processed
+        QApplication.processEvents()
+        
         # Auto-scroll to bottom
         self.setup_log_area.verticalScrollBar().setValue(
             self.setup_log_area.verticalScrollBar().maximum()
         )
+        
+        # Final process events to ensure scroll happens
+        QApplication.processEvents()
     
     def _on_setup_existing_finished(self, result):
         """Handle setup existing completion"""

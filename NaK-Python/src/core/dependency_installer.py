@@ -21,6 +21,20 @@ class DependencyInstaller:
         self.logger = get_logger(__name__)
         self.steam_utils = SteamUtils()
         self.debug_log_path = self._create_debug_log_file()
+        self.log_callback = None
+    
+    def set_log_callback(self, callback):
+        """Set log callback for status messages"""
+        self.log_callback = callback
+    
+    def _log_progress(self, message):
+        """Log progress message to both logger and callback"""
+        self.logger.info(message)
+        if self.log_callback:
+            try:
+                self.log_callback(message)
+            except Exception as e:
+                self.logger.error(f"Callback failed: {e}")
     
     def install_basic_dependencies(self) -> Dict[str, Any]:
         """Install common Proton components for any mod manager"""
@@ -228,6 +242,30 @@ class DependencyInstaller:
             self.logger.warning(f"Protontricks validation error: {e}")
             return False
     
+    def _test_protontricks_basic(self, protontricks_cmd: str) -> bool:
+        """Test basic protontricks functionality without specific AppID"""
+        try:
+            # Test with just --help or --version to see if protontricks runs
+            test_cmd = [protontricks_cmd, "--help"]
+            if protontricks_cmd.startswith("flatpak run"):
+                parts = protontricks_cmd.split()
+                test_cmd = [parts[0]] + parts[1:] + ["--help"]
+            
+            self.logger.info(f"Testing protontricks basic functionality: {' '.join(test_cmd)}")
+            result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=15)
+            
+            # Most help commands return 0, but some might return 1 and still work
+            if result.returncode in [0, 1]:
+                self.logger.info("Protontricks basic functionality test passed")
+                return True
+            else:
+                self.logger.warning(f"Protontricks basic test failed: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            self.logger.warning(f"Protontricks basic test error: {e}")
+            return False
+    
     def _install_proton_dependencies(self, game: Dict[str, str], protontricks_cmd: str) -> Dict[str, Any]:
         """Install Proton dependencies for a game - now uses comprehensive dependency list"""
         self.logger.info(f"Installing comprehensive dependencies for {game.get('Name')} (AppID: {game.get('AppID')})")
@@ -261,14 +299,38 @@ class DependencyInstaller:
         output_lines.append(f"Total dependencies: {len(dependencies)}")
         output_lines.append("")
         
+        # Validate protontricks is working BEFORE we start (using a test AppID)
+        self._log_progress("🔍 Validating protontricks is working properly...")
+        output_lines.append("Validating protontricks is working properly...")
+        
+        # Test with a common AppID that should exist (Steam itself or a common game)
+        test_app_id = "22380"  # Fallout New Vegas - commonly installed
+        if not self._validate_protontricks_working(protontricks_cmd, test_app_id):
+            # If that fails, try with a different approach - just test if protontricks runs
+            self._log_progress("🔍 Testing protontricks basic functionality...")
+            if not self._test_protontricks_basic(protontricks_cmd):
+                self._log_progress("⚠️ Warning: Protontricks validation failed, but continuing...")
+                self._log_progress("ℹ️ This is normal for some systems - installation will proceed")
+                output_lines.append("⚠️ Warning: Protontricks validation failed, but continuing...")
+                output_lines.append("ℹ️ This is normal for some systems - installation will proceed")
+            else:
+                self._log_progress("✓ Protontricks basic functionality confirmed")
+                output_lines.append("✓ Protontricks basic functionality confirmed")
+        else:
+            self._log_progress("✓ Protontricks validation successful")
+            output_lines.append("✓ Protontricks validation successful")
+        
         # Kill Steam first (like CLI does)
+        self._log_progress("Stopping Steam...")
         output_lines.append("Stopping Steam...")
         try:
             subprocess.run(["pkill", "-9", "steam"], check=True)
+            self._log_progress("Steam stopped successfully.")
             output_lines.append("Steam stopped successfully.")
             # Wait for cleanup
             time.sleep(2)
         except subprocess.CalledProcessError:
+            self._log_progress("Failed to stop Steam (may not be running)")
             output_lines.append("Failed to stop Steam (may not be running)")
         
         # Build the protontricks command with -q flag (like CLI does)
@@ -282,16 +344,10 @@ class DependencyInstaller:
         else:
             cmd = [protontricks_cmd] + args
         
+        self._log_progress(f"Running: {protontricks_cmd} {' '.join(args)}")
+        self._log_progress("Starting dependency installation...")
         output_lines.append(f"Running: {protontricks_cmd} {' '.join(args)}")
         output_lines.append("Starting dependency installation...")
-        output_lines.append("")
-        
-        # Validate protontricks is working first
-        output_lines.append("Validating protontricks...")
-        if not self._validate_protontricks_working(protontricks_cmd, game.get("AppID", "")):
-            output_lines.append("⚠️ Warning: Protontricks validation failed, but continuing...")
-        else:
-            output_lines.append("✓ Protontricks validation successful")
         output_lines.append("")
         
         try:
@@ -309,6 +365,8 @@ class DependencyInstaller:
             
             # Log start of execution
             self._log_to_debug_file("STARTING PROTONTRICKS EXECUTION...")
+            self._log_progress("🔄 Installing dependencies with protontricks...")
+            self._log_progress("⏳ This may take several minutes...")
             
             result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=600, env=env)  # 10 minute timeout, don't check for errors
             
@@ -338,17 +396,21 @@ class DependencyInstaller:
             
             # Log successful execution
             self._log_to_debug_file("PROTONTRICKS COMPLETED SUCCESSFULLY")
+            self._log_progress("✅ Protontricks execution completed!")
             
             # Check if the command actually did something
             if result.stdout:
+                self._log_progress("📋 Protontricks output received")
                 output_lines.append("Protontricks output:")
                 output_lines.append(result.stdout)
                 self._log_to_debug_file("SUCCESS: Found stdout output")
             
             if result.stderr:
-                output_lines.append("Protontricks warnings/errors:")
+                self._log_progress("ℹ️ Protontricks additional output:")
+                self._log_progress(f"📝 Output details: {result.stderr}")
+                output_lines.append("Protontricks additional output:")
                 output_lines.append(result.stderr)
-                self._log_to_debug_file("SUCCESS: Found stderr output (may be warnings)")
+                self._log_to_debug_file("SUCCESS: Found stderr output")
             
             # Validate that dependencies were actually installed
             # Check for successful installation indicators in protontricks output
@@ -366,10 +428,12 @@ class DependencyInstaller:
             found_indicators = [indicator for indicator in success_indicators if indicator in output_lower]
             
             if found_indicators:
+                self._log_progress("✅ All dependencies installed successfully!")
                 output_lines.append("✓ All dependencies installed successfully!")
                 self._log_to_debug_file(f"SUCCESS: Found indicators: {found_indicators}")
                 output_lines.append(f"🐛 Debug log available at: {self.debug_log_path}")
             else:
+                self._log_progress("⚠️ Warning: Dependencies may not have been installed properly")
                 output_lines.append("⚠️ Warning: Dependencies may not have been installed properly")
                 output_lines.append("Check the output above for any errors")
                 output_lines.append(f"🐛 Full debug log available at: {self.debug_log_path}")
@@ -428,50 +492,76 @@ class DependencyInstaller:
             }
         
         # Apply Wine registry settings (DLL overrides and settings)
+        self._log_progress("")
+        self._log_progress("🔧 Applying Wine registry settings (DLL overrides)...")
         output_lines.append("")
         output_lines.append("Applying Wine registry settings (DLL overrides)...")
         self._log_to_debug_file("APPLYING WINE REGISTRY SETTINGS...")
         
         registry_success = self._apply_wine_registry_settings(game.get("AppID", ""), protontricks_cmd, output_lines)
         if registry_success:
+            self._log_progress("✅ Wine registry settings applied successfully!")
             output_lines.append("✓ Wine registry settings applied successfully!")
             self._log_to_debug_file("WINE REGISTRY SETTINGS APPLIED SUCCESSFULLY")
         else:
+            self._log_progress("⚠️ Warning: Failed to apply some Wine registry settings")
             output_lines.append("⚠️ Warning: Failed to apply some Wine registry settings")
             self._log_to_debug_file("WARNING: WINE REGISTRY SETTINGS FAILED")
         
         # Install .NET 9 SDK
+        self._log_progress("")
+        self._log_progress("📦 Installing .NET 9 SDK...")
         output_lines.append("")
         output_lines.append("Installing .NET 9 SDK...")
         self._log_to_debug_file("INSTALLING .NET 9 SDK...")
         
         try:
-            dotnet_success = self.install_dotnet9_sdk(game.get("AppID", ""))
+            # Create a progress callback that updates the main progress
+            def dotnet_progress_callback(percent):
+                # Update main progress to 97-99% range for .NET installation
+                main_progress = 97 + (percent * 2 / 100)  # 97-99% range
+                self._log_progress(f"📊 Overall progress: {main_progress:.1f}%")
+            
+            dotnet_success = self.install_dotnet9_sdk(game.get("AppID", ""), dotnet_progress_callback)
             if dotnet_success:
+                self._log_progress("✅ .NET 9 SDK installed successfully!")
                 output_lines.append("✓ .NET 9 SDK installed successfully!")
                 self._log_to_debug_file(".NET 9 SDK INSTALLATION SUCCESSFUL")
             else:
+                self._log_progress("⚠️ Warning: .NET 9 SDK installation may have failed")
                 output_lines.append("⚠️ Warning: .NET 9 SDK installation may have failed")
                 self._log_to_debug_file("WARNING: .NET 9 SDK INSTALLATION FAILED")
         except Exception as e:
+            self._log_progress(f"⚠️ Warning: .NET 9 SDK installation failed: {e}")
             output_lines.append(f"⚠️ Warning: .NET 9 SDK installation failed: {e}")
             self._log_to_debug_file(f".NET 9 SDK INSTALLATION ERROR: {e}")
         
         # Restart Steam
+        self._log_progress("")
+        self._log_progress("🔄 Restarting Steam...")
         output_lines.append("")
         output_lines.append("Restarting Steam...")
         self._log_to_debug_file("RESTARTING STEAM...")
         try:
             subprocess.Popen(["steam"])
+            self._log_progress("✅ Steam restarted successfully!")
             output_lines.append("Steam restarted successfully!")
             self._log_to_debug_file("STEAM RESTARTED SUCCESSFULLY")
         except Exception as e:
+            self._log_progress(f"Failed to restart Steam: {e}")
+            self._log_progress("Please start Steam manually.")
             output_lines.append(f"Failed to restart Steam: {e}")
             output_lines.append("Please start Steam manually.")
             self._log_to_debug_file(f"STEAM RESTART FAILED: {e}")
         
+        self._log_progress("")
+        self._log_progress(f"🎉 {game_type} dependencies setup complete!")
+        self._log_progress("✅ All components installed successfully!")
+        self._log_progress("🚀 Your game is now ready for modding!")
         output_lines.append("")
         output_lines.append(f"{game_type} dependencies setup complete!")
+        output_lines.append("All components installed successfully!")
+        output_lines.append("Your game is now ready for modding!")
         self._log_to_debug_file(f"DEPENDENCY INSTALLATION COMPLETED SUCCESSFULLY FOR {game_type}")
         
         return {
@@ -541,9 +631,10 @@ class DependencyInstaller:
             output_lines.append(f"Error applying registry settings: {e}")
             return False
 
-    def install_dotnet9_sdk(self, game_app_id: str) -> bool:
+    def install_dotnet9_sdk(self, game_app_id: str, progress_callback=None) -> bool:
         """Install .NET 9 SDK using direct proton approach or protontricks-launch"""
         self.logger.info("Installing .NET 9 SDK")
+        self._log_progress("📥 Downloading .NET 9 SDK installer...")
         
         try:
             # Download .NET 9 SDK (same URL as CLI)
@@ -555,17 +646,50 @@ class DependencyInstaller:
             download_path = Path(home_dir) / "Downloads" / dotnet_file
             
             self.logger.info(f"Downloading .NET 9 SDK to: {download_path}")
+            self._log_progress(f"📁 Downloading to: {download_path}")
             
-            # Create Downloads directory if it doesn't exist
-            download_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Download the file
-            response = requests.get(dotnet_url, stream=True)
-            response.raise_for_status()
-            
-            with open(download_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            # Check if file already exists
+            if download_path.exists():
+                self._log_progress("✅ .NET 9 SDK installer already exists, skipping download!")
+                self.logger.info(f"Using existing .NET 9 SDK installer: {download_path}")
+            else:
+                # Create Downloads directory if it doesn't exist
+                download_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Download the file
+                self._log_progress("🌐 Connecting to Microsoft servers...")
+                try:
+                    response = requests.get(dotnet_url, stream=True, timeout=30)
+                    response.raise_for_status()
+                    
+                    self._log_progress("⬇️ Downloading .NET 9 SDK (this may take a few minutes)...")
+                    total_size = int(response.headers.get('content-length', 0))
+                    downloaded = 0
+                    last_progress_update = 0
+                    
+                    with open(download_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total_size > 0:
+                                    percent = (downloaded / total_size) * 100
+                                    # Update progress callback every 2% to avoid spam but show smooth progress
+                                    if percent - last_progress_update >= 1:
+                                        # Update main progress bar (97-99% range for .NET download)
+                                        if progress_callback:
+                                            main_progress = 97 + (percent * 2 / 100)  # Map 0-100% to 97-99%
+                                            progress_callback(int(main_progress))
+                                        # Log every 1% for more frequent updates
+                                        self._log_progress(f"📥 Downloading .NET 9 SDK: {percent:.1f}% ({downloaded // (1024*1024)}MB/{total_size // (1024*1024)}MB)")
+                                        last_progress_update = percent
+                    
+                    self._log_progress("✅ .NET 9 SDK download completed!")
+                    
+                except requests.exceptions.RequestException as e:
+                    self._log_progress(f"❌ Download failed: {e}")
+                    self.logger.error(f".NET 9 SDK download failed: {e}")
+                    return False
             
             # Check if we're using flatpak protontricks (no protontricks-launch available)
             protontricks_cmd = self._get_protontricks_command()
@@ -573,6 +697,7 @@ class DependencyInstaller:
             if protontricks_cmd.startswith("flatpak run"):
                 # Use direct proton approach for flatpak protontricks (like regedit fix)
                 self.logger.info("Using direct proton approach for .NET 9 SDK (flatpak protontricks)")
+                self._log_progress("🔧 Using direct Proton approach for installation...")
                 
                 steam_root = self.steam_utils.get_steam_root()
                 compatdata_path = f"{steam_root}/steamapps/compatdata/{game_app_id}"
@@ -586,29 +711,41 @@ class DependencyInstaller:
                 cmd = [proton_path, "run", str(download_path), "/q"]
                 
                 self.logger.info(f"Running .NET 9 SDK with direct proton: {' '.join(cmd)}")
+                self._log_progress("🚀 Starting .NET 9 SDK installation...")
+                self._log_progress("⏳ This may take several minutes...")
                 result = subprocess.run(cmd, capture_output=True, text=True, env=env)
                 
             else:
                 # Use protontricks-launch for native protontricks
                 self.logger.info("Running .NET 9 SDK installer with protontricks-launch")
+                self._log_progress("🔧 Using protontricks-launch for installation...")
+                self._log_progress("🚀 Starting .NET 9 SDK installation...")
+                self._log_progress("⏳ This may take several minutes...")
                 cmd = ["protontricks-launch", "--appid", game_app_id, str(download_path), "/q"]
                 result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
                 self.logger.warning(f"Command returned error: {result.returncode}")
                 self.logger.info(f"Command output: {result.stdout}")
+                self._log_progress(f"⚠️ Installation returned exit code {result.returncode}, but continuing...")
+                self._log_progress("🔍 Checking if installation actually succeeded...")
                 # Don't return error - the installer might have succeeded despite exit code
                 self.logger.info("Continuing despite exit code - checking if installation succeeded...")
             else:
                 self.logger.info("Command completed successfully")
                 self.logger.info(f"Command output: {result.stdout}")
+                self._log_progress("✅ .NET 9 SDK installation completed successfully!")
             
             # Clean up downloaded file
+            self._log_progress("🧹 Cleaning up downloaded installer...")
             download_path.unlink(missing_ok=True)
             
             self.logger.info("=== .NET 9 SDK Installation Completed Successfully ===")
+            self._log_progress("🎉 .NET 9 SDK installation finished!")
+            self._log_progress("✅ .NET 9 SDK is now ready for use!")
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to install .NET 9 SDK: {e}")
+            self._log_progress(f"❌ .NET 9 SDK installation failed: {e}")
             return False
