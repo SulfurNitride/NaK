@@ -13,7 +13,7 @@ jobs:
   build:
     permissions:
       contents: write
-    runs-on: ubuntu-20.04  # Use Ubuntu 20.04 for glibc 2.31 compatibility
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
@@ -110,8 +110,8 @@ jobs:
         Commit: ${{ github.sha }}
         Branch: ${{ github.ref_name }}
         Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-        Built on: Ubuntu 20.04 (glibc 2.31)
-        Compatible with: Ubuntu 20.04+, Debian 11+, Fedora 32+, and other distros with glibc ≥ 2.31
+        Built on: Ubuntu Latest
+        Compatible with: Ubuntu 22.04+, Debian 12+, Fedora 36+, and other distros with glibc ≥ 2.35
         EOF
         cat build-info.txt
     
