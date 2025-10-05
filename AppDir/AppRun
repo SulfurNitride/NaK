@@ -1,0 +1,6 @@
+#!/bin/bash
+HERE="$(dirname "$(readlink -f "${0}")")"
+export PATH="${HERE}/usr/bin:$PATH"
+
+# Run the Iced GUI application
+exec "${HERE}/usr/bin/nak-gui" "$@"

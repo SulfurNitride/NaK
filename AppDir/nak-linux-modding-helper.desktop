@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=NaK Linux Modding Helper
+Comment=Linux Modding Helper for NaK
+Exec=nak-gui
+Icon=nak-linux-modding-helper
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true
