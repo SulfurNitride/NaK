@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04  # Use Ubuntu 20.04 for glibc 2.31 compatibility
+    runs-on: ubuntu-22.04  # Use Ubuntu 22.04 for a more modern build environment
     
     steps:
     - name: Checkout code
