@@ -61,7 +61,7 @@ jobs:
         GOAMD64: v1  # Baseline x86-64 for maximum compatibility
       run: |
         cd nak-gui
-        wails build
+        wails build -tags webkit2_41
         cd ..
     
     - name: Download appimagetool
