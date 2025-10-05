@@ -6,8 +6,6 @@ set -e
 # Set CPU compatibility flag for broader support (v1 = baseline x86-64)
 export GOAMD64=v1
 
-
-
 echo "============================================"
 echo "Creating NaK Wails AppImage"
 echo "============================================"
@@ -28,51 +26,6 @@ cp nak-gui/build/bin/nak-gui "$APPDIR/usr/bin/"
 echo "Copying Python backend..."
 cp dist/nak_backend "$APPDIR/usr/bin/"
 
-# Copy the winetricks file (moved to end to avoid conflicts)
-
-# Bundle webkit2gtk and GTK libraries using linuxdeploy's library copying
-# This ensures we get all dependencies but exclude problematic base system libs
-echo "Bundling webkit2gtk libraries..."
-
-webkit_lib=$(find /usr/lib /usr/lib/x86_64-linux-gnu -name "libwebkit2gtk-4.1.so*" -o -name "libwebkit2gtk-4.0.so*" | head -n 1)
-if [ -z "$webkit_lib" ]; then
-    echo "Error: libwebkit2gtk library not found."
-    exit 1
-fi
-echo "Found webkit2gtk library: $webkit_lib"
-
-# Get webkit2gtk and its direct dependencies
-ldd "$webkit_lib" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read lib; do
-    # Skip base system libraries that are CPU-specific (glibc, libpthread, etc)
-    case "$lib" in
-        */libc.so*|*/libpthread.so*|*/libm.so*|*/libdl.so*|*/librt.so*|*/libresolv.so*) 
-            continue ;;
-    esac
-    if [ -f "$lib" ]; then
-        cp -L "$lib" "$APPDIR/usr/lib/" 2>/dev/null || true
-    fi
-done
-
-# Copy webkit2gtk and javascriptcoregtk libraries
-webkit_dir=$(dirname "$webkit_lib")
-cp -L "$webkit_dir"/libwebkit2gtk-*.so* "$APPDIR/usr/lib/" 2>/dev/null || true
-cp -L "$webkit_dir"/libjavascriptcoregtk-*.so* "$APPDIR/usr/lib/" 2>/dev/null || true
-
-# Copy WebKit executables
-if [ -d /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 ]; then
-    mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu"
-    cp -r /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 "$APPDIR/usr/lib/x86_64-linux-gnu/"
-fi
-if [ -d /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0 ]; then
-    mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu"
-    cp -r /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0 "$APPDIR/usr/lib/x86_64-linux-gnu/"
-fi
-
-# Copy GTK and related libraries (but skip glibc components)
-for lib in libgtk-3 libgdk-3 libglib-2.0 libgobject-2.0 libgio-2.0 libcairo libpango libgdk_pixbuf; do
-    find /usr/lib -name "${lib}.so*" -type f -exec cp -L {} "$APPDIR/usr/lib/" \; 2>/dev/null || true
-done
-
 # Create desktop file
 cat > "$APPDIR/usr/share/applications/nak-gui.desktop" << 'EOF'
 [Desktop Entry]
@@ -88,13 +41,8 @@ EOF
 cat > "$APPDIR/AppRun" << 'EOF'
 #!/bin/bash
 export APPDIR="$(dirname "$(readlink -f "$0")")"
-export LD_LIBRARY_PATH="$APPDIR/usr/lib:$APPDIR/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$APPDIR/usr/lib:$LD_LIBRARY_PATH"
 export PATH="$APPDIR/usr/bin:$PATH"
-if [ -d "$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" ]; then
-    export WEBKIT_EXEC_PATH="$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
-elif [ -d "$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0" ]; then
-    export WEBKIT_EXEC_PATH="$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0"
-fi
 exec "$APPDIR/usr/bin/nak-gui" "$@"
 EOF
 
@@ -121,6 +69,11 @@ EOF
 
 cp "$APPDIR/nak-gui.svg" "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
 
+# Download winetricks
+echo "Downloading winetricks..."
+wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O "$APPDIR/usr/bin/winetricks"
+chmod +x "$APPDIR/usr/bin/winetricks"
+
 # Download appimagetool if not present
 if [ ! -f "appimagetool-x86_64.AppImage" ]; then
     echo "Downloading appimagetool..."
@@ -145,4 +98,3 @@ else
     echo "❌ Failed to create AppImage"
     exit 1
 fi
-
