@@ -24,36 +24,9 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 echo "Copying Wails GUI..."
 cp nak-gui/build/bin/nak-gui "$APPDIR/usr/bin/"
 
-# Create a simple Python backend wrapper
-echo "Creating Python backend wrapper..."
-cat > "$APPDIR/usr/bin/nak-backend" << 'EOF'
-#!/usr/bin/env python3
-import sys
-import os
-
-# Add the src directory to the Python path
-script_dir = os.path.dirname(os.path.abspath(__file__))
-appdir = os.path.dirname(os.path.dirname(script_dir))
-src_path = os.path.join(appdir, "src")
-
-if os.path.exists(src_path):
-    sys.path.insert(0, src_path)
-
-# Import and run the main application
-try:
-    from main import main
-    sys.exit(main())
-except Exception as e:
-    print(f"Error: {e}")
-    sys.exit(1)
-EOF
-
-chmod +x "$APPDIR/usr/bin/nak-backend"
-
-# Copy the Python source code to the AppDir
-echo "Copying Python source code..."
-mkdir -p "$APPDIR/src"
-cp -r src/ "$APPDIR/"
+# Copy the Python backend executable
+echo "Copying Python backend..."
+cp dist/nak_backend "$APPDIR/usr/bin/"
 
 # Copy the winetricks file (moved to end to avoid conflicts)
 
