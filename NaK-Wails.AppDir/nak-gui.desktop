@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=NaK Linux Modding Helper
+Exec=nak-gui
+Icon=nak-gui
+Categories=Game;Utility;
+Terminal=false

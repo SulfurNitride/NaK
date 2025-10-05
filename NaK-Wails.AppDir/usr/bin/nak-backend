@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+# Add the src directory to the Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+appdir = os.path.dirname(os.path.dirname(script_dir))
+src_path = os.path.join(appdir, "src")
+
+if os.path.exists(src_path):
+    sys.path.insert(0, src_path)
+
+# Import and run the main application
+try:
+    from main import main
+    sys.exit(main())
+except Exception as e:
+    print(f"Error: {e}")
+    sys.exit(1)

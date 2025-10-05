@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NaK - Linux Modding Helper</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Main Menu Page -->
+        <div id="mainMenu" class="page active">
+            <h1 class="title">NaK - Linux Modding Helper</h1>
+            <p class="subtitle">Version 2.0.3 | 2025-10-03</p>
+            
+            <div class="menu-grid">
+                <div class="menu-card">
+                    <h2>Mod Managers</h2>
+                    <p>Set up MO2 and manage NXM handlers (Vortex being replaced by NMA)</p>
+                    <button class="btn btn-primary" onclick="showPage('modManagers')">Mod Managers</button>
+                </div>
+                
+                <div class="menu-card">
+                    <h2>Scan Games</h2>
+                    <p>Scan your system for installed games from Steam, Heroic, and other platforms</p>
+                    <button class="btn btn-primary" onclick="showPage('gameInfo')">Scan Games</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mod Managers Page -->
+        <div id="modManagers" class="page">
+            <h1 class="title">Mod Managers</h1>
+            <p class="subtitle">Choose a mod manager to set up or configure</p>
+            
+            <div class="content-box">
+                <h2>Mod Manager Options</h2>
+                <button class="btn btn-primary btn-large" onclick="showPage('mo2Setup')">Mod Organizer 2 Setup</button>
+                <button class="btn btn-primary btn-large" disabled>Vortex Setup (Soon to be replaced by NMA)</button>
+            </div>
+            
+            <button class="btn btn-danger btn-large" onclick="showPage('mainMenu')">Back to Main Menu</button>
+        </div>
+
+        <!-- MO2 Setup Page -->
+        <div id="mo2Setup" class="page">
+            <h1 class="title">Download and configure MO2 for your system</h1>
+            
+            <div class="content-box">
+                <h2>MO2 Setup Options</h2>
+                <button class="btn btn-primary btn-large" onclick="downloadMO2()">Download Mod Organizer 2</button>
+                <button class="btn btn-primary btn-large" onclick="showPage('setupExistingMO2')">Set Up Existing Installation</button>
+                <button class="btn btn-primary btn-large" onclick="setupNXMHandler()">Setup NXM Handler</button>
+            </div>
+            
+            <button class="btn btn-danger btn-large" onclick="showPage('modManagers')">Back to Mod Managers</button>
+            
+            <div id="progressSection" class="content-box" style="display: none;">
+                <h2 id="progressTitle">Installing MO2 Dependencies for testing</h2>
+                <div class="progress-bar">
+                    <div id="progressBar" class="progress-fill"></div>
+                </div>
+                <p id="progressText" class="progress-text">0% - Starting...</p>
+                <div id="progressLog" class="log-box"></div>
+            </div>
+        </div>
+
+        <!-- Game Info Page -->
+        <div id="gameInfo" class="page">
+            <h1 class="title">Game Information</h1>
+            <p class="subtitle">Detected games on your system</p>
+            
+            <div class="content-box">
+                <div class="info-row">
+                    <span>Total Games Found:</span>
+                    <span id="gameCount">0</span>
+                </div>
+                <button class="btn btn-primary" onclick="scanGames()">Scan for Games</button>
+            </div>
+            
+            <div id="gamesList" class="games-grid"></div>
+            
+            <button class="btn btn-danger btn-large" onclick="showPage('mainMenu')">Back to Main Menu</button>
+        </div>
+
+        <!-- NXM Handler Setup Page -->
+        <div id="nxmHandlerSetup" class="page">
+            <h1 class="title">Setup NXM Handler</h1>
+            <p class="subtitle">Configure NXM link support for your games</p>
+            
+            <div class="content-box">
+                <div class="nxm-setup-header">
+                    <h2>Select Game</h2>
+                    <p>Choose the game you want to configure NXM handler for:</p>
+                </div>
+                
+                <div id="nxmGamesList" class="games-grid">
+                    <!-- Games will be populated here -->
+                </div>
+                
+                <div id="selectedGameInfo" style="display: none;" class="selected-game-info">
+                    <!-- Selected game info will be shown here -->
+                </div>
+                
+                <div id="nxmHandlerPathSection" style="display: none;" class="nxm-path-section">
+                    <h3>MO2 Folder Path</h3>
+                    <p>Select the Mod Organizer 2 folder for this game:</p>
+                    <div class="path-input-container">
+                        <input type="text" id="nxmHandlerPath" placeholder="/path/to/MO2/folder" class="path-input" readonly>
+                        <button class="btn btn-primary" onclick="browseForNXMHandler()">Browse</button>
+                    </div>
+                    <p class="help-text">The app will automatically find nxmhandler.exe in this folder.</p>
+                </div>
+            </div>
+            
+            <div class="installation-actions">
+                <button class="btn btn-primary" onclick="configureNXMHandler()" id="configureNXMButton" style="display: none;">Configure NXM Handler</button>
+                <button class="btn btn-danger" onclick="removeNXMHandlers()">Remove All NXM Handlers</button>
+                <button class="btn btn-secondary" onclick="showPage('mo2Setup')">Back to MO2 Setup</button>
+            </div>
+        </div>
+
+        <!-- Installation Progress Page -->
+        <div id="installationProgress" class="page">
+            <h1 class="title">MO2 Installation Progress</h1>
+            <p class="subtitle">Installing Mod Organizer 2 and dependencies</p>
+            
+            <div class="content-box">
+                <div class="installation-header">
+                    <h2 id="installationTitle">Starting Installation...</h2>
+                    <div class="installation-info">
+                        <div class="info-item">
+                            <strong>Target Directory:</strong> 
+                            <span id="targetDirectory" style="color: #7dd3fc;">Selecting...</span>
+                        </div>
+                        <div class="info-item">
+                            <strong>Status:</strong> 
+                            <span id="installationStatus" style="color: #fbbf24;">Initializing...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar-large">
+                        <div id="installationProgressBar" class="progress-fill-large"></div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progressPercentage">0%</span>
+                        <span id="progressStep">Preparing installation...</span>
+                    </div>
+                </div>
+                
+                <div class="terminal-container">
+                    <div class="terminal-header">
+                        <span class="terminal-title">Installation Output</span>
+                    </div>
+                    <div id="terminalOutput" class="terminal-output">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">$</span>
+                            <span class="terminal-text">Starting Mod Organizer 2 installation process...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="installation-actions">
+                <button id="cancelButton" class="btn btn-danger" onclick="cancelInstallation()" style="display: none;">Cancel Installation</button>
+                <button id="backButton" class="btn btn-danger" onclick="showPage('mo2Setup')" style="display: none;">Back to Setup</button>
+                <button id="continueButton" class="btn btn-primary" onclick="showPage('mo2Setup')" style="display: none;">Continue</button>
+            </div>
+        </div>
+
+        <!-- Setup Existing MO2 Page -->
+        <div id="setupExistingMO2" class="page">
+            <h1 class="title">Set Up Existing MO2 Installation</h1>
+            <p class="subtitle">Select your Mod Organizer 2 installation folder</p>
+            
+            <div class="content-box">
+                <h2>Select MO2 Folder</h2>
+                <p style="color: #cbd5e1; margin-bottom: 20px;">
+                    Click the button below to browse and select the folder containing your Mod Organizer 2 installation 
+                    (the folder that contains ModOrganizer.exe).
+                </p>
+                <button class="btn btn-primary btn-large" onclick="browseMO2Folder()">Select MO2 Folder</button>
+            </div>
+            
+            <div id="mo2SelectedPath" style="display: none;" class="content-box">
+                <h2>Selected MO2 Installation</h2>
+                <div class="mo2-card">
+                    <div class="mo2-info"><strong>Path:</strong> <span id="selectedPathDisplay" style="color: #7dd3fc;"></span></div>
+                    <div class="mo2-info"><strong>Status:</strong> <span id="mo2Status" style="color: #10b981;">Ready to configure</span></div>
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <label for="mo2InstallationName" style="color: #cbd5e1; font-weight: 500; margin-bottom: 10px; display: block;">Steam Installation Name:</label>
+                    <input type="text" id="mo2InstallationName" placeholder="Mod Organizer 2" style="
+                        width: 100%;
+                        padding: 12px 16px;
+                        background: rgba(15, 23, 42, 0.6);
+                        border: 1px solid rgba(125, 211, 252, 0.3);
+                        border-radius: 8px;
+                        color: #e2e8f0;
+                        font-size: 1rem;
+                        margin-bottom: 20px;
+                    ">
+                    <p style="color: #94a3b8; font-size: 0.9rem; margin-top: -15px;">
+                        This is how the installation will appear in your Steam library.
+                    </p>
+                </div>
+                
+                <button class="btn btn-primary btn-large" onclick="confirmMO2Setup()">Add to Steam</button>
+                <button class="btn btn-primary" onclick="browseMO2Folder()">Choose Different Folder</button>
+            </div>
+            
+            <button class="btn btn-danger btn-large" onclick="showPage('mo2Setup')">Back to MO2 Setup</button>
+        </div>
+    </div>
+
+    <div class="footer">Built with Wails • Powered by Go</div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+# cloudbuild.yaml
+# This file defines the build pipeline for Google Cloud Build.
+# It mirrors the steps from the GitHub Actions workflow.
+
+steps:
+  # This single step uses a standard Ubuntu image and installs all dependencies
+  # needed for the build. This is similar to how the GitHub Actions runner is set up.
+- name: 'ubuntu:20.04'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    set -e
+    
+    echo "--- Installing Build Dependencies ---"
+    apt-get update
+    # Install git, python, pip, go, node, npm, and Wails system dependencies
+    apt-get install -y git python3-pip golang nodejs npm pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev build-essential wget
+    
+    echo "--- Installing Python Packages ---"
+    pip3 install -r requirements.txt
+    
+    echo "--- Installing Wails CLI ---"
+    # Set GOPATH to a directory that persists within this step and add its bin to the PATH
+    export GOPATH=/tmp/go
+    export PATH=$PATH:$GOPATH/bin
+    go install github.com/wailsapp/wails/v2/cmd/wails@latest
+    
+    echo "--- Building Python Backend ---"
+    # PyInstaller was installed via requirements.txt
+    pyinstaller nak_backend.spec --clean
+    
+    echo "--- Building Wails GUI ---"
+    # Set GOAMD64 for compatibility, as done in the GitHub Action
+    export GOAMD64=v1
+    cd nak-gui
+    # The wails command will run 'npm install' and 'npm run build' automatically
+    wails build
+    cd ..
+    
+    echo "--- Creating AppImage ---"
+    # The create_wails_appimage.sh script needs appimagetool.
+    # We download it and place it where the script can find it.
+    wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+    chmod +x appimagetool-x86_64.AppImage
+    mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
+    
+    # Run the packaging script
+    ./create_wails_appimage.sh
+    
+    echo "--- Build Complete ---"
+
+# This section tells Cloud Build what files to save after the build finishes.
+artifacts:
+  objects:
+    # IMPORTANT: You must replace <YOUR-BUCKET-NAME> with the name of your Google Cloud Storage bucket.
+    location: 'gs://nak-building/'
+    paths:
+      # This will save the generated AppImage to your bucket.
+      - 'NaK-Linux-Modding-Helper-Wails.AppImage'
+
+# Optional: Set a timeout for the build.
+timeout: '1200s'
