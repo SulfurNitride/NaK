@@ -51,6 +51,9 @@ jobs:
       run: |
         go install github.com/wailsapp/wails/v2/cmd/wails@latest
         echo "$HOME/go/bin" >> $GITHUB_PATH
+        
+    - name: List files in workspace
+      run: ls -la /github/workspace
     
     - name: Build Python backend
       run: |
