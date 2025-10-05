@@ -25,6 +25,13 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+build_output/
+target/
+AppDir/
+NaK-Wails.AppDir/
+nak-gui/build/
+nak-gui/nak-gui
+*.AppImage
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -100,10 +107,6 @@ ipython_config.py
 #   commonly ignored for libraries.
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
 #poetry.lock
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
 #   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
 #   in version control.
 #   https://pdm.fming.dev/#use-with-ide
@@ -177,3 +180,8 @@ verify_*.py
 # Personal configuration
 .claude/
 *.local
+
+# Other
+nuitka-crash-report.xml
+Python-3.13.0a2.tar.xz
+Cargo.lock

@@ -298,8 +298,8 @@ func (a *App) TestInstallMO2(installDir string) string {
 	return fmt.Sprintf(`{"success": true, "message": "Test completed successfully", "install_dir": "%s"}`, installDir)
 }
 
-// InstallMO2WithDirectory installs Mod Organizer 2 to a specific directory
-func (a *App) InstallMO2WithDirectory(installDir string) string {
+// InstallMO2 installs Mod Organizer 2 to a specific directory
+func (a *App) InstallMO2(installDir string) string {
 	fmt.Printf("InstallMO2WithDirectory called with: %s\n", installDir)
 	fmt.Printf("Calling executeBackend with args: install-mo2, --install-dir, %s\n", installDir)
 

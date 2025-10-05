@@ -13,6 +13,15 @@ cd /home/luke/Documents/NaK-Python
 export GOAMD64=v1
 export PATH=$PATH:/home/luke/go/bin
 
+echo "Setting up Python virtual environment..."
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install Python dependencies
+echo ""
+echo "Installing Python dependencies..."
+python3 -m pip install -r requirements.txt
+
 # Build Python backend
 echo ""
 echo "Building Python backend..."

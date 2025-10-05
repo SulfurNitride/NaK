@@ -18,8 +18,8 @@ export function FindMO2() {
   return window['go']['main']['App']['FindMO2']();
 }
 
-export function InstallMO2WithDirectory(arg1) {
-  return window['go']['main']['App']['InstallMO2WithDirectory'](arg1);
+export function InstallMO2(arg1) {
+  return window['go']['main']['App']['InstallMO2'](arg1);
 }
 
 export function LaunchMO2() {
