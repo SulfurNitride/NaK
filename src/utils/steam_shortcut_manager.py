@@ -1110,7 +1110,7 @@ echo Prefix creation complete."""
             return ""
         
         # Join paths with colons (no quotes needed)
-        compat_mounts = f'STEAM_COMPAT_MOUNTS={":".join(sorted(mount_paths))}'
+        compat_mounts = f'STEAM_COMPAT_MOUNTS="{":".join(sorted(mount_paths))}"'
         
         self.logger.debug(f"Generated STEAM_COMPAT_MOUNTS with {len(mount_paths)} paths: {compat_mounts}")
         return compat_mounts
