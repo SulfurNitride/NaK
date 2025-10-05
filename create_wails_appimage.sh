@@ -34,8 +34,15 @@ cp dist/nak_backend "$APPDIR/usr/bin/"
 # This ensures we get all dependencies but exclude problematic base system libs
 echo "Bundling webkit2gtk libraries..."
 
+webkit_lib=$(find /usr/lib /usr/lib/x86_64-linux-gnu -name "libwebkit2gtk-4.1.so*" -o -name "libwebkit2gtk-4.0.so*" | head -n 1)
+if [ -z "$webkit_lib" ]; then
+    echo "Error: libwebkit2gtk library not found."
+    exit 1
+fi
+echo "Found webkit2gtk library: $webkit_lib"
+
 # Get webkit2gtk and its direct dependencies
-ldd /usr/lib/libwebkit2gtk-4.0.so 2>/dev/null | grep "=> /" | awk '{print $3}' | while read lib; do
+ldd "$webkit_lib" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read lib; do
     # Skip base system libraries that are CPU-specific (glibc, libpthread, etc)
     case "$lib" in
         */libc.so*|*/libpthread.so*|*/libm.so*|*/libdl.so*|*/librt.so*|*/libresolv.so*) 
@@ -46,9 +53,10 @@ ldd /usr/lib/libwebkit2gtk-4.0.so 2>/dev/null | grep "=> /" | awk '{print $3}' |
     fi
 done
 
-# Copy webkit2gtk itself
-cp -L /usr/lib/libwebkit2gtk-4.0.so* "$APPDIR/usr/lib/" 2>/dev/null || true
-cp -L /usr/lib/libjavascriptcoregtk-4.0.so* "$APPDIR/usr/lib/" 2>/dev/null || true
+# Copy webkit2gtk and javascriptcoregtk libraries
+webkit_dir=$(dirname "$webkit_lib")
+cp -L "$webkit_dir"/libwebkit2gtk-*.so* "$APPDIR/usr/lib/" 2>/dev/null || true
+cp -L "$webkit_dir"/libjavascriptcoregtk-*.so* "$APPDIR/usr/lib/" 2>/dev/null || true
 
 # Copy GTK and related libraries (but skip glibc components)
 for lib in libgtk-3 libgdk-3 libglib-2.0 libgobject-2.0 libgio-2.0 libcairo libpango libgdk_pixbuf; do
