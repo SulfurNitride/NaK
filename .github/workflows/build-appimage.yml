@@ -11,6 +11,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     runs-on: ubuntu-20.04  # Use Ubuntu 20.04 for glibc 2.31 compatibility
     
     steps:
