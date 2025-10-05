@@ -6,7 +6,7 @@ set -e
 # Set CPU compatibility flag for broader support (v1 = baseline x86-64)
 export GOAMD64=v1
 
-cd /home/luke/Documents/NaK-Python
+
 
 echo "============================================"
 echo "Creating NaK Wails AppImage"
