@@ -84,6 +84,7 @@ fi
 
 # Create AppImage
 echo "Creating AppImage..."
+ls -laR "$APPDIR"
 ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APPDIR" NaK-Linux-Modding-Helper-Wails.AppImage
 
 if [ -f "NaK-Linux-Modding-Helper-Wails.AppImage" ]; then
