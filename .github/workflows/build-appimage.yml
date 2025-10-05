@@ -54,7 +54,7 @@ jobs:
     
     - name: Build Python backend
       run: |
-        pyinstaller nak_backend.spec --clean
+        pyinstaller /github/workspace/nak_backend.spec --clean
     
     - name: Build Wails GUI
       env:
