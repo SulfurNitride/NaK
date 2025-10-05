@@ -24,6 +24,7 @@ cp nak-gui/build/bin/nak-gui "$APPDIR/usr/bin/"
 
 # Copy the Python backend executable
 echo "Copying Python backend..."
+ls -la dist
 cp dist/nak_backend "$APPDIR/usr/bin/"
 
 # Create desktop file
