@@ -41,7 +41,8 @@ jobs:
           pkg-config \
           libgtk-3-dev \
           libwebkit2gtk-4.1-dev \
-          build-essential
+          build-essential \
+          libfuse2
     
     - name: Install Python dependencies
       run: |
