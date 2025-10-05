@@ -24,7 +24,6 @@ cp nak-gui/build/bin/nak-gui "$APPDIR/usr/bin/"
 
 # Copy the Python backend executable
 echo "Copying Python backend..."
-ls -la dist
 cp dist/nak_backend "$APPDIR/usr/bin/"
 
 # Create desktop file
@@ -84,7 +83,6 @@ fi
 
 # Create AppImage
 echo "Creating AppImage..."
-ls -laR "$APPDIR"
 ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APPDIR" NaK-Linux-Modding-Helper-Wails.AppImage
 
 if [ -f "NaK-Linux-Modding-Helper-Wails.AppImage" ]; then
