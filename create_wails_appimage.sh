@@ -88,8 +88,13 @@ EOF
 cat > "$APPDIR/AppRun" << 'EOF'
 #!/bin/bash
 export APPDIR="$(dirname "$(readlink -f "$0")")"
-export LD_LIBRARY_PATH="$APPDIR/usr/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$APPDIR/usr/lib:$APPDIR/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
 export PATH="$APPDIR/usr/bin:$PATH"
+if [ -d "$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" ]; then
+    export WEBKIT_EXEC_PATH="$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
+elif [ -d "$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0" ]; then
+    export WEBKIT_EXEC_PATH="$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0"
+fi
 exec "$APPDIR/usr/bin/nak-gui" "$@"
 EOF
 
