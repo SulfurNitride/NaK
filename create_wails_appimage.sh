@@ -58,6 +58,16 @@ webkit_dir=$(dirname "$webkit_lib")
 cp -L "$webkit_dir"/libwebkit2gtk-*.so* "$APPDIR/usr/lib/" 2>/dev/null || true
 cp -L "$webkit_dir"/libjavascriptcoregtk-*.so* "$APPDIR/usr/lib/" 2>/dev/null || true
 
+# Copy WebKit executables
+if [ -d /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 ]; then
+    mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu"
+    cp -r /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 "$APPDIR/usr/lib/x86_64-linux-gnu/"
+fi
+if [ -d /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0 ]; then
+    mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu"
+    cp -r /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0 "$APPDIR/usr/lib/x86_64-linux-gnu/"
+fi
+
 # Copy GTK and related libraries (but skip glibc components)
 for lib in libgtk-3 libgdk-3 libglib-2.0 libgobject-2.0 libgio-2.0 libcairo libpango libgdk_pixbuf; do
     find /usr/lib -name "${lib}.so*" -type f -exec cp -L {} "$APPDIR/usr/lib/" \; 2>/dev/null || true
