@@ -10,7 +10,7 @@ export function ConfigureNXMHandler(arg1:string,arg2:string):Promise<string>;
 
 export function FindMO2():Promise<main.FindMO2Result>;
 
-export function InstallMO2WithDirectory(arg1:string):Promise<string>;
+export function InstallMO2(arg1:string):Promise<string>;
 
 export function LaunchMO2():Promise<string>;
 

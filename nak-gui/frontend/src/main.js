@@ -1,5 +1,5 @@
 import './style.css'
-import { ScanGames, CheckDependencies, InstallMO2, InstallMO2WithDirectory, LaunchMO2, BrowseForMO2Folder, SelectDirectory, TestInstallMO2, SetupExistingMO2, ConfigureNXMHandler, RemoveNXMHandlers } from '../wailsjs/go/main/App'
+import { ScanGames, CheckDependencies, InstallMO2, LaunchMO2, BrowseForMO2Folder, SelectDirectory, TestInstallMO2, SetupExistingMO2, ConfigureNXMHandler, RemoveNXMHandlers } from '../wailsjs/go/main/App'
 
 // Test if the module is loading
 console.log('Main.js loaded successfully');
@@ -122,7 +122,7 @@ async function startMO2Installation(installDir) {
         console.log('About to call InstallMO2WithDirectory with:', installDir);
 
         // Use the real MO2 installation function
-        const result = await InstallMO2WithDirectory(installDir);
+        const result = await InstallMO2(installDir);
 
         console.log('InstallMO2WithDirectory result:', result);
         
