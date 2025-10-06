@@ -114,8 +114,9 @@ if [ ! -f "linuxdeploy-x86_64.AppImage" ]; then
 fi
 chmod +x linuxdeploy-x86_64.AppImage
 
-# Deploy webkit2gtk libraries explicitly
-echo "Deploying webkit2gtk libraries..."
+# Deploy webkit2gtk libraries and helper processes explicitly
+echo "Deploying webkit2gtk libraries and helper processes..."
+
 # Find webkit2gtk library
 WEBKIT_LIB=$(ldconfig -p | grep 'libwebkit2gtk-4\.' | awk '{print $NF}' | head -n 1)
 if [ -z "$WEBKIT_LIB" ]; then
@@ -128,6 +129,31 @@ if [ -n "$WEBKIT_LIB" ]; then
     mkdir -p "$APPDIR/usr/lib"
     # Copy webkit and its dependencies
     cp -L "$WEBKIT_LIB" "$APPDIR/usr/lib/" || echo "Warning: Could not copy webkit library"
+fi
+
+# Find and copy webkit helper processes (critical for webkit to function)
+WEBKIT_HELPERS_DIR=""
+for dir in /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0 /usr/libexec/webkit2gtk-4.1 /usr/libexec/webkit2gtk-4.0; do
+    if [ -d "$dir" ]; then
+        WEBKIT_HELPERS_DIR="$dir"
+        echo "Found webkit helpers in: $WEBKIT_HELPERS_DIR"
+        break
+    fi
+done
+
+if [ -n "$WEBKIT_HELPERS_DIR" ]; then
+    # Determine the target directory structure
+    WEBKIT_TARGET="$APPDIR/usr/lib/$(basename $WEBKIT_HELPERS_DIR)"
+    mkdir -p "$WEBKIT_TARGET"
+    
+    # Copy all webkit helper processes
+    echo "Copying webkit helper processes..."
+    cp -r "$WEBKIT_HELPERS_DIR"/* "$WEBKIT_TARGET/" || echo "Warning: Could not copy webkit helpers"
+    
+    # Make sure they're executable
+    chmod +x "$WEBKIT_TARGET"/* 2>/dev/null || true
+else
+    echo "Warning: Could not find webkit helper processes directory"
 fi
 
 # Run linuxdeploy to bundle all dependencies
