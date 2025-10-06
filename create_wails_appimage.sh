@@ -98,13 +98,13 @@ cp "$APPDIR/nak-gui.svg" "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
 
 # Download winetricks
 echo "Downloading winetricks..."
-wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O "$APPDIR/usr/bin/winetricks"
+wget https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O "$APPDIR/usr/bin/winetricks"
 chmod +x "$APPDIR/usr/bin/winetricks"
 
 # Download linuxdeploy and the gtk plugin
 echo "Downloading linuxdeploy..."
-wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
+wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+wget https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
 chmod +x linuxdeploy-x86_64.AppImage
 chmod +x linuxdeploy-plugin-gtk-x86_64.AppImage
 
