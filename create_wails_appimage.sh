@@ -104,7 +104,7 @@ chmod +x "$APPDIR/usr/bin/winetricks"
 # Download linuxdeploy and the gtk plugin
 echo "Downloading linuxdeploy..."
 wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-wget https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
+wget https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/1.0.0/linuxdeploy-plugin-gtk-x86_64.AppImage
 chmod +x linuxdeploy-x86_64.AppImage
 chmod +x linuxdeploy-plugin-gtk-x86_64.AppImage
 
