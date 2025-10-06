@@ -31,7 +31,8 @@ pyinstaller nak_backend.spec --clean
 echo ""
 echo "Building Wails GUI..."
 cd nak-gui
-wails build
+# Build with webkit2gtk-4.1 support for better compatibility
+wails build -tags webkit2_41
 cd ..
 
 # Create AppImage

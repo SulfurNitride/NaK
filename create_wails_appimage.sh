@@ -10,6 +10,12 @@ echo "============================================"
 echo "Creating NaK Wails AppImage"
 echo "============================================"
 
+# Build Wails GUI with webkit support
+echo "Building Wails GUI with webkit2gtk support..."
+cd nak-gui
+wails build -tags webkit2_41
+cd ..
+
 # Create AppDir structure
 APPDIR="NaK-Wails.AppDir"
 rm -rf "$APPDIR"
@@ -101,19 +107,47 @@ echo "Downloading winetricks..."
 wget https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O "$APPDIR/usr/bin/winetricks"
 chmod +x "$APPDIR/usr/bin/winetricks"
 
-# Download linuxdeploy and the gtk plugin
+# Download linuxdeploy
 echo "Downloading linuxdeploy..."
-wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-wget https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/1.0.0/linuxdeploy-plugin-gtk-x86_64.AppImage
+if [ ! -f "linuxdeploy-x86_64.AppImage" ]; then
+    wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+fi
 chmod +x linuxdeploy-x86_64.AppImage
-chmod +x linuxdeploy-plugin-gtk-x86_64.AppImage
 
-# Run linuxdeploy
+# Deploy webkit2gtk libraries explicitly
+echo "Deploying webkit2gtk libraries..."
+# Find webkit2gtk library
+WEBKIT_LIB=$(ldconfig -p | grep 'libwebkit2gtk-4\.' | awk '{print $NF}' | head -n 1)
+if [ -z "$WEBKIT_LIB" ]; then
+    # Try webkit2gtk-4.1 as fallback
+    WEBKIT_LIB=$(ldconfig -p | grep 'libwebkit2gtk-4\.1' | awk '{print $NF}' | head -n 1)
+fi
+
+if [ -n "$WEBKIT_LIB" ]; then
+    echo "Found webkit library: $WEBKIT_LIB"
+    mkdir -p "$APPDIR/usr/lib"
+    # Copy webkit and its dependencies
+    cp -L "$WEBKIT_LIB" "$APPDIR/usr/lib/" || echo "Warning: Could not copy webkit library"
+fi
+
+# Run linuxdeploy to bundle all dependencies
 echo "Running linuxdeploy..."
-./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk --output appimage
+DISABLE_COPYRIGHT_FILES_DEPLOYMENT=1 ./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" \
+    --executable "$APPDIR/usr/bin/nak-gui" \
+    --deploy-deps-only="$APPDIR/usr/lib" \
+    --output appimage \
+    || true  # Continue even if strip fails
 
-# Rename the AppImage
-mv NaK_Linux_Modding_Helper-x86_64.AppImage NaK-Linux-Modding-Helper-Wails.AppImage
+# If AppImage wasn't created, try with appimagetool directly
+if [ ! -f "NaK Linux Modding Helper-x86_64.AppImage" ]; then
+    echo "Using appimagetool as fallback..."
+    ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APPDIR" NaK-Linux-Modding-Helper-Wails.AppImage
+fi
+
+# Rename the AppImage if it exists with the default name
+if [ -f "NaK Linux Modding Helper-x86_64.AppImage" ]; then
+    mv "NaK Linux Modding Helper-x86_64.AppImage" NaK-Linux-Modding-Helper-Wails.AppImage
+fi
 
 if [ -f "NaK-Linux-Modding-Helper-Wails.AppImage" ]; then
     chmod +x NaK-Linux-Modding-Helper-Wails.AppImage
