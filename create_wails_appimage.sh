@@ -101,16 +101,19 @@ echo "Downloading winetricks..."
 wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O "$APPDIR/usr/bin/winetricks"
 chmod +x "$APPDIR/usr/bin/winetricks"
 
-# Download appimagetool if not present
-if [ ! -f "appimagetool-x86_64.AppImage" ]; then
-    echo "Downloading appimagetool..."
-    wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
-    chmod +x appimagetool-x86_64.AppImage
-fi
+# Download linuxdeploy and the gtk plugin
+echo "Downloading linuxdeploy..."
+wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk-x86_64.AppImage
+chmod +x linuxdeploy-x86_64.AppImage
+chmod +x linuxdeploy-plugin-gtk-x86_64.AppImage
 
-# Create AppImage
-echo "Creating AppImage..."
-ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APPDIR" NaK-Linux-Modding-Helper-Wails.AppImage
+# Run linuxdeploy
+echo "Running linuxdeploy..."
+./linuxdeploy-x86_64.AppImage --appdir "$APPDIR" --plugin gtk --output appimage
+
+# Rename the AppImage
+mv NaK_Linux_Modding_Helper-x86_64.AppImage NaK-Linux-Modding-Helper-Wails.AppImage
 
 if [ -f "NaK-Linux-Modding-Helper-Wails.AppImage" ]; then
     chmod +x NaK-Linux-Modding-Helper-Wails.AppImage
