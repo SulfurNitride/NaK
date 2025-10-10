@@ -259,6 +259,9 @@ export APPDIR=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"
 export LD_LIBRARY_PATH=\"\$APPDIR/usr/lib:\$LD_LIBRARY_PATH\"
 export PATH=\"\$APPDIR/usr/bin:\$PATH\"
 
+# Preserve display server environment for proper window decorations
+export DISPLAY=\"\${DISPLAY:-:0}\"
+
 exec \"\$APPDIR/usr/bin/nak-modding-helper\" \"\$@\"
 EOF
 
