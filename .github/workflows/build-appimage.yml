@@ -14,66 +14,24 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.8'
-    
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-    
-    - name: Install system dependencies
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Download winetricks
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          pkg-config \
-          libgtk-3-dev \
-          libwebkit2gtk-4.1-dev \
-          build-essential \
-          libfuse2
-    
-    - name: Install Python dependencies
+        wget -q https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks
+        chmod +x winetricks
+
+    - name: Build Flet AppImage
       run: |
-        pip install pyinstaller requests pillow psutil py7zr vdf
-    
-    - name: Install Wails
-      run: |
-        go install github.com/wailsapp/wails/v2/cmd/wails@latest
-        echo "$HOME/go/bin" >> $GITHUB_PATH
-    
-    - name: Build Python backend
-      run: |
-        pyinstaller nak_backend.spec --clean
-    
-    - name: Build Wails GUI
-      env:
-        GOAMD64: v1  # Baseline x86-64 for maximum compatibility
-      run: |
-        cd nak-gui
-        wails build -tags webkit2_41
-        cd ..
-    
-    - name: Download appimagetool
-      run: |
-        wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-        chmod +x appimagetool-x86_64.AppImage
-    
-    - name: Create AppImage
-      run: |
-        ./create_wails_appimage.sh
-    
+        chmod +x build_flet.sh
+        ./build_flet.sh
+
     - name: Get version info
       id: version
       run: |
@@ -82,19 +40,19 @@ jobs:
         else
           echo "version=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         fi
-    
+
     - name: Rename AppImage with version
       run: |
-        mv NaK-Linux-Modding-Helper-Wails.AppImage \
+        mv NaK-Linux-Modding-Helper-Flet.AppImage \
            NaK-Linux-Modding-Helper-${{ steps.version.outputs.version }}-x86_64.AppImage
-    
+
     - name: Upload AppImage artifact
       uses: actions/upload-artifact@v4
       with:
         name: NaK-AppImage-${{ steps.version.outputs.version }}
         path: NaK-Linux-Modding-Helper-*.AppImage
         retention-days: 90
-    
+
     - name: Upload to release
       if: github.event_name == 'release'
       uses: softprops/action-gh-release@v1
@@ -102,7 +60,7 @@ jobs:
         files: NaK-Linux-Modding-Helper-*.AppImage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
+
     - name: Create build info
       run: |
         cat > build-info.txt << EOF
@@ -111,11 +69,12 @@ jobs:
         Commit: ${{ github.sha }}
         Branch: ${{ github.ref_name }}
         Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-        Built on: Ubuntu Latest
+        Built with: Docker (Ubuntu 22.04 base)
         Compatible with: Ubuntu 22.04+, Debian 12+, Fedora 36+, and other distros with glibc ≥ 2.35
+        GUI Framework: Flet (Flutter-based Material Design)
         EOF
         cat build-info.txt
-    
+
     - name: Upload build info
       uses: actions/upload-artifact@v4
       with:
