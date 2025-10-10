@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, NamedTuple
 from dataclasses import dataclass
 
-from utils.game_finder import GameInfo
+from src.utils.game_finder import GameInfo
 
 
 @dataclass
@@ -439,7 +439,7 @@ class PrefixLocator:
             # Run regedit
             result = subprocess.run([
                 'wine', 'regedit', '/S', reg_file_path
-            ], env=env, capture_output=True, text=True)
+            ], env=env, capture_output=True, text=True, timeout=30)
 
             if result.returncode == 0:
                 self.logger.info(f"Successfully applied {reg_file_path} to {prefix_info.path}")

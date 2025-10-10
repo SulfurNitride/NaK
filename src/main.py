@@ -6,8 +6,8 @@ import argparse
 import sys
 from typing import Dict, Any, Optional
 
-from core.core import Core
-from utils.logger import get_logger, setup_comprehensive_logging
+from src.core.core import Core
+from src.utils.logger import get_logger, setup_comprehensive_logging
 
 
 class NaKApp:

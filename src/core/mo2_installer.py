@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import requests
 
-from utils.logger import get_logger
-from utils.steam_utils import SteamUtils
+from src.utils.logger import get_logger
+from src.utils.steam_utils import SteamUtils
 
 
 class GitHubRelease:
@@ -32,7 +32,7 @@ class MO2Installer:
     
     def set_progress_callback(self, callback):
         """Set a callback function for progress updates"""
-        self.log_callback = callback
+        self.progress_callback = callback
     
     def _cleanup_old_cache(self, current_filename: str):
         """Clean up old cached MO2 files"""
@@ -62,6 +62,12 @@ class MO2Installer:
         self.logger.info(message)
         if self.log_callback:
             self.log_callback(message)
+
+    def _send_progress_update(self, percent):
+        """Send progress percentage update to callback"""
+        if self.progress_callback:
+            # Call progress callback with percent, 0, 0 for non-download operations
+            self.progress_callback(percent, 0, 0)
     
     def download_mo2(self, install_dir: Optional[str] = None, custom_name: Optional[str] = None) -> Dict[str, Any]:
         """Download and install the latest version of Mod Organizer 2 with complete Steam integration"""
@@ -193,32 +199,50 @@ class MO2Installer:
     def setup_existing(self, mo2_dir: str, custom_name: str = "Mod Organizer 2") -> Dict[str, Any]:
         """Setup existing MO2 installation from directory"""
         try:
-            self.logger.info(f"Setting up existing MO2 installation from: {mo2_dir}")
-            
+            self._log_progress(f"Setting up existing MO2 installation from: {mo2_dir}")
+            self._send_progress_update(10)
+
             # Verify the directory exists
+            self._log_progress("Verifying MO2 directory...")
             if not os.path.exists(mo2_dir):
                 return {"success": False, "error": f"Directory does not exist: {mo2_dir}"}
-            
+            self._send_progress_update(20)
+
             # Find ModOrganizer.exe in the directory
+            self._log_progress("Finding ModOrganizer.exe...")
             mo2_exe = self._find_mo2_executable(mo2_dir)
             if not mo2_exe:
                 return {"success": False, "error": f"Could not find ModOrganizer.exe in: {mo2_dir}"}
-            
+            self._send_progress_update(30)
+
             # Use the provided custom name
-            self.logger.info(f"Using custom name: {custom_name}")
-            
+            self._log_progress(f"Using installation name: {custom_name}")
+
             # Add to Steam
+            self._log_progress(f"Adding {custom_name} to Steam...")
             steam_result = self._add_mo2_to_steam(mo2_exe, custom_name)
             if not steam_result["success"]:
                 return steam_result
-            
-            # Install dependencies directly
-            self.logger.info("Installing MO2 dependencies...")
-            from core.dependency_installer import DependencyInstaller
-            deps = DependencyInstaller()
+            self._send_progress_update(50)
+
             app_id = steam_result.get("app_id")
+            self._log_progress(f"Successfully added to Steam with AppID: {app_id}")
+
+            # Install dependencies directly
+            self._log_progress("Installing MO2 dependencies...")
+            from src.core.dependency_installer import DependencyInstaller
+            deps = DependencyInstaller()
+
+            # Set up callback for live logging to GUI
+            if self.log_callback:
+                deps.set_log_callback(self.log_callback)
+
+            self._send_progress_update(60)
             dep_result = deps.install_mo2_dependencies_for_game(str(app_id))
-            
+            self._send_progress_update(95)
+
+            self._log_progress("Setup completed successfully!")
+
             return {
                 "success": True,
                 "install_dir": mo2_dir,
@@ -229,7 +253,7 @@ class MO2Installer:
                 "steam_integration": steam_result,
                 "dependency_installation": dep_result
             }
-            
+
         except Exception as e:
             self.logger.error(f"Failed to setup existing MO2: {e}")
             return {"success": False, "error": str(e)}
@@ -262,7 +286,7 @@ class MO2Installer:
 
             # Install dependencies directly
             self.logger.info("Installing MO2 dependencies...")
-            from core.dependency_installer import DependencyInstaller
+            from src.core.dependency_installer import DependencyInstaller
             deps = DependencyInstaller()
             dep_result = deps.install_mo2_dependencies_for_game(str(app_id))
             
@@ -586,7 +610,7 @@ class MO2Installer:
             self.logger.info(f"AppID: {app_id}")
             self.logger.info("About to install comprehensive MO2 dependencies...")
 
-            from core.dependency_installer import DependencyInstaller
+            from src.core.dependency_installer import DependencyInstaller
             deps = DependencyInstaller()
 
             # Set up callback for live logging to GUI
@@ -824,7 +848,7 @@ class MO2Installer:
             
             # Try to use 7z command
             cmd = ["7z", "x", archive_path, f"-o{extract_dir}", "-y"]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0:
                 # Find the extracted directory
@@ -1029,12 +1053,12 @@ MimeType=x-scheme-handler/nxm;
             os.chmod(script_path, 0o755)
             
             # Update desktop database
-            subprocess.run(["update-desktop-database", os.path.join(os.path.expanduser("~"), ".local", "share", "applications")], 
-                          capture_output=True)
+            subprocess.run(["update-desktop-database", os.path.join(os.path.expanduser("~"), ".local", "share", "applications")],
+                          capture_output=True, timeout=30)
             
             # Set as default handler
             result = subprocess.run([f"xdg-mime default mo2-nxm-handler-{app_id}.desktop x-scheme-handler/nxm"], 
-                                  shell=True, capture_output=True, text=True)
+                                  shell=True, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0:
                 return {
@@ -1159,11 +1183,11 @@ MimeType=x-scheme-handler/nxm;
             
             # Update desktop database
             subprocess.run(["update-desktop-database", applications_dir], 
-                          capture_output=True, check=False)
+                          capture_output=True, check=False, timeout=30)
             
             # Unset the NXM handler
             subprocess.run(["xdg-mime", "default", ""], 
-                          capture_output=True, check=False)
+                          capture_output=True, check=False, timeout=30)
             
             if removed_count > 0:
                 message = f"Removed {removed_count} NXM handler file(s) successfully!"

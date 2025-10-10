@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 
-from utils.settings_manager import SettingsManager
+from src.utils.settings_manager import SettingsManager
 
 
 @dataclass
@@ -540,7 +540,7 @@ echo Prefix creation complete."""
                 capture_output=True,
                 text=True,
                 check=True
-            )
+            , timeout=30)
             
             self.logger.info("Proton execution completed successfully")
             self.logger.info(f"Stdout: {result.stdout}")
@@ -613,7 +613,7 @@ echo Prefix creation complete."""
         # Fallback: Check for any proton binary in the system PATH
         try:
             import subprocess
-            result = subprocess.run(["which", "proton"], capture_output=True, text=True)
+            result = subprocess.run(["which", "proton"], capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
                 proton_path = result.stdout.strip()
                 if proton_path and Path(proton_path).exists():

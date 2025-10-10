@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from pathlib import Path
 
-from utils.settings_manager import SettingsManager
+from src.utils.settings_manager import SettingsManager
 
 
 class SettingsView(QWidget):

@@ -11,9 +11,9 @@ from pathlib import Path
 import tempfile
 import datetime
 
-from utils.logger import get_logger
-from utils.steam_utils import SteamUtils
-from utils.dependency_cache_manager import DependencyCacheManager
+from src.utils.logger import get_logger
+from src.utils.steam_utils import SteamUtils
+from src.utils.dependency_cache_manager import DependencyCacheManager
 
 
 class DependencyInstaller:
@@ -237,7 +237,7 @@ class DependencyInstaller:
             # Also send to GUI callback for immediate display
             self._log_progress("═══ MO2 DEPENDENCY INSTALLATION STARTING ═══")
             self._log_progress(f"Target: {selected_game.get('Name')} (AppID: {game_app_id})")
-            self._log_progress(f"Installing {len(dependencies)} comprehensive dependencies")
+            self._log_progress(f"Installing {len(dependencies)} dependencies")
             self._log_progress("Dependencies: " + ", ".join(dependencies[:7]) + f" + {len(dependencies)-7} more...")
             
             result = self._install_dependencies_self_contained(selected_game, dependencies, "MO2")
@@ -278,12 +278,43 @@ class DependencyInstaller:
                     self.logger.warning(".NET 9 SDK INSTALLATION FAILED")
                     self.logger.warning("═══════════════════════════════════════════════════════════════")
                     self.logger.warning(".NET 9 SDK installation failed")
+
+                # Restart Steam after MO2 setup completes
+                self.logger.info("═══════════════════════════════════════════════════════════════")
+                self.logger.info("RESTARTING STEAM")
+                self.logger.info("═══════════════════════════════════════════════════════════════")
+                self._log_progress("═══ RESTARTING STEAM ═══")
+                self._log_progress("Stopping Steam...")
+
+                try:
+                    # Try to kill Steam (won't error if it's not running)
+                    result = subprocess.run(["pkill", "-9", "steam"], timeout=30, capture_output=True)
+                    if result.returncode == 0:
+                        self.logger.info("Steam was running and has been stopped")
+                        self._log_progress("Steam stopped - waiting 10 seconds...")
+                        # Wait 10 seconds for Steam to fully shut down
+                        time.sleep(10)
+                    else:
+                        self.logger.info("Steam was not running")
+                        self._log_progress("Steam was not running - waiting 5 seconds...")
+                        # Wait 5 seconds before starting Steam
+                        time.sleep(5)
+
+                    # Always start Steam after waiting
+                    self.logger.info("Starting Steam...")
+                    self._log_progress("Starting Steam...")
+                    subprocess.Popen(["steam"])
+                    self.logger.info("Steam started successfully")
+                    self._log_progress("Steam started successfully!")
+                except Exception as e:
+                    self.logger.warning(f"Failed to restart Steam: {e}")
+                    self._log_progress(f"Warning: Failed to restart Steam - please start manually")
             else:
                 self.logger.error("═══════════════════════════════════════════════════════════════")
                 self.logger.error("SKIPPING REGISTRY AND .NET SDK - DEPENDENCIES FAILED")
                 self.logger.error("═══════════════════════════════════════════════════════════════")
                 self.logger.error(f"Basic dependency installation failed, skipping registry and .NET SDK")
-            
+
             return result
             
         except Exception as e:
@@ -304,9 +335,8 @@ class DependencyInstaller:
                 self.logger.info(f"*** USING PYINSTALLER BUNDLED WINETRICKS: {bundled_winetricks} ***")
                 return bundled_winetricks
             else:
-                self.logger.error(f"CRITICAL: PyInstaller bundled winetricks not found at {bundled_winetricks}")
-                return ""
-        
+                self.logger.info(f"PyInstaller bundled winetricks not found at {bundled_winetricks}, checking AppImage location...")
+
         # Check if we're running in AppImage
         appdir = os.environ.get('APPDIR')
         self.logger.info(f"*** CHECKING APPIMAGE - APPDIR: {appdir} ***")
@@ -449,7 +479,7 @@ class DependencyInstaller:
                     str(directx_file)
                 ]
                 
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 if result.returncode != 0:
                     self.logger.error(f"Failed to extract d3dcompiler_43 from DirectX: {result.stderr}")
                     return
@@ -467,7 +497,7 @@ class DependencyInstaller:
                         str(cab_file)
                     ]
                     
-                    extract_result = subprocess.run(extract_cmd, capture_output=True, text=True)
+                    extract_result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=30)
                     if extract_result.returncode == 0:
                         self.logger.info(f"Extracted d3dcompiler_43.dll to {winetricks_cache_dir}")
                         break
@@ -770,97 +800,18 @@ class DependencyInstaller:
         except Exception as e:
             self.logger.error(f"Proton registry application error: {e}")
             return False
-    
 
-    def _command_exists(self, command: str) -> bool:
-        """Check if a command exists in PATH"""
-        try:
-            subprocess.run([command, "--version"], capture_output=True, check=True)
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return False
-    
-    def _validate_protontricks_working(self, protontricks_cmd: str, app_id: str) -> bool:
-        """Validate that protontricks is working properly for the given app"""
-        try:
-            # Test with a simple command that should work
-            test_cmd = [protontricks_cmd, "--no-bwrap", app_id, "--list"]
-            if protontricks_cmd.startswith("flatpak run"):
-                parts = protontricks_cmd.split()
-                test_cmd = [parts[0]] + parts[1:] + ["--no-bwrap", app_id, "--list"]
-            
-            self.logger.info(f"Testing protontricks with: {' '.join(test_cmd)}")
-            result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0:
-                self.logger.info("Protontricks validation successful")
-                return True
-            else:
-                self.logger.warning(f"Protontricks validation failed: {result.stderr}")
-                return False
-                
-        except Exception as e:
-            self.logger.warning(f"Protontricks validation error: {e}")
-            return False
-    
-    def _test_protontricks_basic(self, protontricks_cmd: str) -> bool:
-        """Test basic protontricks functionality without specific AppID"""
-        try:
-            # Test with just --help or --version to see if protontricks runs
-            test_cmd = [protontricks_cmd, "--help"]
-            if protontricks_cmd.startswith("flatpak run"):
-                parts = protontricks_cmd.split()
-                test_cmd = [parts[0]] + parts[1:] + ["--help"]
-            
-            self.logger.info(f"Testing protontricks basic functionality: {' '.join(test_cmd)}")
-            result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=15)
-            
-            # Most help commands return 0, but some might return 1 and still work
-            if result.returncode in [0, 1]:
-                self.logger.info("Protontricks basic functionality test passed")
-                return True
-            else:
-                self.logger.warning(f"Protontricks basic test failed: {result.stderr}")
-                return False
-                
-        except Exception as e:
-            self.logger.warning(f"Protontricks basic test error: {e}")
-            return False
-    
-    def _install_proton_dependencies(self, game: Dict[str, str], protontricks_cmd: str) -> Dict[str, Any]:
-        """Install Proton dependencies for a game - now uses comprehensive dependency list"""
-        self.logger.info(f"Installing comprehensive dependencies for {game.get('Name')} (AppID: {game.get('AppID')})")
-        
-        # Use the same comprehensive dependency list as MO2 setup
-        # Note: fontsmooth=rgb is handled via registry settings, not winetricks
-        comprehensive_dependencies = [
-            "xact",
-            "xact_x64",
-            "vcrun2022",
-            "dotnet6",
-            "dotnet7",
-            "dotnet8",
-            "dotnetdesktop6",
-            "d3dcompiler_47",
-            "d3dx11_43",
-            "d3dcompiler_43",
-            "d3dx9_43",
-            "d3dx9",
-            "vkd3d",
-        ]
-        
-        return self._install_dependencies_with_list(game, protontricks_cmd, comprehensive_dependencies, game.get("Name", "Unknown"))
-    
+
     def _install_dependencies_with_list(self, game: Dict[str, str], protontricks_cmd: str, dependencies: List[str], game_type: str) -> Dict[str, Any]:
-        """Install dependencies with a specific list"""
-        self.logger.info(f"STEP 1: Installing {game_type} dependencies for {game.get('Name')} (AppID: {game.get('AppID')})")
-        
-        # Try to use Heroic's winetricks setup for faster installation
+        """Install dependencies with bundled winetricks + Proton (the only supported method)"""
+        self.logger.info(f"Installing {game_type} dependencies for {game.get('Name')} (AppID: {game.get('AppID')})")
+
+        # Use bundled winetricks + Proton (the standard and only method)
         self.logger.info("═══════════════════════════════════════════════════════════════")
-        self.logger.info("CHECKING FOR HEROIC WINETRICKS METHOD (PROTON + WINETRICKS)")
+        self.logger.info("BUNDLED WINETRICKS + PROTON INSTALLATION")
         self.logger.info("═══════════════════════════════════════════════════════════════")
         self.logger.info(f"TARGET: {game.get('Name')} (AppID: {game.get('AppID')})")
-        self.logger.info("Looking for Proton binaries to use Heroic's winetricks approach...")
+        self.logger.info("Looking for Proton binaries for bundled winetricks installation...")
         heroic_wine_bin = self._get_heroic_wine_binary_for_steam()
         self.logger.info(f"Proton binary search result: {heroic_wine_bin}")
 
@@ -869,467 +820,29 @@ class DependencyInstaller:
             self.logger.info(f"Using Proton binary: {heroic_wine_bin}")
             self.logger.info(f"Installing {game_type} dependencies with BUNDLED WINETRICKS + PROTON")
             self.logger.info("Using our own bundled winetricks (no external dependencies)")
-            self.logger.info("This is faster than protontricks and uses Proton's wine binary directly")
+            self.logger.info("This is the standard method - self-contained and reliable")
             self.logger.info("═══════════════════════════════════════════════════════════════")
 
             self._log_progress(f"*** USING BUNDLED WINETRICKS + PROTON for {game_type} installation ***")
             self._log_progress("Using bundled winetricks - no external dependencies!")
             return self._install_dependencies_with_heroic(game, dependencies, heroic_wine_bin, game_type)
         else:
-            self.logger.info("*** HEROIC WINETRICKS METHOD NOT AVAILABLE ***")
-            self.logger.info("No Proton binaries found, falling back to protontricks method")
-            self.logger.info("═══════════════════════════════════════════════════════════════")
+            # No Proton found - this is an error, no fallback to protontricks
+            self.logger.error("═══════════════════════════════════════════════════════════════")
+            self.logger.error("BUNDLED WINETRICKS METHOD NOT AVAILABLE - NO PROTON FOUND")
+            self.logger.error("═══════════════════════════════════════════════════════════════")
+            self.logger.error("No Proton binaries found in Steam directory")
+            self.logger.error("Please install Proton through Steam first")
 
-            self._log_progress("*** Heroic winetricks method not available, using protontricks fallback ***")
-        
-        # Fallback to protontricks
-        self.logger.info("═══════════════════════════════════════════════════════════════")
-        self.logger.info("USING PROTONTRICKS FALLBACK METHOD")
-        self.logger.info("═══════════════════════════════════════════════════════════════")
-        self.logger.info(f"STEP 1: Using protontricks for {game_type} installation")
-        self._log_progress(f"FALLBACK: Using protontricks method for {game_type} installation")
-        
-        output_lines = []
-        output_lines.append(f"STEP 1: Installing {game_type} dependencies for {game.get('Name')} (AppID: {game.get('AppID')}):")
-        output_lines.append(f"Total dependencies: {len(dependencies)}")
-        output_lines.append("")
-        
-        # Validate protontricks is working BEFORE we start (using a test AppID)
-        self._log_progress("STEP 1: Validating protontricks is working properly...")
-        output_lines.append("STEP 1: Validating protontricks is working properly...")
-        
-        # Test with a common AppID that should exist (Steam itself or a common game)
-        test_app_id = "22380"  # Fallout New Vegas - commonly installed
-        if not self._validate_protontricks_working(protontricks_cmd, test_app_id):
-            # If that fails, try with a different approach - just test if protontricks runs
-            self._log_progress("STEP 1: Testing protontricks basic functionality...")
-            if not self._test_protontricks_basic(protontricks_cmd):
-                self._log_progress("STEP 1 WARNING: Protontricks validation failed, but continuing...")
-                self._log_progress("STEP 1 INFO: This is normal for some systems - installation will proceed")
-                output_lines.append("STEP 1 WARNING: Protontricks validation failed, but continuing...")
-                output_lines.append("STEP 1 INFO: This is normal for some systems - installation will proceed")
-            else:
-                self._log_progress("STEP 1: Protontricks basic functionality confirmed")
-                output_lines.append("STEP 1: Protontricks basic functionality confirmed")
-        else:
-            self._log_progress("STEP 1: Protontricks validation successful")
-            output_lines.append("STEP 1: Protontricks validation successful")
-        
-        # Kill Steam first (like CLI does)
-        self._log_progress("STEP 1: Stopping Steam...")
-        output_lines.append("STEP 1: Stopping Steam...")
-        try:
-            subprocess.run(["pkill", "-9", "steam"], check=True)
-            self._log_progress("STEP 1: Steam stopped successfully.")
-            output_lines.append("STEP 1: Steam stopped successfully.")
-            # Wait for cleanup
-            time.sleep(2)
-        except subprocess.CalledProcessError:
-            self._log_progress("STEP 1: Failed to stop Steam (may not be running)")
-            output_lines.append("STEP 1: Failed to stop Steam (may not be running)")
-        
-        # Build the protontricks command with -q flag (like CLI does)
-        args = ["--no-bwrap", game.get("AppID", ""), "-q"]
-        args.extend(dependencies)
-        
-        # Split the protontricks command if it's a flatpak command
-        if protontricks_cmd.startswith("flatpak run"):
-            parts = protontricks_cmd.split()
-            cmd = [parts[0]] + parts[1:] + args
-        else:
-            cmd = [protontricks_cmd] + args
-        
-        self._log_progress(f"STEP 1: Running: {protontricks_cmd} {' '.join(args)}")
-        self._log_progress("STEP 1: Starting dependency installation...")
-        output_lines.append(f"STEP 1: Running: {protontricks_cmd} {' '.join(args)}")
-        output_lines.append("STEP 1: Starting dependency installation...")
-        output_lines.append("")
-        
-        try:
-            # Run the command with timeout and better error handling
-            self.logger.info("───────────────────────────────────────────────────────────────")
-            self.logger.info("PROTONTRICKS FALLBACK METHOD - EXECUTION DETAILS")
-            self.logger.info("───────────────────────────────────────────────────────────────")
-            self.logger.info(f"Command: {' '.join(cmd)}")
-            self.logger.info(f"Target Game: {game.get('Name')} (AppID: {game.get('AppID')})")
+            self._log_progress("*** ERROR: No Proton installation found ***")
+            self._log_progress("Please install Proton through Steam and try again")
 
-            # Set up environment for protontricks
-            env = os.environ.copy()
-            # Remove PROTON_VERSION if it exists to avoid conflicts
-            if 'PROTON_VERSION' in env:
-                del env['PROTON_VERSION']
-
-            # Set Wine environment variables to suppress warnings
-            env['WINEDEBUG'] = '-all'  # Suppress Wine debug output
-            env['WINEDLLOVERRIDES'] = 'winemenubuilder.exe=d'  # Disable menu builder
-
-            self.logger.info("Environment Configuration:")
-            self.logger.info("   - Auto-detecting Proton version (removed PROTON_VERSION)")
-            self.logger.info("   - Set WINEDEBUG=-all to suppress Wine warnings")
-            self.logger.info("   - Disabled menu builder via WINEDLLOVERRIDES")
-
-            # Log start of execution
-            self.logger.info("───────────────────────────────────────────────────────────────")
-            self.logger.info("STARTING PROTONTRICKS INSTALLATION...")
-            self.logger.info("This may take several minutes - please be patient...")
-            self.logger.info("───────────────────────────────────────────────────────────────")
-
-            self._log_progress("PROTONTRICKS FALLBACK: Installing dependencies...")
-            self._log_progress("This may take several minutes (protontricks method)...")
-
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=600, env=env)  # 10 minute timeout, don't check for errors
-            
-            # Log all output regardless of success/failure
-            self.logger.info(f"Protontricks return code: {result.returncode}")
-            if result.stdout:
-                self.logger.info(f"Protontricks stdout:\n{result.stdout}")
-            if result.stderr:
-                self.logger.info(f"Protontricks stderr:\n{result.stderr}")
-            
-            # Now check the return code and handle errors appropriately
-            if result.returncode != 0:
-                # Log the error but don't immediately fail
-                self.logger.warning("Protontricks failed - analyzing output...")
-                output_lines.append(f"Protontricks failed with return code: {result.returncode}")
-                if result.stderr:
-                    output_lines.append(f"Error output: {result.stderr}")
-                if result.stdout:
-                    output_lines.append(f"Standard output: {result.stdout}")
-                
-                return {
-                    "success": False,
-                    "message": "\n".join(output_lines),
-                    "error": f"Protontricks failed (code {result.returncode})"
-                }
-            
-            # Log successful execution
-            self.logger.info("Protontricks completed successfully")
-            self._log_progress("Protontricks execution completed!")
-            
-            # Check if the command actually did something
-            if result.stdout:
-                self._log_progress("Protontricks output received")
-                output_lines.append("Protontricks output:")
-                output_lines.append(result.stdout)
-                self.logger.info("Found stdout output")
-            
-            if result.stderr:
-                self._log_progress("Protontricks additional output:")
-                self._log_progress(f"Output details: {result.stderr}")
-                output_lines.append("Protontricks additional output:")
-                output_lines.append(result.stderr)
-                self.logger.info("Found stderr output")
-            
-            # Validate that dependencies were actually installed
-            # Check for successful installation indicators in protontricks output
-            success_indicators = [
-                "installed successfully",
-                "successfully installed", 
-                "installation completed",
-                "setup complete",
-                "wine prefix created",
-                "executing w_do_call",
-                "executing load_",
-                "wine: cannot find",
-                "wine: cannot open",
-                "wine: cannot load",
-                "wine: cannot create",
-                "wine: cannot access",
-                "wine: cannot read",
-                "wine: cannot write",
-                "wine: cannot execute",
-                "wine: cannot run",
-                "wine: cannot start",
-                "wine: cannot launch",
-                "wine: cannot find",
-                "wine: cannot open",
-                "wine: cannot load",
-                "wine: cannot create",
-                "wine: cannot access",
-                "wine: cannot read",
-                "wine: cannot write",
-                "wine: cannot execute",
-                "wine: cannot run",
-                "wine: cannot start",
-                "wine: cannot launch"
-            ]
-            
-            # Check for failure indicators
-            failure_indicators = [
-                "error:",
-                "failed:",
-                "failure:",
-                "cannot install",
-                "installation failed",
-                "setup failed",
-                "download failed",
-                "extraction failed"
-            ]
-            
-            output_lower = result.stdout.lower() + result.stderr.lower()
-            found_success = [indicator for indicator in success_indicators if indicator in output_lower]
-            found_failures = [indicator for indicator in failure_indicators if indicator in output_lower]
-            
-            # If we have success indicators and no clear failures, consider it successful
-            if found_success and not found_failures:
-                self._log_progress("All dependencies installed successfully!")
-                output_lines.append("All dependencies installed successfully!")
-                self.logger.info(f"Success: Found indicators: {found_success}")
-            elif found_failures:
-                self._log_progress("Dependencies installation failed")
-                output_lines.append("Dependencies installation failed")
-                output_lines.append("Check the output above for errors")
-                self.logger.error(f"Failure: Found failure indicators: {found_failures}")
-                return {
-                    "success": False,
-                    "message": "\n".join(output_lines),
-                    "error": f"Dependency installation failed: {found_failures}"
-                }
-            else:
-                # If we can't determine success/failure, but protontricks returned 0, assume success
-                if result.returncode == 0:
-                    self._log_progress("Dependencies installation completed (assuming success)")
-                    output_lines.append("Dependencies installation completed (assuming success)")
-                    output_lines.append("Note: Could not verify installation status, but protontricks completed without errors")
-                    self.logger.info("Success: Protontricks returned 0, assuming success")
-                else:
-                    self._log_progress("Warning: Dependencies may not have been installed properly")
-                    output_lines.append("Warning: Dependencies may not have been installed properly")
-                    output_lines.append("Check the output above for any errors")
-                    self.logger.warning("Warning: No success indicators found in output")
-                    return {
-                        "success": False,
-                        "message": "\n".join(output_lines),
-                        "error": "Could not verify dependency installation"
-                    }
-            
-        except subprocess.TimeoutExpired as e:
-            self.logger.error(f"Command timed out after 10 minutes: {e}")
-            output_lines.append(f"Dependency installation timed out after 10 minutes")
-            output_lines.append("This is normal for large dependency installations")
-            output_lines.append("Dependencies may still be installing in the background")
-            # Return success for timeout - protontricks might still be working
-            output_lines.append("")
-            output_lines.append(f"{game_type} dependencies setup complete!")
-            
-            return {
-                "success": True,
-                "message": "\n".join(output_lines)
-            }
-            
-        except subprocess.CalledProcessError as e:
-            # This shouldn't happen since we use check=False, but just in case
-            self.logger.error(f"CalledProcessError: {e}")
-            self.logger.error(f"Error stdout: {e.stdout}")
-            self.logger.error(f"Error stderr: {e.stderr}")
-            output_lines.append(f"Failed to install dependencies: {e}")
-            if e.stderr:
-                output_lines.append(f"Error details: {e.stderr}")
-            if e.stdout:
-                output_lines.append(f"Output: {e.stdout}")
             return {
                 "success": False,
-                "message": "\n".join(output_lines),
-                "error": str(e)
+                "error": "No Proton installation found. Please install Proton through Steam first.",
+                "method": "no_proton_found"
             }
-        except Exception as e:
-            # Catch any other unexpected errors
-            self.logger.error(f"Unexpected error: {e}")
-            output_lines.append(f"Unexpected error during dependency installation: {e}")
-            return {
-                "success": False,
-                "message": "\n".join(output_lines),
-                "error": str(e)
-            }
-        
-        # Apply Wine registry settings (DLL overrides and settings) - STEP 2
-        self._log_progress("")
-        self._log_progress("STEP 2: Applying Wine registry settings (DLL overrides)...")
-        output_lines.append("")
-        output_lines.append("STEP 2: Applying Wine registry settings (DLL overrides)...")
-        self.logger.info("STEP 2: Applying Wine registry settings...")
-        
-        registry_success = self._apply_wine_registry_settings(game.get("AppID", ""), protontricks_cmd, output_lines)
-        if registry_success:
-            self._log_progress("STEP 2 COMPLETE: Wine registry settings applied successfully!")
-            output_lines.append("STEP 2 COMPLETE: Wine registry settings applied successfully!")
-            self.logger.info("STEP 2 COMPLETE: Wine registry settings applied successfully")
-        else:
-            self._log_progress("STEP 2 WARNING: Failed to apply some Wine registry settings")
-            output_lines.append("STEP 2 WARNING: Failed to apply some Wine registry settings")
-            self.logger.warning("STEP 2 WARNING: Failed to apply some Wine registry settings")
-        
-        # Install .NET 9 SDK - STEP 3 (after dependencies and registry)
-        self._log_progress("")
-        self._log_progress("STEP 3: Installing .NET 9 SDK (after dependencies and registry)...")
-        output_lines.append("")
-        output_lines.append("STEP 3: Installing .NET 9 SDK...")
-        self.logger.info("STEP 3: Installing .NET 9 SDK after dependencies and registry...")
-        
-        try:
-            # Create a progress callback that updates the main progress
-            def dotnet_progress_callback(percent):
-                # Update main progress to 97-99% range for .NET installation
-                main_progress = 97 + (percent * 2 / 100)  # 97-99% range
-                self._log_progress(f"STEP 3 PROGRESS: {main_progress:.1f}%")
-            
-            dotnet_success = self.install_dotnet9_sdk(game.get("AppID", ""), dotnet_progress_callback)
-            if dotnet_success:
-                self._log_progress("STEP 3 COMPLETE: .NET 9 SDK installed successfully!")
-                output_lines.append("STEP 3 COMPLETE: .NET 9 SDK installed successfully!")
-                self.logger.info("STEP 3 COMPLETE: .NET 9 SDK installation successful")
-            else:
-                self._log_progress("STEP 3 WARNING: .NET 9 SDK installation may have failed")
-                output_lines.append("STEP 3 WARNING: .NET 9 SDK installation may have failed")
-                self.logger.warning("STEP 3 WARNING: .NET 9 SDK installation may have failed")
-        except Exception as e:
-            self._log_progress(f"STEP 3 ERROR: .NET 9 SDK installation failed: {e}")
-            output_lines.append(f"STEP 3 ERROR: .NET 9 SDK installation failed: {e}")
-            self.logger.error(f"STEP 3 ERROR: .NET 9 SDK installation error: {e}")
-        
-        # Restart Steam - STEP 4
-        self._log_progress("")
-        self._log_progress("STEP 4: Restarting Steam...")
-        output_lines.append("")
-        output_lines.append("STEP 4: Restarting Steam...")
-        self.logger.info("STEP 4: Restarting Steam...")
-        try:
-            subprocess.Popen(["steam"])
-            self._log_progress("STEP 4 COMPLETE: Steam restarted successfully!")
-            output_lines.append("STEP 4 COMPLETE: Steam restarted successfully!")
-            self.logger.info("STEP 4 COMPLETE: Steam restarted successfully")
-        except Exception as e:
-            self._log_progress(f"STEP 4 WARNING: Failed to restart Steam: {e}")
-            self._log_progress("Please start Steam manually.")
-            output_lines.append(f"STEP 4 WARNING: Failed to restart Steam: {e}")
-            output_lines.append("Please start Steam manually.")
-            self.logger.error(f"STEP 4 ERROR: Steam restart failed: {e}")
-        
-        # Final summary
-        self._log_progress("")
-        self._log_progress(f"{game_type} DEPENDENCY INSTALLATION COMPLETE!")
-        self._log_progress("All components installed successfully!")
-        self._log_progress("Your game is now ready for modding!")
-        output_lines.append("")
-        output_lines.append(f"{game_type} DEPENDENCY INSTALLATION COMPLETE!")
-        output_lines.append("All components installed successfully!")
-        output_lines.append("Your game is now ready for modding!")
-        self.logger.info(f"DEPENDENCY INSTALLATION COMPLETE: {game_type} dependencies installed successfully")
-        
-        return {
-            "success": True,
-            "message": "\n".join(output_lines)
-        }
     
-    
-    def _apply_wine_registry_settings(self, app_id: str, protontricks_cmd: str, output_lines: list) -> bool:
-        """Apply Wine registry settings including DLL overrides"""
-        try:
-            self.logger.info(f"REGISTRY INSTALLER: Starting Wine registry settings application for AppID: {app_id}")
-            
-            # Find wine_settings.reg file
-            wine_settings_path = Path(__file__).parent.parent / "utils" / "wine_settings.reg"
-            self.logger.info(f"REGISTRY INSTALLER: Looking for wine_settings.reg at: {wine_settings_path}")
-            
-            if not wine_settings_path.exists():
-                self.logger.error(f"REGISTRY INSTALLER: Wine settings reg file not found at: {wine_settings_path}")
-                output_lines.append(f"Error: wine_settings.reg not found at {wine_settings_path}")
-                return False
-            
-            self.logger.info(f"REGISTRY INSTALLER: Found wine_settings.reg file")
-            
-            # Read and log the registry file contents
-            with open(wine_settings_path, 'r') as f:
-                reg_content = f.read()
-                self.logger.info(f"REGISTRY INSTALLER: Registry file size: {len(reg_content)} characters")
-                self.logger.info(f"REGISTRY INSTALLER: Registry file preview: {reg_content[:200]}...")
-            
-            # Create a temporary copy of the registry file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.reg', delete=False) as temp_file:
-                temp_file.write(reg_content)
-                temp_reg_path = temp_file.name
-            
-            self.logger.info(f"REGISTRY INSTALLER: Created temporary registry file: {temp_reg_path}")
-            
-            # Get paths dynamically
-            steam_root = self.steam_utils.get_steam_root()
-            self.logger.info(f"REGISTRY INSTALLER: Steam root: {steam_root}")
-
-            compatdata_path = f"{steam_root}/steamapps/compatdata/{app_id}"
-            self.logger.info(f"REGISTRY INSTALLER: Compat data path: {compatdata_path}")
-            
-            proton_path = f"{steam_root}/steamapps/common/Proton - Experimental/proton"
-            self.logger.info(f"REGISTRY INSTALLER: Proton path: {proton_path}")
-            
-            # Verify paths exist
-            if not os.path.exists(compatdata_path):
-                self.logger.error(f"REGISTRY INSTALLER: Compat data path does not exist: {compatdata_path}")
-                output_lines.append(f"Error: Compat data path does not exist: {compatdata_path}")
-                return False
-            
-            if not os.path.exists(proton_path):
-                self.logger.error(f"REGISTRY INSTALLER: Proton path does not exist: {proton_path}")
-                output_lines.append(f"Error: Proton path does not exist: {proton_path}")
-                return False
-            
-            # Set up environment
-            env = os.environ.copy()
-            env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = steam_root
-            env['STEAM_COMPAT_DATA_PATH'] = compatdata_path
-
-            self.logger.info(f"REGISTRY INSTALLER: Environment variables set:")
-            self.logger.info(f"   STEAM_COMPAT_CLIENT_INSTALL_PATH: {env['STEAM_COMPAT_CLIENT_INSTALL_PATH']}")
-            self.logger.info(f"   STEAM_COMPAT_DATA_PATH: {env['STEAM_COMPAT_DATA_PATH']}")
-            
-            cmd = [proton_path, "run", "regedit", temp_reg_path]
-            self.logger.info(f"REGISTRY INSTALLER: Executing registry command: {' '.join(cmd)}")
-            
-            # Execute registry import
-            self.logger.info(f"REGISTRY INSTALLER: Running regedit command (timeout: 60 seconds)...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
-            
-            self.logger.info(f"REGISTRY INSTALLER: Registry command completed with return code: {result.returncode}")
-            
-            if result.stdout:
-                self.logger.info(f"REGISTRY INSTALLER: Registry stdout output:")
-                for line in result.stdout.split('\n'):
-                    if line.strip():
-                        self.logger.info(f"   STDOUT: {line}")
-                        output_lines.append(f"   Registry output: {line}")
-            
-            if result.stderr:
-                self.logger.info(f"REGISTRY INSTALLER: Registry stderr output:")
-                for line in result.stderr.split('\n'):
-                    if line.strip():
-                        self.logger.info(f"   STDERR: {line}")
-                        output_lines.append(f"   Registry error: {line}")
-            
-            # Cleanup temp file
-            try:
-                Path(temp_reg_path).unlink(missing_ok=True)
-                self.logger.info(f"REGISTRY INSTALLER: Cleaned up temporary registry file")
-            except Exception as cleanup_error:
-                self.logger.warning(f"REGISTRY INSTALLER: Failed to cleanup temp file: {cleanup_error}")
-            
-            if result.returncode == 0:
-                self.logger.info(f"REGISTRY INSTALLER: Registry settings applied successfully!")
-                output_lines.append("Registry settings applied successfully")
-                return True
-            else:
-                self.logger.error(f"REGISTRY INSTALLER: Registry import failed with return code: {result.returncode}")
-                output_lines.append(f"Registry import failed (code {result.returncode})")
-                if result.stderr:
-                    output_lines.append(f"   Error details: {result.stderr}")
-                return False
-                
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"REGISTRY INSTALLER: Registry command timed out after 60 seconds")
-            output_lines.append("Registry import timed out after 60 seconds")
-            return False
-        except Exception as e:
-            self.logger.error(f"REGISTRY INSTALLER: Registry application error: {e}")
-            output_lines.append(f"Error applying registry settings: {e}")
-            return False
 
     def install_dotnet9_sdk(self, game_app_id: str, progress_callback=None) -> bool:
         """Install .NET 9 SDK using appropriate method based on settings (Wine or Proton)"""
@@ -1494,7 +1007,7 @@ class DependencyInstaller:
             return False
 
     def _get_heroic_wine_binary_for_steam(self) -> Optional[str]:
-        """Get Heroic's Wine binary for use with Steam games (faster than protontricks)"""
+        """Get Proton's Wine binary for use with Steam games"""
         try:
             # Use Proton Experimental's proton file for Heroic games (more universal)
             steam_root = self.steam_utils.get_steam_root()
@@ -1529,14 +1042,14 @@ class DependencyInstaller:
             return None
 
     def _install_dependencies_with_heroic(self, game: Dict[str, str], dependencies: List[str], wine_bin: str, game_type: str) -> Dict[str, Any]:
-        """Install dependencies using Heroic's winetricks setup (faster method)"""
+        """Install dependencies using bundled winetricks + Proton (standard method)"""
         try:
             self.logger.info("═══════════════════════════════════════════════════════════════")
-            self.logger.info("HEROIC WINETRICKS METHOD - INSTALLATION STARTING")
+            self.logger.info("BUNDLED WINETRICKS INSTALLATION STARTING")
             self.logger.info("═══════════════════════════════════════════════════════════════")
             self.logger.info(f"Installing {game_type} dependencies for: {game.get('Name')}")
-            self.logger.info(f"Method: HEROIC (winetricks + Proton wine binary)")
-            self.logger.info(f"Advantage: Faster than protontricks, direct wine binary usage")
+            self.logger.info(f"Method: Bundled winetricks + Proton wine binary")
+            self.logger.info(f"Advantage: Self-contained, no external dependencies required")
 
             # Get Steam compatdata path for this game
             app_id = game.get('AppID', '')
@@ -1549,6 +1062,21 @@ class DependencyInstaller:
 
             # Set up environment like Heroic does
             env = os.environ.copy()
+
+            # Remove AppImage LD_LIBRARY_PATH to prevent library conflicts with system binaries
+            # This prevents issues with winetricks calling system tools like unzstd, tar, etc.
+            env.pop('LD_LIBRARY_PATH', None)
+            env.pop('APPIMAGE', None)
+
+            # Keep APPDIR and ensure bundled tools (cabextract, etc.) are in PATH
+            appdir = os.environ.get('APPDIR')
+            if appdir:
+                bundled_bin = os.path.join(appdir, 'usr', 'bin')
+                # Put bundled tools first in PATH so cabextract is found
+                current_path = env.get('PATH', '')
+                env['PATH'] = f"{bundled_bin}:{current_path}"
+                self.logger.info(f"Added bundled tools to PATH: {bundled_bin}")
+
             env["WINEPREFIX"] = wine_prefix
             env["WINEARCH"] = "win64"
 
@@ -1604,18 +1132,18 @@ class DependencyInstaller:
                 self.logger.info(f"   {i:2d}/{len(dependencies)}: {dep}")
 
             self.logger.info("───────────────────────────────────────────────────────────────")
-            self.logger.info("STARTING HEROIC WINETRICKS INSTALLATION...")
+            self.logger.info("STARTING BUNDLED WINETRICKS INSTALLATION...")
             self.logger.info("This may take several minutes - please be patient...")
             self.logger.info("───────────────────────────────────────────────────────────────")
 
-            self._log_progress("HEROIC METHOD: Starting winetricks installation with Proton...")
+            self._log_progress("Starting winetricks installation with Proton...")
             self._log_progress(f"Installing {len(dependencies)} dependencies via winetricks + Proton")
 
             result_cmd = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
             
             # Log the results
             self.logger.info("───────────────────────────────────────────────────────────────")
-            self.logger.info("HEROIC WINETRICKS INSTALLATION RESULTS")
+            self.logger.info("BUNDLED WINETRICKS INSTALLATION RESULTS")
             self.logger.info("───────────────────────────────────────────────────────────────")
             self.logger.info(f"Return Code: {result_cmd.returncode}")
 
@@ -1651,44 +1179,44 @@ class DependencyInstaller:
                 }
             else:
                 self.logger.error("═══════════════════════════════════════════════════════════════")
-                self.logger.error("HEROIC WINETRICKS METHOD - FAILED!")
+                self.logger.error("BUNDLED WINETRICKS INSTALLATION - FAILED!")
                 self.logger.error("═══════════════════════════════════════════════════════════════")
                 self.logger.error(f"Winetricks returned non-zero exit code: {result_cmd.returncode}")
                 self.logger.error(f"Error output: {result_cmd.stderr}")
 
-                self._log_progress("HEROIC METHOD: Installation failed, will fallback to protontricks")
+                self._log_progress("Installation failed - bundled winetricks returned an error")
 
                 return {
                     "success": False,
-                    "error": f"HEROIC winetricks method failed: {result_cmd.stderr}",
-                    "method": "heroic_winetricks_failed"
+                    "error": f"Bundled winetricks installation failed: {result_cmd.stderr}",
+                    "method": "bundled_winetricks_failed"
                 }
-                
+
         except subprocess.TimeoutExpired:
             self.logger.error("═══════════════════════════════════════════════════════════════")
-            self.logger.error("HEROIC WINETRICKS METHOD - TIMEOUT!")
+            self.logger.error("BUNDLED WINETRICKS INSTALLATION - TIMEOUT!")
             self.logger.error("═══════════════════════════════════════════════════════════════")
             self.logger.error(f"Winetricks installation timed out after 10 minutes")
             self.logger.error(f"Game: {game.get('Name')} ({game_type})")
 
-            self._log_progress("HEROIC METHOD: Installation timed out, will fallback to protontricks")
+            self._log_progress("Installation timed out after 10 minutes")
 
             return {
                 "success": False,
-                "error": "HEROIC winetricks method timed out after 10 minutes",
-                "method": "heroic_winetricks_timeout"
+                "error": "Bundled winetricks installation timed out after 10 minutes",
+                "method": "bundled_winetricks_timeout"
             }
         except Exception as e:
             self.logger.error("═══════════════════════════════════════════════════════════════")
-            self.logger.error("HEROIC WINETRICKS METHOD - ERROR!")
+            self.logger.error("BUNDLED WINETRICKS INSTALLATION - ERROR!")
             self.logger.error("═══════════════════════════════════════════════════════════════")
-            self.logger.error(f"Failed to install {game_type} dependencies with Heroic method: {e}")
+            self.logger.error(f"Failed to install {game_type} dependencies with bundled winetricks: {e}")
             self.logger.error(f"Game: {game.get('Name')}")
 
-            self._log_progress("HEROIC METHOD: Unexpected error, will fallback to protontricks")
+            self._log_progress("Installation failed due to unexpected error")
 
             return {
                 "success": False,
-                "error": f"HEROIC winetricks method failed: {e}",
-                "method": "heroic_winetricks_error"
+                "error": f"Bundled winetricks installation failed: {e}",
+                "method": "bundled_winetricks_error"
             }

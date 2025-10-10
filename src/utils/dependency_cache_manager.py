@@ -16,7 +16,7 @@ import shutil
 import sys
 import os
 
-from utils.logger import get_logger
+from src.utils.logger import get_logger
 
 
 class DependencyCacheManager:
@@ -447,7 +447,7 @@ class DependencyCacheManager:
                         str(source_file)
                     ]
                     
-                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                     if result.returncode != 0:
                         self.logger.error(f"Failed to extract d3dcompiler_43 from DirectX: {result.stderr}")
                         return None
@@ -465,7 +465,7 @@ class DependencyCacheManager:
                             str(cab_file)
                         ]
                         
-                        extract_result = subprocess.run(extract_cmd, capture_output=True, text=True)
+                        extract_result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=30)
                         if extract_result.returncode == 0:
                             extracted_file = self.cache_dir / "d3dcompiler_43.dll"
                             if extracted_file.exists():

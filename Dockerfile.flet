@@ -1,0 +1,40 @@
+FROM ubuntu:22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    wget \
+    git \
+    build-essential \
+    libfuse2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0 \
+    libglib2.0-0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libmpv1 \
+    libmpv-dev \
+    file \
+    desktop-file-utils \
+    zenity \
+    cabextract \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip
+
+# Install Flet and PyInstaller
+RUN pip3 install flet flet_desktop pyinstaller requests pillow psutil py7zr vdf
+
+# Set working directory
+WORKDIR /build
+
+# Default command
+CMD ["/bin/bash"]

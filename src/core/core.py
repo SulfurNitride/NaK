@@ -5,13 +5,13 @@ This module contains all the business logic and is framework-agnostic
 
 import logging
 from typing import Dict, List, Any, Optional
-from core.mo2_installer import MO2Installer
-from core.dependency_installer import DependencyInstaller
-from utils.steam_utils import SteamUtils
-from utils.game_utils import GameUtils
-from utils.utils import Utils
-from utils.comprehensive_game_manager import ComprehensiveGameManager
-from utils.settings_manager import SettingsManager
+from src.core.mo2_installer import MO2Installer
+from src.core.dependency_installer import DependencyInstaller
+from src.utils.steam_utils import SteamUtils
+from src.utils.game_utils import GameUtils
+from src.utils.utils import Utils
+from src.utils.comprehensive_game_manager import ComprehensiveGameManager
+from src.utils.settings_manager import SettingsManager
 
 class Core:
     """Core represents the main business logic of the NaK application"""
@@ -60,8 +60,8 @@ class Core:
             
             self.logger.info(f"Protontricks command: {protontricks_cmd}")
             if not protontricks_cmd:
-                self.logger.error("protontricks is not installed")
-                return False
+                self.logger.warning("protontricks is not installed (optional - some features may be limited)")
+                # Don't return False - protontricks is optional
             
             # Check for Steam (not flatpak)
             self.logger.info("Checking Steam installation...")
@@ -98,7 +98,7 @@ class Core:
 
             # Launch protontricks in a new terminal or directly
             import subprocess
-            result = subprocess.run(cmd_list, check=True)
+            result = subprocess.run(cmd_list, check=True, timeout=30)
 
             return {
                 "success": True,
@@ -259,6 +259,7 @@ class Core:
                 "path": game.path,
                 "platform": game.platform,
                 "app_id": game.app_id,
+                "exe_path": game.exe_path,
                 "prefix_path": game.prefix_path,
                 "wine_version": game.wine_version,
                 "proton_version": game.proton_version

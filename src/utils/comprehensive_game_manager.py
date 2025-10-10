@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
-from utils.game_finder import GameFinder, GameInfo
-from utils.smart_prefix_manager import SmartPrefixManager, SmartPrefixResult
+from src.utils.game_finder import GameFinder, GameInfo
+from src.utils.smart_prefix_manager import SmartPrefixManager, SmartPrefixResult
 
 
 @dataclass
@@ -301,7 +301,7 @@ class ComprehensiveGameManager:
             )
         
         # Create a SmartPrefixResult for this specific installation
-        from utils.smart_prefix_manager import SmartPrefixResult
+        from src.utils.smart_prefix_manager import SmartPrefixResult
         installation = SmartPrefixResult(
             game=game,
             prefix=prefix,

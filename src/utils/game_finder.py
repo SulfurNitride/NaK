@@ -428,7 +428,7 @@ class GameFinder:
 
         try:
             # Import here to avoid circular imports
-            from utils.steam_utils import SteamUtils
+            from src.utils.steam_utils import SteamUtils
             steam_utils = SteamUtils()
 
             # Get non-Steam games via VDF parsing

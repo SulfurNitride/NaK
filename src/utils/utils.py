@@ -19,7 +19,7 @@ class Utils:
         """Check if a command exists in PATH"""
         try:
             subprocess.run([command, "--version"], 
-                         capture_output=True, check=True)
+                         capture_output=True, check=True, timeout=30)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -36,7 +36,7 @@ class Utils:
                 result = subprocess.run(
                     ["sh", "-c", "flatpak list --app --columns=application | grep -q com.github.Matoking.protontricks && echo 'found'"],
                     capture_output=True, text=True, check=True
-                )
+                , timeout=30)
                 if "found" in result.stdout:
                     self.logger.info("Using flatpak protontricks")
                     return "flatpak run com.github.Matoking.protontricks"

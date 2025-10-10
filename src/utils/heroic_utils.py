@@ -13,7 +13,7 @@ import subprocess
 # Assuming GameInfo dataclass is defined in a shared location
 # If not, we should define it here or import from its actual location.
 # For now, let's assume a simple structure based on game_finder.py
-from utils.game_finder import GameInfo
+from src.utils.game_finder import GameInfo
 
 class HeroicUtils:
     """Utilities for Heroic Games Launcher operations"""
@@ -40,7 +40,7 @@ class HeroicUtils:
         # This function's purpose is to provide a list of games for other
         # utils to query against.
         try:
-            from utils.game_finder import GameFinder
+            from src.utils.game_finder import GameFinder
             finder = GameFinder()
             # The _find_heroic_games is private, so we access it this way for the utility
             return finder._find_heroic_games()
@@ -65,7 +65,7 @@ class HeroicUtils:
         Reuses logic from prefix_locator.py.
         """
         try:
-            from utils.prefix_locator import PrefixLocator
+            from src.utils.prefix_locator import PrefixLocator
             locator = PrefixLocator()
             # _find_heroic_game_prefix is private, access directly for this utility
             prefix_info = locator._find_heroic_game_prefix(game)
@@ -99,7 +99,7 @@ class HeroicUtils:
         
         # The environment needs to be set by the calling process (e.g., in main.py)
         # os.environ['WINEPREFIX'] = prefix_path
-        # subprocess.run(command, env=os.environ.copy())
+        # subprocess.run(command, env=os.environ.copy(, timeout=30))
         
         return command
         

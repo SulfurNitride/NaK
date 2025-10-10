@@ -18,7 +18,7 @@ from gui.views.mod_managers import ModOrganizer2View
 from gui.views.mo2_setup import MO2SetupView
 from gui.views.game_finder_view import GameFinderView
 from gui.views.settings_view import SettingsView
-from core.core import Core
+from src.core.core import Core
 
 class MainWindow(QMainWindow):
     def __init__(self, core):

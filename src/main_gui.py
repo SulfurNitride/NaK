@@ -92,7 +92,7 @@ def main():
             msg_box.setWindowTitle("NaK Error")
             msg_box.setText(f"Application failed to start:\n{str(e)}")
             msg_box.exec()
-        except:
+        except Exception as e:
             # Fallback to console output
             print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

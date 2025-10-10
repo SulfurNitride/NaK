@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 
-from utils.game_finder import GameFinder, GameInfo
-from utils.prefix_locator import PrefixLocator, PrefixInfo
-from utils.settings_manager import SettingsManager
+from src.utils.game_finder import GameFinder, GameInfo
+from src.utils.prefix_locator import PrefixLocator, PrefixInfo
+from src.utils.settings_manager import SettingsManager
 
 
 @dataclass
@@ -60,7 +60,7 @@ class SmartPrefixManager:
     def _command_exists(self, command: str) -> bool:
         """Check if a command exists in PATH"""
         try:
-            subprocess.run([command, "--version"], capture_output=True, check=True)
+            subprocess.run([command, "--version"], capture_output=True, check=True, timeout=30)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -684,7 +684,7 @@ class SmartPrefixManager:
 
         try:
             # Use cached .NET 9 SDK if available
-            from utils.dependency_cache_manager import DependencyCacheManager
+            from src.utils.dependency_cache_manager import DependencyCacheManager
             cache_manager = DependencyCacheManager()
             cached_file = cache_manager.get_cached_file("dotnet9_sdk")
             if cached_file:
@@ -1051,7 +1051,7 @@ class SmartPrefixManager:
                 ]
 
                 # Check ALL Steam libraries for Proton installations
-                from utils.steam_shortcut_manager import SteamShortcutManager
+                from src.utils.steam_shortcut_manager import SteamShortcutManager
                 steam_manager = SteamShortcutManager()
                 all_libraries = steam_manager._get_steam_libraries()
 
@@ -1086,7 +1086,7 @@ class SmartPrefixManager:
             # Fallback: Check for any proton binary in the system PATH
             try:
                 import subprocess
-                result = subprocess.run(["which", "proton"], capture_output=True, text=True)
+                result = subprocess.run(["which", "proton"], capture_output=True, text=True, timeout=30)
                 if result.returncode == 0:
                     proton_path = result.stdout.strip()
                     if proton_path and Path(proton_path).exists():

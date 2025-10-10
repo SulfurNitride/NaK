@@ -8,8 +8,8 @@ import subprocess
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from utils.steam_shortcut_manager import SteamShortcutManager
-from utils.settings_manager import SettingsManager
+from src.utils.steam_shortcut_manager import SteamShortcutManager
+from src.utils.settings_manager import SettingsManager
 
 class SteamUtils:
     """Utilities for Steam operations"""
@@ -32,7 +32,7 @@ class SteamUtils:
         """Check if a command exists in PATH"""
         try:
             subprocess.run([command, "--version"], 
-                         capture_output=True, check=True)
+                         capture_output=True, check=True, timeout=30)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -44,7 +44,7 @@ class SteamUtils:
                                  capture_output=True, 
                                  text=True, 
                                  check=True,
-                                 **kwargs)
+                                 **kwargs, timeout=30)
             return result.stdout
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Command failed: {e}")
@@ -100,7 +100,7 @@ class SteamUtils:
                 capture_output=True,
                 text=True,
                 check=True
-            )
+            , timeout=30)
 
             self.logger.debug(f"Protontricks stdout: {repr(result.stdout)}")
             self.logger.debug(f"Protontricks stderr: {repr(result.stderr)}")
@@ -166,7 +166,8 @@ class SteamUtils:
                     unsigned_app_id = shortcut.app_id
                     games.append({
                         "Name": shortcut.app_name,
-                        "AppID": str(unsigned_app_id)
+                        "AppID": str(unsigned_app_id),
+                        "Exe": shortcut.exe
                     })
 
             self.logger.info(f"Found {len(games)} non-Steam games via VDF parsing")
@@ -210,7 +211,7 @@ class SteamUtils:
                 result = subprocess.run(
                     ["sh", "-c", "flatpak list --app --columns=application | grep -q com.github.Matoking.protontricks && echo 'found'"],
                     capture_output=True, text=True, check=True
-                )
+                , timeout=30)
                 if "found" in result.stdout:
                     self.logger.info("Using flatpak protontricks")
                     return "flatpak run com.github.Matoking.protontricks"

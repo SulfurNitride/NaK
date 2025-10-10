@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 
-from utils.game_finder import GameFinder, GameInfo
-from utils.prefix_locator import PrefixLocator, PrefixInfo
+from src.utils.game_finder import GameFinder, GameInfo
+from src.utils.prefix_locator import PrefixLocator, PrefixInfo
 from typing import List
 
 
