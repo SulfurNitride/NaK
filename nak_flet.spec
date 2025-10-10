@@ -8,6 +8,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src', 'src'),
+        ('nak-flet/assets', 'assets'),
     ],
     hiddenimports=[
         'flet',
