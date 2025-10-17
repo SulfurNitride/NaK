@@ -1,4 +1,5 @@
-<img width="1921" height="1121" alt="image" src="https://github.com/user-attachments/assets/efe06b4c-d42a-4539-ae38-6f24c63f343b" />
+<img width="3425" height="2145" alt="image" src="https://github.com/user-attachments/assets/c38aedb3-5127-448c-bd07-093c64b1f160" />
+
 
 
 
@@ -17,14 +18,8 @@ To run it:
 Download the latest version from the [releases](https://github.com/SulfurNitride/NaK/releases) tab. And it should just be as easy as double clicking it. The GUI should also be compatibile with the Steamdeck.
 
 Requirements:
-- Flatpak or system package of protontricks
-- Only system binary of steam (flatpak steam is not supported)
-- Proton Experimental
-
-
-<img width="1274" height="1084" alt="image" src="https://github.com/user-attachments/assets/f776ff53-c58c-48af-aa0d-aaa85ebb7488" />
-
-
+- Only system binary of steam (flatpak steam is not supported, will be coming soon!)
+- Proton Experimental (NaK can also install it for you!)
 
 My YT: https://www.youtube.com/@sulfurnitride
 
