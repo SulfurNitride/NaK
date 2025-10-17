@@ -289,7 +289,7 @@ class NaKApp:
                     ),
                     ft.Divider(),
                     ft.Text(
-                        "Note: Steam will open and begin downloading Proton Experimental.",
+                        "Steam will open and begin downloading Proton Experimental (~2GB).",
                         size=12,
                         color=ft.Colors.GREY_500,
                         italic=True
@@ -298,10 +298,6 @@ class NaKApp:
                 width=500,
             ),
             actions=[
-                ft.TextButton(
-                    "Skip (Not Recommended)",
-                    on_click=close_dlg
-                ),
                 ft.ElevatedButton(
                     "Install Proton Experimental",
                     icon="download",
@@ -3046,12 +3042,12 @@ class NaKApp:
                 # Proton Settings
                 ft.Text("Proton Configuration", weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    "NaK requires Proton Experimental",
-                    size=12,
-                    color=ft.Colors.GREY_500
+                    "NaK requires Proton Experimental (auto-detected)",
+                    size=14,
+                    color=ft.Colors.GREY_400
                 ),
-                auto_detect_switch,
                 # Commented out: User should always use Proton Experimental
+                # auto_detect_switch,
                 # ft.Row([
                 #     proton_path_field,
                 #     ft.IconButton(icon="folder_open", on_click=pick_proton_path, tooltip="Browse", disabled=True)
