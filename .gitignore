@@ -141,6 +141,7 @@ cython_debug/
 # AppImage
 *.AppImage
 *.AppDir/
+squashfs-root/
 
 # PyCharm
 .idea/

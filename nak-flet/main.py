@@ -83,6 +83,9 @@ class NaKApp:
         # Check for first run and show cache config dialog
         self.check_and_show_cache_prompt()
 
+        # Check for Proton Experimental installation
+        self.check_proton_experimental()
+
         # Scan games in background on startup and every 30 seconds
         import threading
         threading.Thread(target=self.scan_games_background, daemon=True).start()
@@ -214,6 +217,95 @@ class NaKApp:
                 ft.ElevatedButton(
                     "Save Preferences",
                     on_click=lambda _: close_dlg(True),
+                    bgcolor=ft.Colors.BLUE,
+                    color=ft.Colors.WHITE
+                ),
+            ],
+            modal=True,
+        )
+
+        self.page.open(dlg)
+
+    def check_proton_experimental(self):
+        """Check if Proton Experimental is installed and prompt user if not"""
+        try:
+            import time
+            time.sleep(0.7)  # Brief delay to avoid overlapping with cache dialog
+
+            # Check for Proton Experimental installation
+            steam_path = Path.home() / ".local/share/Steam"
+            proton_exp_path = steam_path / "steamapps/common/Proton - Experimental"
+
+            if not proton_exp_path.exists():
+                logger.warning("Proton Experimental not found")
+                self.show_proton_install_dialog()
+            else:
+                logger.info("Proton Experimental found")
+        except Exception as e:
+            logger.error(f"Failed to check for Proton Experimental: {e}")
+
+    def show_proton_install_dialog(self):
+        """Show dialog prompting user to install Proton Experimental"""
+        def close_dlg(e=None):
+            dlg.open = False
+            self.page.update()
+
+        def install_proton(e):
+            """Open Steam to install Proton Experimental"""
+            import subprocess
+            try:
+                # Use steam://install URL to trigger installation
+                subprocess.Popen(["xdg-open", "steam://install/1493710"])
+                logger.info("Opened Steam to install Proton Experimental")
+                close_dlg()
+            except Exception as ex:
+                logger.error(f"Failed to open Steam install URL: {ex}")
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("Failed to open Steam. Please install Proton Experimental manually."),
+                    bgcolor=ft.Colors.RED,
+                )
+                self.page.snack_bar.open = True
+                self.page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Proton Experimental Required", size=20, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Icon("warning", size=64, color=ft.Colors.ORANGE),
+                    ft.Divider(),
+                    ft.Text(
+                        "NaK requires Proton Experimental to function properly.",
+                        size=16,
+                        weight=ft.FontWeight.BOLD
+                    ),
+                    ft.Divider(),
+                    ft.Text(
+                        "Proton Experimental was not found on your system.",
+                        size=14
+                    ),
+                    ft.Text(
+                        "Click the button below to install it via Steam.",
+                        size=14
+                    ),
+                    ft.Divider(),
+                    ft.Text(
+                        "Note: Steam will open and begin downloading Proton Experimental.",
+                        size=12,
+                        color=ft.Colors.GREY_500,
+                        italic=True
+                    ),
+                ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                width=500,
+            ),
+            actions=[
+                ft.TextButton(
+                    "Skip (Not Recommended)",
+                    on_click=close_dlg
+                ),
+                ft.ElevatedButton(
+                    "Install Proton Experimental",
+                    icon="download",
+                    on_click=install_proton,
                     bgcolor=ft.Colors.BLUE,
                     color=ft.Colors.WHITE
                 ),
@@ -2953,12 +3045,18 @@ class NaKApp:
 
                 # Proton Settings
                 ft.Text("Proton Configuration", weight=ft.FontWeight.BOLD),
+                ft.Text(
+                    "NaK requires Proton Experimental",
+                    size=12,
+                    color=ft.Colors.GREY_500
+                ),
                 auto_detect_switch,
-                ft.Row([
-                    proton_path_field,
-                    ft.IconButton(icon="folder_open", on_click=pick_proton_path, tooltip="Browse", disabled=True)
-                ]),
-                preferred_proton_dropdown,
+                # Commented out: User should always use Proton Experimental
+                # ft.Row([
+                #     proton_path_field,
+                #     ft.IconButton(icon="folder_open", on_click=pick_proton_path, tooltip="Browse", disabled=True)
+                # ]),
+                # preferred_proton_dropdown,
 
                 ft.Divider(),
 
