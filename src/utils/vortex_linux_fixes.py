@@ -189,7 +189,8 @@ class VortexLinuxFixes:
             linux_path = f"{steam_library}/steamapps/VortexStaging/{game_id}"
 
             # Convert to Z: drive path for Vortex
-            z_drive_path = f"Z:{linux_path.replace('/', '\\')}"
+            windows_path = linux_path.replace('/', '\\')
+            z_drive_path = f"Z:{windows_path}"
 
             game_name = self.BETHESDA_GAMES[game_id]["name"]
 
