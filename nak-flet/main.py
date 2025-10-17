@@ -116,6 +116,10 @@ class NaKApp:
             label="Cache MO2 - ~200MB",
             value=True,
         )
+        cache_vortex_checkbox = ft.Checkbox(
+            label="Cache Vortex - ~200MB",
+            value=True,
+        )
 
         def close_dlg(save: bool = True):
             """Close dialog and save preferences"""
@@ -123,12 +127,14 @@ class NaKApp:
                 # Save granular preferences based on checkboxes
                 cache_deps = cache_dependencies_checkbox.value
                 cache_mo2 = cache_mo2_checkbox.value
-                enable_any = cache_deps or cache_mo2
+                cache_vortex = cache_vortex_checkbox.value
+                enable_any = cache_deps or cache_mo2 or cache_vortex
 
                 cache_config.set_cache_preferences(
                     enable_cache=enable_any,
                     cache_dependencies=cache_deps,
-                    cache_mo2=cache_mo2
+                    cache_mo2=cache_mo2,
+                    cache_vortex=cache_vortex
                 )
 
                 # Show confirmation
@@ -138,6 +144,8 @@ class NaKApp:
                         enabled_items.append("dependencies")
                     if cache_mo2:
                         enabled_items.append("MO2 files")
+                    if cache_vortex:
+                        enabled_items.append("Vortex files")
 
                     self.page.snack_bar = ft.SnackBar(
                         content=ft.Text(f"Cache enabled for: {', '.join(enabled_items)}"),
@@ -154,7 +162,8 @@ class NaKApp:
                 cache_config.set_cache_preferences(
                     enable_cache=False,
                     cache_dependencies=False,
-                    cache_mo2=False
+                    cache_mo2=False,
+                    cache_vortex=False
                 )
 
             dlg.open = False
@@ -180,6 +189,7 @@ class NaKApp:
                     ft.Divider(),
                     cache_dependencies_checkbox,
                     cache_mo2_checkbox,
+                    cache_vortex_checkbox,
                     ft.Divider(),
                     ft.Text(
                         "Files will be stored in: ~/NaK/cache",
@@ -2766,7 +2776,8 @@ class NaKApp:
             label="Custom Proton Path",
             hint_text="/path/to/proton",
             value=current_settings.get("proton_path", ""),
-            width=400
+            width=400,
+            disabled=True  # Temporarily disabled
         )
 
         auto_detect_switch = ft.Switch(
@@ -2793,6 +2804,12 @@ class NaKApp:
             label="Cache MO2 (~200MB)",
             value=cache_config.should_cache_mo2() if cache_config else True,
             tooltip="Cache MO2 installation archives"
+        )
+
+        cache_vortex_switch = ft.Switch(
+            label="Cache Vortex (~200MB)",
+            value=cache_config.should_cache_vortex() if cache_config else True,
+            tooltip="Cache Vortex installation archives"
         )
 
         log_level_dropdown = ft.Dropdown(
@@ -2839,11 +2856,13 @@ class NaKApp:
                 if cache_config:
                     cache_deps = cache_deps_switch.value
                     cache_mo2 = cache_mo2_switch.value
-                    enable_any = cache_deps or cache_mo2
+                    cache_vortex = cache_vortex_switch.value
+                    enable_any = cache_deps or cache_mo2 or cache_vortex
                     cache_config.set_cache_preferences(
                         enable_cache=enable_any,
                         cache_dependencies=cache_deps,
-                        cache_mo2=cache_mo2
+                        cache_mo2=cache_mo2,
+                        cache_vortex=cache_vortex
                     )
 
                 # Save additional settings directly
@@ -2937,7 +2956,7 @@ class NaKApp:
                 auto_detect_switch,
                 ft.Row([
                     proton_path_field,
-                    ft.IconButton(icon="folder_open", on_click=pick_proton_path, tooltip="Browse")
+                    ft.IconButton(icon="folder_open", on_click=pick_proton_path, tooltip="Browse", disabled=True)
                 ]),
                 preferred_proton_dropdown,
 
@@ -2952,6 +2971,7 @@ class NaKApp:
                 ),
                 cache_deps_switch,
                 cache_mo2_switch,
+                cache_vortex_switch,
                 ft.ElevatedButton(
                     "Clear Cache",
                     icon="delete",

@@ -45,6 +45,7 @@ class CacheConfig:
             "cache_enabled": True,  # Enable caching by default
             "cache_dependencies": True,  # Cache dependency files (1.7GB)
             "cache_mo2": True,  # Cache MO2 downloads
+            "cache_vortex": True,  # Cache Vortex downloads
             "first_run": False,
             "cache_location": str(self.nak_dir / "cache"),
             "show_cache_prompt": True  # Show prompt on first run
@@ -74,6 +75,10 @@ class CacheConfig:
         """Check if MO2 caching is enabled"""
         return self.config.get("cache_mo2", True)
 
+    def should_cache_vortex(self) -> bool:
+        """Check if Vortex caching is enabled"""
+        return self.config.get("cache_vortex", True)
+
     def get_cache_location(self) -> str:
         """Get the cache directory location"""
         return self.config.get("cache_location", str(self.nak_dir / "cache"))
@@ -82,11 +87,12 @@ class CacheConfig:
         """Check if cache prompt should be shown"""
         return self.config.get("show_cache_prompt", True)
 
-    def set_cache_preferences(self, enable_cache: bool, cache_dependencies: bool = True, cache_mo2: bool = True):
+    def set_cache_preferences(self, enable_cache: bool, cache_dependencies: bool = True, cache_mo2: bool = True, cache_vortex: bool = True):
         """Set cache preferences"""
         self.config["cache_enabled"] = enable_cache
         self.config["cache_dependencies"] = cache_dependencies
         self.config["cache_mo2"] = cache_mo2
+        self.config["cache_vortex"] = cache_vortex
         self.config["first_run"] = False
         self.config["show_cache_prompt"] = False
         self._save_config(self.config)
