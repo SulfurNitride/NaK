@@ -276,12 +276,6 @@ class NaKApp:
                         tooltip="Settings"
                     ),
                     ft.IconButton(
-                        icon="info",
-                        icon_color=ft.Colors.WHITE,
-                        on_click=lambda _: self.show_about(),
-                        tooltip="About"
-                    ),
-                    ft.IconButton(
                         icon="close",
                         icon_color=ft.Colors.WHITE,
                         on_click=lambda _: self.close_app(),
