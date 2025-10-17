@@ -412,7 +412,7 @@ class NaKApp:
                                 content=ft.ListTile(
                                     leading=ft.Icon("extension", size=48, color=ft.Colors.BLUE_400),
                                     title=ft.Text("Mod Managers", size=20, weight=ft.FontWeight.BOLD),
-                                    subtitle=ft.Text("MO2, Vortex (coming soon)\nClick to manage mod managers"),
+                                    subtitle=ft.Text("MO2, Vortex\nClick to manage mod managers"),
                                     trailing=ft.Icon("chevron_right", size=30),
                                     on_click=lambda _: self.navigate_to_mod_managers(),
                                 ),
@@ -525,7 +525,7 @@ class NaKApp:
                             fit=ft.ImageFit.CONTAIN,
                         ),
                         title=ft.Text("Vortex", size=20, weight=ft.FontWeight.BOLD),
-                        subtitle=ft.Text("Coming soon", size=14, color=ft.Colors.GREY_500),
+                        subtitle=ft.Text("Multi-game mod manager", size=14),
                         trailing=ft.Icon("chevron_right"),
                         on_click=lambda _: self.select_manager_type("vortex"),
                     ),
