@@ -2903,7 +2903,7 @@ class NaKApp:
         log_level_dropdown = ft.Dropdown(
             label="Log Level",
             width=400,
-            value=current_settings.get("log_level", "INFO"),
+            value=current_settings.get("log_level", "DEBUG"),
             options=[
                 ft.dropdown.Option("DEBUG"),
                 ft.dropdown.Option("INFO"),
@@ -2979,7 +2979,7 @@ class NaKApp:
             proton_path_field.value = ""
             auto_detect_switch.value = True
             preferred_proton_dropdown.value = installed_protons[0] if installed_protons else "Proton - Experimental"
-            log_level_dropdown.value = "INFO"
+            log_level_dropdown.value = "DEBUG"
             self.page.update()
 
         def clear_cache(e=None):
