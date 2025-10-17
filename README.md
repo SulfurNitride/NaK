@@ -15,7 +15,7 @@ You can find me in the [NaK Discord](https://discord.gg/9JWQzSeUWt)
 
 To run it:
 
-Download the latest version from the [releases](https://github.com/SulfurNitride/NaK/releases) tab. And it should just be as easy as double clicking it. The GUI should also be compatibile with the Steamdeck.
+Download the latest version from the [releases](https://github.com/SulfurNitride/NaK/releases) tab. And it should just be as easy as double clicking it. The GUI should also be compatible with the steamdeck.
 
 Requirements:
 - Only system binary of steam (flatpak steam is not supported, will be coming soon!)
