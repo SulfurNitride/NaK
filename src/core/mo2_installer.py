@@ -6,6 +6,7 @@ import os
 import subprocess
 import tempfile
 import time
+import hashlib
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 import requests
@@ -159,7 +160,10 @@ class MO2Installer:
                 self._log_progress("Installing dependencies...")
                 self.logger.info(f"Starting dependency installation for AppID: {steam_result['app_id']}")
                 dependency_result = self._auto_install_dependencies(steam_result["app_id"], mo2_name)
-                
+
+                # Setup save symlinks
+                save_symlink_result = self._setup_save_symlinks(actual_install_dir, str(steam_result["app_id"]))
+
                 # Merge results
                 result = {
                     "success": True,
@@ -171,13 +175,18 @@ class MO2Installer:
                     "compat_data_path": steam_result["compat_data_path"],
                     "message": f"Mod Organizer 2 {release.tag_name} installed and added to Steam successfully!",
                     "steam_integration": steam_result,
-                    "dependency_installation": dependency_result
+                    "dependency_installation": dependency_result,
+                    "save_symlinks": save_symlink_result
                 }
-                
+
                 # Update message if dependencies were installed
                 if dependency_result["success"]:
                     result["message"] = f"Mod Organizer 2 {release.tag_name} installed, added to Steam, and dependencies installed successfully!"
-                
+
+                # Add save symlinks info to message
+                if save_symlink_result.get("success") and save_symlink_result.get("games_symlinked", 0) > 0:
+                    result["message"] += f" Save symlinks created for {save_symlink_result['games_symlinked']} game(s)."
+
                 return result
                 
             finally:
@@ -215,6 +224,14 @@ class MO2Installer:
                 return {"success": False, "error": f"Could not find ModOrganizer.exe in: {mo2_dir}"}
             self._send_progress_update(30)
 
+            # Check installed version
+            self._log_progress("Checking MO2 version...")
+            installed_version = self._get_installed_mo2_version(mo2_dir)
+            if installed_version:
+                self._log_progress(f"Found MO2 version: {installed_version}")
+            else:
+                self._log_progress("Could not determine MO2 version")
+
             # Use the provided custom name
             self._log_progress(f"Using installation name: {custom_name}")
 
@@ -239,19 +256,30 @@ class MO2Installer:
 
             self._send_progress_update(60)
             dep_result = deps.install_mo2_dependencies_for_game(str(app_id))
+            self._send_progress_update(85)
+
+            # Setup save symlinks
+            self._log_progress("Setting up save game symlinks...")
+            save_symlink_result = self._setup_save_symlinks(mo2_dir, str(app_id))
             self._send_progress_update(95)
 
             self._log_progress("Setup completed successfully!")
+
+            message = f"Existing MO2 installation configured successfully!"
+            if save_symlink_result.get("success") and save_symlink_result.get("games_symlinked", 0) > 0:
+                message += f" Save symlinks created for {save_symlink_result['games_symlinked']} game(s)."
 
             return {
                 "success": True,
                 "install_dir": mo2_dir,
                 "mo2_exe": mo2_exe,
                 "mo2_name": custom_name,
+                "mo2_version": installed_version,
                 "app_id": app_id,
-                "message": f"Existing MO2 installation configured successfully!",
+                "message": message,
                 "steam_integration": steam_result,
-                "dependency_installation": dep_result
+                "dependency_installation": dep_result,
+                "save_symlinks": save_symlink_result
             }
 
         except Exception as e:
@@ -289,15 +317,25 @@ class MO2Installer:
             from src.core.dependency_installer import DependencyInstaller
             deps = DependencyInstaller()
             dep_result = deps.install_mo2_dependencies_for_game(str(app_id))
-            
+
+            # Setup save symlinks
+            from pathlib import Path
+            mo2_dir = str(Path(mo2_exe).parent)
+            save_symlink_result = self._setup_save_symlinks(mo2_dir, str(app_id))
+
+            message = f"Existing MO2 installation configured successfully!"
+            if save_symlink_result.get("success") and save_symlink_result.get("games_symlinked", 0) > 0:
+                message += f" Save symlinks created for {save_symlink_result['games_symlinked']} game(s)."
+
             return {
                 "success": True,
                 "mo2_exe": mo2_exe,
                 "mo2_name": custom_name,
                 "app_id": app_id,
-                "message": f"Existing MO2 installation configured successfully!",
+                "message": message,
                 "steam_integration": steam_result,
-                "dependency_installation": dep_result
+                "dependency_installation": dep_result,
+                "save_symlinks": save_symlink_result
             }
             
         except Exception as e:
@@ -509,41 +547,102 @@ class MO2Installer:
         except Exception as e:
             self.logger.error(f"Failed to create NXM handler script: {e}")
             return None
+    def _find_existing_mo2_shortcut(self, mo2_exe: str) -> Optional[int]:
+        """Check if a Steam shortcut already exists for this MO2 exe path"""
+        try:
+            if not self.steam_utils.shortcut_manager:
+                return None
+
+            # Normalize the exe path for comparison
+            mo2_exe_normalized = mo2_exe.strip('"')
+
+            # Get all existing shortcuts
+            shortcuts = self.steam_utils.shortcut_manager.list_shortcuts()
+
+            # Look for existing shortcut with matching exe path
+            for shortcut in shortcuts:
+                shortcut_exe = shortcut.exe.strip('"')
+                if shortcut_exe == mo2_exe_normalized:
+                    self.logger.info(f"Found existing shortcut for {mo2_exe}: AppID {shortcut.app_id}, Name: {shortcut.app_name}")
+                    return shortcut.app_id
+
+            return None
+
+        except Exception as e:
+            self.logger.warning(f"Error checking for existing shortcuts: {e}")
+            return None
+
     def _add_mo2_to_steam(self, mo2_exe: str, mo2_name: str) -> Dict[str, Any]:
-        """Add MO2 to Steam using SteamShortcutManager with complete integration"""
+        """Add MO2 to Steam using SteamShortcutManager with complete integration
+
+        Checks for existing shortcuts first to avoid creating duplicate prefixes
+        """
         try:
             self.logger.info(f"Adding {mo2_name} to Steam with complete integration...")
-            
+
             # Use SteamShortcutManager to add MO2 to Steam
             if not self.steam_utils.shortcut_manager:
                 return {
                     "success": False,
                     "error": "Steam shortcut manager not available"
                 }
-            
+
+            # Check if a shortcut already exists for this MO2 exe
+            existing_app_id = self._find_existing_mo2_shortcut(mo2_exe)
+
+            if existing_app_id:
+                # Reuse existing prefix
+                self.logger.info(f"Reusing existing Steam shortcut and prefix for {mo2_name} (AppID: {existing_app_id})")
+
+                steam_root = self.steam_utils.get_steam_root()
+                compat_data_path = f"{steam_root}/steamapps/compatdata/{existing_app_id}"
+
+                # Check if prefix exists, if not create it
+                pfx_path = f"{compat_data_path}/pfx"
+                if not os.path.exists(pfx_path):
+                    self.logger.info("Existing prefix not found, initializing...")
+                    # Create and initialize prefix
+                    try:
+                        self.steam_utils.shortcut_manager.create_compat_data_folder(existing_app_id)
+                        self.steam_utils.shortcut_manager.create_and_run_bat_file(compat_data_path, mo2_name)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to initialize prefix: {e}")
+
+                return {
+                    "success": True,
+                    "app_id": existing_app_id,
+                    "compat_data_path": compat_data_path,
+                    "message": f"Reusing existing Steam shortcut for {mo2_name} (AppID {existing_app_id})",
+                    "reused_prefix": True
+                }
+
+            # No existing shortcut found - create new one
+            self.logger.info("No existing shortcut found, creating new one...")
+
             # Add MO2 to Steam and create prefix
             steam_result = self.steam_utils.shortcut_manager.add_game_to_steam(
                 app_name=mo2_name,
                 exe_path=mo2_exe,
                 proton_tool="proton_experimental"  # Use Proton Experimental by default
             )
-            
+
             if not steam_result["success"]:
                 return steam_result
-            
+
             app_id = steam_result["app_id"]
             compat_data_path = steam_result["compat_data_path"]
-            
+
             self.logger.info(f"Successfully added {mo2_name} to Steam with AppID: {app_id}")
             self.logger.info(f"Compat data path: {compat_data_path}")
-            
+
             return {
                 "success": True,
                 "app_id": app_id,
                 "compat_data_path": compat_data_path,
-                "message": f"Successfully added {mo2_name} to Steam with AppID {app_id}"
+                "message": f"Successfully added {mo2_name} to Steam with AppID {app_id}",
+                "reused_prefix": False
             }
-            
+
         except Exception as e:
             self.logger.error(f"Failed to add MO2 to Steam: {e}")
             return {
@@ -551,6 +650,112 @@ class MO2Installer:
                 "error": str(e)
             }
     
+    def _setup_save_symlinks(self, mo2_install_dir: str, mo2_app_id: str) -> Dict[str, Any]:
+        """Setup save game symlinks for all detected Bethesda games"""
+        try:
+            self._log_progress("Setting up save game symlinks...")
+            self.logger.info("═══════════════════════════════════════════════════════════════")
+            self.logger.info("SETTING UP SAVE GAME SYMLINKS")
+            self.logger.info("═══════════════════════════════════════════════════════════════")
+            self.logger.info(f"MO2 Install Directory: {mo2_install_dir}")
+            self.logger.info(f"MO2 AppID: {mo2_app_id}")
+
+            from src.utils.save_symlinker import SaveSymlinker
+            symlinker = SaveSymlinker()
+
+            # Create "Save Games Folder" in MO2 directory
+            from pathlib import Path
+            mo2_path = Path(mo2_install_dir)
+            save_games_folder = mo2_path / "Save Games Folder"
+            save_games_folder.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Created Save Games Folder: {save_games_folder}")
+            self._log_progress(f"Created Save Games Folder in MO2 directory")
+
+            # Get all available Bethesda games
+            available_games = symlinker.list_available_games()
+            games_with_saves = [g for g in available_games if g['found']]
+
+            if not games_with_saves:
+                self.logger.info("No Bethesda games with saves found")
+                return {
+                    "success": True,
+                    "message": "No Bethesda games with saves found to symlink",
+                    "games_symlinked": 0
+                }
+
+            self.logger.info(f"Found {len(games_with_saves)} Bethesda game(s) with existing saves")
+            symlinked_count = 0
+            failed_games = []
+
+            # Get MO2 compatdata path
+            steam_root = self.steam_utils.get_steam_root()
+            mo2_compatdata = Path(steam_root) / "steamapps" / "compatdata" / str(mo2_app_id)
+
+            for game in games_with_saves:
+                game_name = game['name']
+                save_path = Path(game['save_path'])
+
+                try:
+                    self.logger.info(f"Setting up symlinks for {game_name}...")
+                    self._log_progress(f"Setting up save symlinks for {game_name}...")
+
+                    # 1. Create symlink in "Save Games Folder"
+                    safe_game_name = game_name.replace(":", "").replace("/", "-")
+                    folder_symlink = save_games_folder / safe_game_name
+
+                    if not folder_symlink.exists():
+                        folder_symlink.symlink_to(save_path, target_is_directory=True)
+                        self.logger.info(f"  ✓ Created folder symlink: {folder_symlink} → {save_path}")
+                    else:
+                        self.logger.info(f"  ✓ Folder symlink already exists: {folder_symlink}")
+
+                    # 2. Create symlink in MO2 prefix (compatdata)
+                    location_type = game['location_type']
+                    save_identifier = game['save_folder']
+
+                    if location_type == "my_games":
+                        # Create symlink in My Games
+                        prefix_save_location = mo2_compatdata / "pfx" / "drive_c" / "users" / "steamuser" / "My Documents" / "My Games" / save_identifier
+                        prefix_save_location.parent.mkdir(parents=True, exist_ok=True)
+
+                        if not prefix_save_location.exists() and not prefix_save_location.is_symlink():
+                            prefix_save_location.symlink_to(save_path, target_is_directory=True)
+                            self.logger.info(f"  ✓ Created prefix symlink: {prefix_save_location} → {save_path}")
+                        else:
+                            self.logger.info(f"  ✓ Prefix symlink already exists: {prefix_save_location}")
+
+                    symlinked_count += 1
+                    self.logger.info(f"  ✓ Successfully set up symlinks for {game_name}")
+
+                except Exception as e:
+                    self.logger.error(f"  ✗ Failed to setup symlinks for {game_name}: {e}")
+                    failed_games.append(game_name)
+
+            result_message = f"Set up save symlinks for {symlinked_count}/{len(games_with_saves)} game(s)"
+            if failed_games:
+                result_message += f" ({len(failed_games)} failed: {', '.join(failed_games)})"
+
+            self.logger.info("═══════════════════════════════════════════════════════════════")
+            self.logger.info("SAVE SYMLINK SETUP COMPLETE")
+            self.logger.info("═══════════════════════════════════════════════════════════════")
+            self.logger.info(result_message)
+            self._log_progress(result_message)
+
+            return {
+                "success": True,
+                "message": result_message,
+                "games_symlinked": symlinked_count,
+                "total_games": len(games_with_saves),
+                "failed_games": failed_games
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to setup save symlinks: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     def _auto_install_dependencies(self, app_id: int, app_name: str) -> Dict[str, Any]:
         """Automatically install dependencies for a newly created game"""
         try:
@@ -775,22 +980,74 @@ class MO2Installer:
             self.logger.error(f"Failed to get install directory: {e}")
             return None
     
+    def _calculate_sha256(self, file_path: str) -> str:
+        """Calculate SHA256 hash of a file"""
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+
+    def _load_mo2_cache_metadata(self, cache_dir: str) -> Dict[str, Any]:
+        """Load MO2 cache metadata"""
+        metadata_file = os.path.join(cache_dir, "mo2_cache_metadata.json")
+        if os.path.exists(metadata_file):
+            try:
+                with open(metadata_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.warning(f"Failed to load MO2 cache metadata: {e}")
+        return {"files": {}}
+
+    def _save_mo2_cache_metadata(self, cache_dir: str, metadata: Dict[str, Any]):
+        """Save MO2 cache metadata"""
+        metadata_file = os.path.join(cache_dir, "mo2_cache_metadata.json")
+        try:
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+        except Exception as e:
+            self.logger.error(f"Failed to save MO2 cache metadata: {e}")
+
     def _download_file(self, url: str, filename: str, progress_callback=None) -> Optional[str]:
-        """Download a file with progress tracking and caching"""
+        """Download a file with progress tracking, caching, and hash verification"""
         try:
             # Create cache directory
             cache_dir = os.path.join(os.path.expanduser("~"), "NaK", "cache")
             os.makedirs(cache_dir, exist_ok=True)
-            
+
             # Create cached file path
             cached_file = os.path.join(cache_dir, filename)
-            
-            # Check if file is already cached
+
+            # Load cache metadata
+            metadata = self._load_mo2_cache_metadata(cache_dir)
+
+            # Check if file is already cached and verify integrity
             if os.path.exists(cached_file):
-                self.logger.info(f"Using cached file: {cached_file}")
-                if self.log_callback:
-                    self.log_callback(f"Using cached MO2 archive: {filename}")
-                return cached_file
+                self.logger.info(f"Found cached file: {cached_file}")
+
+                # Verify file integrity if we have hash metadata
+                if filename in metadata["files"] and metadata["files"][filename].get("sha256"):
+                    expected_hash = metadata["files"][filename]["sha256"]
+                    actual_hash = self._calculate_sha256(cached_file)
+
+                    if actual_hash == expected_hash:
+                        self.logger.info(f"Cache integrity verified (SHA256: {actual_hash[:16]}...)")
+                        if self.log_callback:
+                            self.log_callback(f"Using cached MO2 archive: {filename}")
+                        return cached_file
+                    else:
+                        self.logger.warning(f"Cached file corrupted! Expected: {expected_hash[:16]}..., Got: {actual_hash[:16]}...")
+                        self.logger.warning("Re-downloading file...")
+                        os.remove(cached_file)
+                else:
+                    # No hash metadata, trust the cached file but calculate hash
+                    self.logger.info(f"No hash metadata found, calculating...")
+                    actual_hash = self._calculate_sha256(cached_file)
+                    metadata["files"][filename] = {"sha256": actual_hash, "url": url}
+                    self._save_mo2_cache_metadata(cache_dir, metadata)
+                    if self.log_callback:
+                        self.log_callback(f"Using cached MO2 archive: {filename}")
+                    return cached_file
             
             self.logger.info(f"Downloading {filename} from {url}")
             if self.log_callback:
@@ -817,10 +1074,28 @@ class MO2Installer:
             self.logger.info(f"Download completed and cached: {cached_file}")
             if self.log_callback:
                 self.log_callback(f"MO2 archive downloaded and cached: {filename}")
+
+            # Calculate and store hash for integrity verification
+            self.logger.info("Calculating SHA256 hash for integrity verification...")
+            actual_hash = self._calculate_sha256(cached_file)
+            metadata["files"][filename] = {
+                "sha256": actual_hash,
+                "url": url,
+                "downloaded_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            self._save_mo2_cache_metadata(cache_dir, metadata)
+            self.logger.info(f"File integrity hash saved (SHA256: {actual_hash[:16]}...)")
+
             return cached_file
-            
+
         except Exception as e:
             self.logger.error(f"Failed to download file: {e}")
+            # Clean up partial download
+            if os.path.exists(cached_file):
+                try:
+                    os.remove(cached_file)
+                except:
+                    pass
             return None
     
     def _extract_archive(self, archive_path: str, extract_dir: str) -> Optional[str]:
@@ -927,7 +1202,7 @@ class MO2Installer:
         """Find ModOrganizer.exe in the installation directory"""
         try:
             self.logger.info(f"Searching for ModOrganizer.exe in {install_dir}")
-            
+
             # Look for ModOrganizer.exe
             for root, dirs, files in os.walk(install_dir):
                 for file in files:
@@ -935,101 +1210,138 @@ class MO2Installer:
                         exe_path = os.path.join(root, file)
                         self.logger.info(f"Found ModOrganizer.exe: {exe_path}")
                         return exe_path
-            
+
             self.logger.error("ModOrganizer.exe not found")
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Failed to find ModOrganizer.exe: {e}")
             return None
 
+    def _get_installed_mo2_version(self, mo2_dir: str) -> Optional[str]:
+        """Get the installed MO2 version from ModOrganizer.ini"""
+        try:
+            # Look for ModOrganizer.ini in the MO2 directory
+            ini_path = os.path.join(mo2_dir, "ModOrganizer.ini")
+
+            if not os.path.exists(ini_path):
+                self.logger.debug(f"ModOrganizer.ini not found at {ini_path}")
+                return None
+
+            # Read the INI file
+            import configparser
+            config = configparser.ConfigParser()
+            config.read(ini_path)
+
+            # Try to get version from [General] section
+            if "General" in config and "version" in config["General"]:
+                version = config["General"]["version"]
+                self.logger.info(f"Found MO2 version in INI: {version}")
+                return version
+
+            self.logger.debug("Version field not found in ModOrganizer.ini")
+            return None
+
+        except Exception as e:
+            self.logger.debug(f"Failed to read MO2 version from INI: {e}")
+            return None
+
+    def check_mo2_update_available(self, mo2_dir: str) -> Dict[str, Any]:
+        """Check if an update is available for an existing MO2 installation"""
+        try:
+            # Get installed version
+            installed_version = self._get_installed_mo2_version(mo2_dir)
+            if not installed_version:
+                return {
+                    "success": False,
+                    "error": "Could not determine installed MO2 version"
+                }
+
+            # Get latest version
+            release = self._get_latest_release()
+            if not release:
+                return {
+                    "success": False,
+                    "error": "Could not fetch latest MO2 version"
+                }
+
+            latest_version = release.tag_name
+
+            # Compare versions (simple string comparison)
+            needs_update = installed_version != latest_version
+
+            return {
+                "success": True,
+                "installed_version": installed_version,
+                "latest_version": latest_version,
+                "update_available": needs_update,
+                "message": f"Installed: {installed_version}, Latest: {latest_version}"
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to check for MO2 updates: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     def configure_nxm_handler(self, app_id: str, mo2_folder_path: str) -> Dict[str, Any]:
-        """Configure NXM handler for a specific game
-        
+        """Configure NXM handler for a specific game (supports both Steam and Heroic)
+
         Args:
-            app_id: Steam AppID of the game
+            app_id: App ID of the game (Steam AppID or Heroic/MO2 identifier)
             mo2_folder_path: Path to the MO2 folder (will auto-detect nxmhandler.exe inside)
         """
         try:
             self.logger.info(f"Configuring NXM handler for AppID {app_id} with MO2 folder: {mo2_folder_path}")
-            
+
             # Verify the MO2 folder exists
             if not os.path.exists(mo2_folder_path):
                 return {"success": False, "error": f"MO2 folder does not exist: {mo2_folder_path}"}
-            
+
             # Auto-detect nxmhandler.exe in the MO2 folder
             nxm_handler_exe = os.path.join(mo2_folder_path, "nxmhandler.exe")
             if not os.path.exists(nxm_handler_exe):
                 return {"success": False, "error": f"nxmhandler.exe not found in {mo2_folder_path}"}
-            
+
             self.logger.info(f"Found nxmhandler.exe at: {nxm_handler_exe}")
-            
-            # Get Steam root directory
+
+            # Get Steam root directory (needed for Proton path even if not a Steam game)
             steam_root = self.steam_utils.get_steam_root()
             if not steam_root:
-                return {"success": False, "error": "Steam root not found"}
-            
-            # Verify compatdata exists for this game
-            compatdata_path = os.path.join(steam_root, "steamapps", "compatdata", app_id, "pfx")
-            if not os.path.exists(compatdata_path):
-                return {"success": False, "error": f"Compatdata not found for AppID {app_id}"}
-            
-            # Use Proton Experimental (already checked as dependency)
-            proton_experimental = os.path.join(steam_root, "steamapps", "common", "Proton - Experimental")
-            if not os.path.exists(proton_experimental):
-                return {"success": False, "error": "Proton Experimental not found. Please install it from Steam."}
-            
-            self.logger.info(f"Using Proton Experimental: {proton_experimental}")
-            self.logger.info(f"Using compatdata prefix: {compatdata_path}")
-            
-            # Detect non-standard root directories and Steam libraries
-            mount_paths = self._detect_custom_mount_paths(steam_root, mo2_folder_path)
-            mount_paths_str = ":".join(mount_paths) if mount_paths else ""
-            
-            if mount_paths:
-                self.logger.info(f"Custom mount paths detected: {', '.join(mount_paths)}")
-            
-            # Create the NXM handler script
-            try:
-                home_dir = os.path.expanduser("~")
-                applications_dir = os.path.join(home_dir, ".local", "share", "applications")
-                os.makedirs(applications_dir, exist_ok=True)
-                
-                script_path = os.path.join(applications_dir, f"mo2-nxm-handler-{app_id}.sh")
-                
-                # Create a simple script using Proton Experimental
-                mount_export = f'export STEAM_COMPAT_MOUNTS="{mount_paths_str}"' if mount_paths_str else ""
-                
-                script_content = f"""#!/bin/bash
-# NXM Handler for MO2 (AppID: {app_id})
+                return {"success": False, "error": "Steam root not found (required for Proton)"}
 
-NXM_URL="$1"
+            # Check if this is a Heroic/non-Steam game (app_id starts with "mo2_" or is not numeric)
+            is_heroic = not app_id.isdigit() or app_id.startswith("mo2_")
 
-# Set up Steam Proton environment
-export STEAM_COMPAT_CLIENT_INSTALL_PATH="{steam_root}"
-export STEAM_COMPAT_DATA_PATH="{os.path.join(steam_root, "steamapps", "compatdata", app_id)}"
-export WINEPREFIX="{compatdata_path}"
+            if is_heroic:
+                self.logger.info(f"Detected Heroic/non-Steam game from app_id: {app_id}")
+                # For Heroic games, we don't check Steam compatdata - the script will handle prefix detection
+            else:
+                # For Steam games, verify compatdata exists
+                compatdata_path = os.path.join(steam_root, "steamapps", "compatdata", app_id, "pfx")
+                if not os.path.exists(compatdata_path):
+                    return {"success": False, "error": f"Compatdata not found for Steam AppID {app_id}"}
+            
+            # Find ModOrganizer.exe in the MO2 folder for the script
+            mo2_exe = os.path.join(mo2_folder_path, "ModOrganizer.exe")
+            if not os.path.exists(mo2_exe):
+                # Try to find it recursively
+                mo2_exe = self._find_mo2_executable(mo2_folder_path)
+                if not mo2_exe:
+                    self.logger.warning(f"ModOrganizer.exe not found, using folder path: {mo2_folder_path}")
+                    mo2_exe = mo2_folder_path
 
-# Mount custom directories so Proton can access them
-# This includes non-standard root directories and additional Steam libraries
-{mount_export}
+            # Use the sophisticated NXM handler creation that handles Heroic prefixes
+            script_path = self._create_nxm_handler_script(
+                app_id=app_id,
+                mo2_exe=mo2_exe,
+                nxm_handler_path=nxm_handler_exe,
+                steam_root=steam_root
+            )
 
-# Use Proton Experimental
-PROTON_PATH="{proton_experimental}"
-
-# Launch nxmhandler.exe with Proton
-"$PROTON_PATH/proton" run "{nxm_handler_exe}" "$NXM_URL"
-"""
-                
-                with open(script_path, 'w') as f:
-                    f.write(script_content)
-                
-                os.chmod(script_path, 0o755)
-                self.logger.info(f"Created NXM handler script: {script_path}")
-                
-            except Exception as e:
-                self.logger.error(f"Failed to create NXM handler script: {e}")
-                return {"success": False, "error": f"Failed to create NXM handler script: {e}"}
+            if not script_path:
+                return {"success": False, "error": "Failed to create NXM handler script"}
             
             # Create desktop entry
             desktop_entry_path = os.path.join(os.path.expanduser("~"), ".local", "share", "applications", f"mo2-nxm-handler-{app_id}.desktop")

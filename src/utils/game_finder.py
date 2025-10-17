@@ -306,6 +306,113 @@ class GameFinder:
             except Exception as e:
                 self.logger.warning(f"Failed to scan Heroic games directory: {e}")
         
+        # Also scan common Heroic game directories for MO2 installations
+        heroic_game_dirs = [
+            Path.home() / "Games" / "Heroic",
+            Path.home() / ".var" / "app" / "com.heroicgameslauncher.hgl" / "Games",
+        ]
+
+        for games_dir in heroic_game_dirs:
+            if not games_dir.exists():
+                continue
+
+            try:
+                self.logger.debug(f"Scanning Heroic games directory for MO2: {games_dir}")
+                for folder in games_dir.iterdir():
+                    if not folder.is_dir():
+                        continue
+
+                    # Look for ModOrganizer.exe in this folder and its subdirectories
+                    mo2_exe_paths = []
+
+                    # Check root folder
+                    root_mo2_exe = folder / "ModOrganizer.exe"
+                    if root_mo2_exe.exists():
+                        mo2_exe_paths.append(root_mo2_exe)
+
+                    # Check one level deep (e.g., folder/modorganizer2/ModOrganizer.exe)
+                    for subfolder in folder.glob("*/ModOrganizer.exe"):
+                        if subfolder.exists():
+                            mo2_exe_paths.append(subfolder)
+
+                    # If we found MO2, add it as a detected game
+                    for mo2_exe in mo2_exe_paths:
+                        mo2_folder = mo2_exe.parent
+
+                        # Check if we already added this MO2 installation
+                        already_added = any(
+                            g.exe_path == str(mo2_exe) for g in games
+                        )
+
+                        if not already_added:
+                            # Try to infer a friendly name from the folder structure
+                            folder_name = folder.name
+                            if folder_name.startswith("mod-organizer"):
+                                # Extract game name from folder like "mod-organizer-2-cyberpunk2077"
+                                parts = folder_name.split("-")
+                                if len(parts) > 3:
+                                    game_hint = " ".join(parts[3:]).title()
+                                    mo2_name = f"Mod Organizer 2 - {game_hint}"
+                                else:
+                                    mo2_name = f"Mod Organizer 2 ({folder_name})"
+                            else:
+                                mo2_name = f"Mod Organizer 2 ({folder_name})"
+
+                            # Try to find the Heroic prefix for this MO2 installation
+                            prefix_path = None
+                            try:
+                                # Look for prefix by checking if mo2_folder contains drive_c marker
+                                for parent in mo2_folder.parents:
+                                    if parent.name.lower() == "drive_c":
+                                        prefix_path = str(parent.parent)
+                                        self.logger.info(f"Found prefix from drive_c marker: {prefix_path}")
+                                        break
+
+                                # If no drive_c found, check common Heroic prefix locations
+                                if not prefix_path:
+                                    home_dir = Path.home()
+                                    heroic_prefix_locations = [
+                                        home_dir / "Games" / "Heroic" / "Prefixes",
+                                        home_dir / ".config" / "heroic" / "prefixes",
+                                        home_dir / ".local" / "share" / "heroic" / "prefixes",
+                                        home_dir / ".var" / "app" / "com.heroicgameslauncher.hgl" / "data" / "heroic" / "prefixes"
+                                    ]
+
+                                    for prefix_dir in heroic_prefix_locations:
+                                        if prefix_dir.exists():
+                                            for prefix_path_candidate in prefix_dir.iterdir():
+                                                if prefix_path_candidate.is_dir():
+                                                    drive_c = prefix_path_candidate / "drive_c"
+                                                    if drive_c.exists():
+                                                        # Check if MO2 is under this prefix
+                                                        try:
+                                                            mo2_folder.relative_to(drive_c)
+                                                            prefix_path = str(prefix_path_candidate)
+                                                            self.logger.info(f"Found Heroic prefix containing MO2: {prefix_path}")
+                                                            break
+                                                        except ValueError:
+                                                            continue
+                                            if prefix_path:
+                                                break
+                            except Exception as e:
+                                self.logger.debug(f"Failed to detect prefix for MO2: {e}")
+
+                            games.append(GameInfo(
+                                name=mo2_name,
+                                path=str(mo2_folder),
+                                platform="Heroic (MO2)",
+                                app_id=f"mo2_{folder_name.lower().replace(' ', '_')}",
+                                exe_path=str(mo2_exe),
+                                install_dir=str(mo2_folder),
+                                prefix_path=prefix_path
+                            ))
+                            self.logger.info(f"Found MO2 installation in Heroic games: {mo2_name} at {mo2_folder}")
+                            if prefix_path:
+                                self.logger.info(f"  Detected prefix: {prefix_path}")
+
+            except Exception as e:
+                self.logger.debug(f"Failed to scan Heroic games directory {games_dir}: {e}")
+
         self.logger.info(f"Found {len(games)} manually added Heroic games")
         return games
 
@@ -362,10 +469,9 @@ class GameFinder:
 
         return None
 
-    def _find_steam_games(self) -> List[GameInfo]:
-        """Find Steam games using ACF file parsing with deduplication"""
-        games = []
-        seen_games = {}  # Track app_id -> GameInfo to avoid duplicates across symlinked paths
+    def _get_steam_library_folders(self) -> List[Path]:
+        """Get all Steam library folders from libraryfolders.vdf"""
+        library_folders = []
 
         steam_paths = [
             Path.home() / ".steam" / "steam",
@@ -373,57 +479,98 @@ class GameFinder:
         ]
 
         for steam_path in steam_paths:
+            # Add the main Steam path
             steamapps = steam_path / "steamapps"
             if steamapps.exists():
-                for acf_file in steamapps.glob("appmanifest_*.acf"):
-                    try:
-                        with open(acf_file, 'r', encoding='utf-8', errors='ignore') as f:
-                            content = f.read()
+                library_folders.append(steamapps)
+                self.logger.debug(f"Found main Steam library: {steamapps}")
 
-                        name = None
-                        install_dir = None
-                        app_id = None
+            # Parse libraryfolders.vdf for additional libraries
+            libraryfolders_vdf = steamapps / "libraryfolders.vdf"
+            if libraryfolders_vdf.exists():
+                try:
+                    import vdf
+                    with open(libraryfolders_vdf, 'r', encoding='utf-8') as f:
+                        library_data = vdf.load(f)
 
-                        for line in content.split('\n'):
-                            line = line.strip()
-                            if '"name"' in line:
-                                parts = line.split('"')
-                                if len(parts) >= 4:
-                                    name = parts[3]
-                            elif '"installdir"' in line:
-                                parts = line.split('"')
-                                if len(parts) >= 4:
-                                    install_dir = parts[3]
-                            elif '"appid"' in line:
-                                parts = line.split('"')
-                                if len(parts) >= 4:
-                                    app_id = parts[3]
+                    if 'libraryfolders' in library_data:
+                        for key, value in library_data['libraryfolders'].items():
+                            if isinstance(value, dict) and 'path' in value:
+                                library_path = Path(value['path']) / "steamapps"
+                                if library_path.exists() and library_path not in library_folders:
+                                    library_folders.append(library_path)
+                                    self.logger.info(f"Found additional Steam library: {library_path}")
 
-                        if name and install_dir and app_id:
-                            # Skip if we've already seen this app_id (deduplicates across symlinked Steam paths)
-                            if app_id in seen_games:
-                                self.logger.debug(f"Skipping duplicate Steam game: {name} (AppID: {app_id}) - already found at {seen_games[app_id].path}")
-                                continue
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse libraryfolders.vdf: {e}")
 
-                            game_path = steamapps / "common" / install_dir
-                            game_info = GameInfo(
-                                name=name,
-                                path=str(game_path),
-                                platform="Steam",
-                                app_id=app_id,
-                                install_dir=install_dir
-                            )
-                            games.append(game_info)
-                            seen_games[app_id] = game_info  # Track by app_id to deduplicate across symlinked paths
-                            self.logger.debug(f"Found Steam ACF game: {name} (AppID: {app_id})")
+        return library_folders
 
-                    except Exception as e:
-                        self.logger.warning(f"Failed to parse {acf_file}: {e}")
+    def _find_steam_games(self) -> List[GameInfo]:
+        """Find Steam games using ACF file parsing with deduplication across all Steam library folders"""
+        games = []
+        seen_games = {}  # Track app_id -> GameInfo to avoid duplicates across symlinked paths
+
+        # Get all Steam library folders (including additional libraries)
+        library_folders = self._get_steam_library_folders()
+        self.logger.info(f"Scanning {len(library_folders)} Steam library folder(s) for games...")
+
+        for steamapps in library_folders:
+            self.logger.debug(f"Scanning library folder: {steamapps}")
+            acf_count = 0
+
+            for acf_file in steamapps.glob("appmanifest_*.acf"):
+                acf_count += 1
+                try:
+                    with open(acf_file, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+
+                    name = None
+                    install_dir = None
+                    app_id = None
+
+                    for line in content.split('\n'):
+                        line = line.strip()
+                        if '"name"' in line:
+                            parts = line.split('"')
+                            if len(parts) >= 4:
+                                name = parts[3]
+                        elif '"installdir"' in line:
+                            parts = line.split('"')
+                            if len(parts) >= 4:
+                                install_dir = parts[3]
+                        elif '"appid"' in line:
+                            parts = line.split('"')
+                            if len(parts) >= 4:
+                                app_id = parts[3]
+
+                    if name and install_dir and app_id:
+                        # Skip if we've already seen this app_id (deduplicates across symlinked Steam paths)
+                        if app_id in seen_games:
+                            self.logger.debug(f"Skipping duplicate Steam game: {name} (AppID: {app_id}) - already found at {seen_games[app_id].path}")
+                            continue
+
+                        game_path = steamapps / "common" / install_dir
+                        game_info = GameInfo(
+                            name=name,
+                            path=str(game_path),
+                            platform="Steam",
+                            app_id=app_id,
+                            install_dir=install_dir
+                        )
+                        games.append(game_info)
+                        seen_games[app_id] = game_info  # Track by app_id to deduplicate across symlinked paths
+                        self.logger.debug(f"Found Steam game: {name} (AppID: {app_id})")
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse {acf_file}: {e}")
+
+            self.logger.debug(f"Found {acf_count} ACF file(s) in {steamapps}")
 
         return games
 
     def _find_non_steam_games(self, existing_steam_games: List[GameInfo]) -> List[GameInfo]:
-        """Find non-Steam games via VDF parsing, filtering out regular Steam games"""
+        """Find non-Steam games via VDF parsing (shows all non-Steam games, even if they share names with Steam games)"""
         games = []
 
         try:
@@ -434,19 +581,11 @@ class GameFinder:
             # Get non-Steam games via VDF parsing
             non_steam_games = steam_utils.get_non_steam_games()
 
-            # Create set of existing Steam game names for quick lookup
-            steam_game_names = {game.name.lower() for game in existing_steam_games}
-
             for game_data in non_steam_games:
                 game_name = game_data.get('Name', 'Unknown Game')
                 app_id = game_data.get('AppID', '')
 
-                # Skip if this game name already exists in Steam games
-                if game_name.lower() in steam_game_names:
-                    self.logger.debug(f"Skipping VDF game that matches Steam game: {game_name}")
-                    continue
-
-                # Check if this looks like a true non-Steam game (high app ID)
+                # Only filter out if it has a low AppID (likely a real Steam game misdetected as non-Steam)
                 if app_id.isdigit() and int(app_id) <= 2000000000:
                     self.logger.debug(f"Skipping VDF game with low AppID (likely Steam): {game_name} (AppID: {app_id})")
                     continue

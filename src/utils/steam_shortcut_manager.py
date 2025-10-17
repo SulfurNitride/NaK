@@ -484,8 +484,19 @@ class SteamShortcutManager:
         self.logger.info(f"Initializing prefix for {app_name}")
         self.logger.debug(f"Compatdata path: {compat_data_path}")
         
-        # Create the .bat file content
-        bat_content = """@echo off
+        # Create the .bat file content with MO2 identifier
+        # Check if this is an MO2 installation based on app_name
+        is_mo2 = "mod organizer" in app_name.lower() or "mo2" in app_name.lower()
+
+        if is_mo2:
+            bat_content = """@echo off
+REM NaK-MO2-PREFIX-MARKER - This is a Mod Organizer 2 installation
+REM Created by NaK Linux Modding Helper
+echo Creating Proton prefix for Mod Organizer 2...
+timeout /t 5 /nobreak >nul
+echo MO2 prefix creation complete."""
+        else:
+            bat_content = """@echo off
 echo Creating Proton prefix...
 timeout /t 5 /nobreak >nul
 echo Prefix creation complete."""

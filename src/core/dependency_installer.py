@@ -23,7 +23,7 @@ class DependencyInstaller:
         self.logger = get_logger(__name__)
         # Force logger to write to debug file by ensuring it has the same handlers
         import logging
-        root_logger = logging.getLogger('nak')
+        root_logger = logging.getLogger()  # Get the actual root logger, not 'nak'
         if root_logger.handlers:
             # Copy handlers from root logger to ensure debug file logging
             for handler in root_logger.handlers:
@@ -181,32 +181,22 @@ class DependencyInstaller:
                 "error": str(e)
             }
     
-    def install_mo2_dependencies_for_game(self, game_app_id: str) -> Dict[str, Any]:
-        """Install MO2 dependencies for a specific non-Steam game (completely self-contained)"""
-        self.logger.info(f"*** SELF-CONTAINED MO2: Installing dependencies for AppID: {game_app_id} ***")
+    def install_complete_setup_for_app_id(self, app_id: str, game_name: str = "Unknown") -> Dict[str, Any]:
+        """
+        UNIFIED method for complete game setup (dependencies + registry + .NET SDK)
+        Works for ANY app_id (Steam games or non-Steam games added to Steam)
+        Used by both "Setup Existing MO2" and "Simple Game Modding"
+        """
+        self.logger.info(f"*** UNIFIED SETUP: Installing complete setup for AppID: {app_id} ({game_name}) ***")
 
         try:
-            # Get the game details using our built-in VDF parsing
-            self.logger.debug("Fetching non-Steam games list via built-in VDF parsing...")
-            games = self.steam_utils.get_non_steam_games()
-            self.logger.debug(f"Found {len(games)} non-Steam games")
+            # Create a game dict for the installation methods
+            game_dict = {
+                "AppID": app_id,
+                "Name": game_name
+            }
 
-            # Find the selected game
-            selected_game = None
-            for game in games:
-                if game.get("AppID") == game_app_id:
-                    selected_game = game
-                    self.logger.debug(f"Found target game: {game.get('Name')}")
-                    break
-
-            if not selected_game:
-                self.logger.error(f"Game with AppID {game_app_id} not found in {len(games)} available games")
-                return {
-                    "success": False,
-                    "error": f"Game with AppID {game_app_id} not found"
-                }
-            
-            # Comprehensive dependency list - includes ALL dependencies for FNV, Enderal, and MO2
+            # Comprehensive dependency list - includes ALL dependencies for games and MO2
             dependencies = [
                 "fontsmooth=rgb",
                 "xact",
@@ -225,22 +215,22 @@ class DependencyInstaller:
             ]
 
             self.logger.info("═══════════════════════════════════════════════════════════════")
-            self.logger.info("MO2 DEPENDENCY INSTALLATION STARTING")
+            self.logger.info("UNIFIED COMPLETE SETUP STARTING")
             self.logger.info("═══════════════════════════════════════════════════════════════")
-            self.logger.info(f"TARGET GAME: {selected_game.get('Name')} (AppID: {game_app_id})")
-            self.logger.info(f"Installing {len(dependencies)} comprehensive dependencies for MO2")
-            self.logger.info("Dependency list includes ALL requirements for FNV, Enderal, and MO2:")
+            self.logger.info(f"TARGET: {game_name} (AppID: {app_id})")
+            self.logger.info(f"Installing {len(dependencies)} comprehensive dependencies")
+            self.logger.info("This includes ALL requirements for games and MO2:")
             for i, dep in enumerate(dependencies, 1):
                 self.logger.info(f"   {i:2d}/{len(dependencies)}: {dep}")
             self.logger.info("═══════════════════════════════════════════════════════════════")
 
             # Also send to GUI callback for immediate display
-            self._log_progress("═══ MO2 DEPENDENCY INSTALLATION STARTING ═══")
-            self._log_progress(f"Target: {selected_game.get('Name')} (AppID: {game_app_id})")
+            self._log_progress("═══ UNIFIED COMPLETE SETUP STARTING ═══")
+            self._log_progress(f"Target: {game_name} (AppID: {app_id})")
             self._log_progress(f"Installing {len(dependencies)} dependencies")
             self._log_progress("Dependencies: " + ", ".join(dependencies[:7]) + f" + {len(dependencies)-7} more...")
-            
-            result = self._install_dependencies_self_contained(selected_game, dependencies, "MO2")
+
+            result = self._install_dependencies_self_contained(game_dict, dependencies, game_name)
 
             # Apply registry settings and install .NET SDK ONLY if basic dependencies succeeded
             if result.get("success"):
@@ -249,55 +239,96 @@ class DependencyInstaller:
                 self.logger.info("───────────────────────────────────────────────────────────────")
                 self.logger.info("Basic dependencies installed successfully, proceeding with registry settings...")
 
-                registry_result = self._apply_wine_registry_settings_self_contained(game_app_id, result.get("output_lines", []))
+                registry_result = self._apply_wine_registry_settings_self_contained(app_id, result.get("output_lines", []))
                 if registry_result:
                     self.logger.info("Registry settings applied successfully")
+                    self._log_progress("✓ Registry settings applied")
                 else:
                     self.logger.warning("Registry settings failed to apply")
+                    self._log_progress("✗ Registry settings failed")
 
                 self.logger.info("═══════════════════════════════════════════════════════════════")
                 self.logger.info(".NET 9 SDK INSTALLATION STARTING")
                 self.logger.info("═══════════════════════════════════════════════════════════════")
-                self.logger.info(f"TARGET GAME: AppID {game_app_id}")
+                self.logger.info(f"TARGET: AppID {app_id}")
                 self.logger.info("Installing .NET 9 SDK after dependencies and registry...")
-                self.logger.info("This is required for MO2 to function properly")
+                self.logger.info("This is required for MO2 and many games to function properly")
                 self.logger.info("Download URL: https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.203/dotnet-sdk-9.0.203-win-x64.exe")
 
                 # Also send to GUI
                 self._log_progress("═══ .NET 9 SDK INSTALLATION STARTING ═══")
-                self._log_progress("Installing .NET 9 SDK for MO2...")
+                self._log_progress("Installing .NET 9 SDK...")
 
-                dotnet_result = self.install_dotnet9_sdk(game_app_id)
+                dotnet_result = self.install_dotnet9_sdk(app_id)
                 if dotnet_result:
                     self.logger.info("═══════════════════════════════════════════════════════════════")
                     self.logger.info(".NET 9 SDK INSTALLATION COMPLETED SUCCESSFULLY")
                     self.logger.info("═══════════════════════════════════════════════════════════════")
                     self.logger.info(".NET 9 SDK installed successfully")
+                    self._log_progress("✓ .NET 9 SDK installed successfully")
                 else:
                     self.logger.warning("═══════════════════════════════════════════════════════════════")
                     self.logger.warning(".NET 9 SDK INSTALLATION FAILED")
                     self.logger.warning("═══════════════════════════════════════════════════════════════")
                     self.logger.warning(".NET 9 SDK installation failed")
+                    self._log_progress("✗ .NET 9 SDK installation failed")
+            else:
+                self.logger.error("═══════════════════════════════════════════════════════════════")
+                self.logger.error("SKIPPING REGISTRY AND .NET SDK - DEPENDENCIES FAILED")
+                self.logger.error("═══════════════════════════════════════════════════════════════")
+                self.logger.error(f"Basic dependency installation failed, skipping registry and .NET SDK")
 
-                # Restart Steam after MO2 setup completes
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Failed unified setup for {app_id}: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def install_mo2_dependencies_for_game(self, game_app_id: str) -> Dict[str, Any]:
+        """
+        Install MO2 dependencies for a specific non-Steam game
+        This now calls the unified setup method
+        """
+        self.logger.info(f"*** MO2 SETUP: Installing dependencies for AppID: {game_app_id} ***")
+
+        try:
+            # Get the game details using our built-in VDF parsing to get the game name
+            self.logger.debug("Fetching non-Steam games list via built-in VDF parsing...")
+            games = self.steam_utils.get_non_steam_games()
+            self.logger.debug(f"Found {len(games)} non-Steam games")
+
+            # Find the selected game to get its name
+            game_name = "MO2"  # Default name
+            for game in games:
+                if game.get("AppID") == game_app_id:
+                    game_name = game.get('Name', 'MO2')
+                    self.logger.debug(f"Found target game: {game_name}")
+                    break
+
+            # Call the unified setup method
+            result = self.install_complete_setup_for_app_id(game_app_id, game_name)
+
+            # MO2-specific: Restart Steam after setup completes (only for MO2)
+            if result.get("success"):
                 self.logger.info("═══════════════════════════════════════════════════════════════")
-                self.logger.info("RESTARTING STEAM")
+                self.logger.info("RESTARTING STEAM (MO2-specific)")
                 self.logger.info("═══════════════════════════════════════════════════════════════")
                 self._log_progress("═══ RESTARTING STEAM ═══")
                 self._log_progress("Stopping Steam...")
 
                 try:
                     # Try to kill Steam (won't error if it's not running)
-                    result = subprocess.run(["pkill", "-9", "steam"], timeout=30, capture_output=True)
-                    if result.returncode == 0:
+                    steam_result = subprocess.run(["pkill", "-9", "steam"], timeout=30, capture_output=True)
+                    if steam_result.returncode == 0:
                         self.logger.info("Steam was running and has been stopped")
                         self._log_progress("Steam stopped - waiting 10 seconds...")
-                        # Wait 10 seconds for Steam to fully shut down
                         time.sleep(10)
                     else:
                         self.logger.info("Steam was not running")
                         self._log_progress("Steam was not running - waiting 5 seconds...")
-                        # Wait 5 seconds before starting Steam
                         time.sleep(5)
 
                     # Always start Steam after waiting
@@ -309,14 +340,9 @@ class DependencyInstaller:
                 except Exception as e:
                     self.logger.warning(f"Failed to restart Steam: {e}")
                     self._log_progress(f"Warning: Failed to restart Steam - please start manually")
-            else:
-                self.logger.error("═══════════════════════════════════════════════════════════════")
-                self.logger.error("SKIPPING REGISTRY AND .NET SDK - DEPENDENCIES FAILED")
-                self.logger.error("═══════════════════════════════════════════════════════════════")
-                self.logger.error(f"Basic dependency installation failed, skipping registry and .NET SDK")
 
             return result
-            
+
         except Exception as e:
             self.logger.error(f"Failed to install MO2 dependencies for game {game_app_id}: {e}")
             return {
@@ -1063,19 +1089,28 @@ class DependencyInstaller:
             # Set up environment like Heroic does
             env = os.environ.copy()
 
-            # Remove AppImage LD_LIBRARY_PATH to prevent library conflicts with system binaries
-            # This prevents issues with winetricks calling system tools like unzstd, tar, etc.
-            env.pop('LD_LIBRARY_PATH', None)
-            env.pop('APPIMAGE', None)
-
-            # Keep APPDIR and ensure bundled tools (cabextract, etc.) are in PATH
+            # Keep APPDIR and ensure bundled tools (cabextract, etc.) are in PATH with their libraries
+            # This is fully self-contained - no system dependencies needed
             appdir = os.environ.get('APPDIR')
             if appdir:
+                # Set up paths for bundled binaries and libraries
                 bundled_bin = os.path.join(appdir, 'usr', 'bin')
+                bundled_lib = os.path.join(appdir, 'usr', 'lib')
+                bundled_lib64 = os.path.join(appdir, 'usr', 'lib64')
+
                 # Put bundled tools first in PATH so cabextract is found
                 current_path = env.get('PATH', '')
                 env['PATH'] = f"{bundled_bin}:{current_path}"
+
+                # Use ONLY bundled libraries - fully self-contained AppImage
+                # This allows cabextract to find libmspack.so.0 from the bundled libs
+                env['LD_LIBRARY_PATH'] = f"{bundled_lib}:{bundled_lib64}"
+
                 self.logger.info(f"Added bundled tools to PATH: {bundled_bin}")
+                self.logger.info(f"Set LD_LIBRARY_PATH to bundled libs only: {env['LD_LIBRARY_PATH']}")
+            else:
+                # Not running from AppImage - remove any existing LD_LIBRARY_PATH to use system libs
+                env.pop('LD_LIBRARY_PATH', None)
 
             env["WINEPREFIX"] = wine_prefix
             env["WINEARCH"] = "win64"

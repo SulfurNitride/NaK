@@ -33,6 +33,7 @@ class SmartPrefixManager:
         self.game_finder = GameFinder()
         self.prefix_locator = PrefixLocator()
         self.settings = SettingsManager()
+        self.dependency_progress_callback = None  # Optional callback for dependency progress
 
     def _get_winetricks_command(self) -> str:
         """Get the bundled winetricks command path - ONLY use bundled version"""
@@ -283,9 +284,15 @@ class SmartPrefixManager:
             
             # Fallback to protontricks
             self.logger.info(f"Using protontricks for Steam installation")
+
+            # Set up environment for protontricks
+            env = os.environ.copy()
+            env.setdefault("XDG_RUNTIME_DIR", "/tmp")
+            env.setdefault("DISPLAY", os.environ.get("DISPLAY", ":0"))
+
             cmd = ["protontricks", "--no-bwrap", result.game.app_id, "-q"] + dependencies
-            
-            result_cmd = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+            result_cmd = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
             
             if result_cmd.returncode == 0:
                 return {
@@ -312,18 +319,22 @@ class SmartPrefixManager:
         """Install dependencies for Epic/GOG games using winetricks directly"""
         try:
             self.logger.info(f"Installing Heroic dependencies for {result.game.name}...")
-            
+
             # Use winetricks directly for Heroic games (not through wine)
             wine_prefix = str(result.prefix.path)
-            
+
             # Get the Wine binary path from Heroic's configuration
             wine_bin = self._get_heroic_wine_binary(result.game)
-            
+
             # Set Wine prefix environment
             env = os.environ.copy()
             env["WINEPREFIX"] = wine_prefix
             env["WINEARCH"] = "win64"
-            
+
+            # Set headless environment variables to prevent GUI errors
+            env.setdefault("XDG_RUNTIME_DIR", "/tmp")
+            env.setdefault("DISPLAY", os.environ.get("DISPLAY", ":0"))
+
             # Use the specific Wine binary if found
             if wine_bin and Path(wine_bin).exists():
                 env["WINE"] = wine_bin
@@ -403,11 +414,14 @@ class SmartPrefixManager:
             # Use Wine directly
             wine_prefix = str(result.prefix.path)
 
-            # Set Wine prefix environment
-            env = {
-                "WINEPREFIX": wine_prefix,
-                "WINEARCH": "win64"
-            }
+            # Set Wine prefix environment - COPY existing environment!
+            env = os.environ.copy()
+            env["WINEPREFIX"] = wine_prefix
+            env["WINEARCH"] = "win64"
+
+            # Set headless environment variables
+            env.setdefault("XDG_RUNTIME_DIR", "/tmp")
+            env.setdefault("DISPLAY", os.environ.get("DISPLAY", ":0"))
 
             # Get bundled winetricks command
             winetricks_cmd = self._get_winetricks_command()
@@ -420,11 +434,14 @@ class SmartPrefixManager:
 
             # Install each dependency
             for dep in dependencies:
-                cmd = ["wine", winetricks_cmd, dep]
+                cmd = [winetricks_cmd, "-q", dep]  # Use winetricks directly, not through wine
+                self.logger.info(f"Installing {dep} to {wine_prefix}...")
                 result_cmd = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
 
                 if result_cmd.returncode != 0:
                     self.logger.warning(f"Failed to install {dep}: {result_cmd.stderr}")
+                else:
+                    self.logger.info(f"Successfully installed {dep}")
 
             return {
                 "success": True,
@@ -746,16 +763,16 @@ class SmartPrefixManager:
             }
     
     def _install_dotnet_steam(self, result: SmartPrefixResult) -> Dict[str, Any]:
-        """Install .NET SDK for Steam games"""
+        """Install .NET SDK for Steam games using Proton verb interface"""
         try:
             self.logger.info(f"Installing .NET SDK for Steam game: {result.game.name}")
-            
+
             # Download .NET SDK installer first
             dotnet_url = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.203/dotnet-sdk-9.0.203-win-x64.exe"
             installer_path = Path.home() / "Downloads" / "dotnet-sdk-9.0.203-win-x64.exe"
-            
+
             self.logger.info(f".NET SDK installer: {installer_path}")
-            
+
             # Download if not exists
             if not installer_path.exists():
                 self.logger.info("Downloading .NET SDK installer...")
@@ -767,32 +784,76 @@ class SmartPrefixManager:
                 self.logger.info(".NET SDK installer downloaded")
             else:
                 self.logger.info(".NET SDK installer already exists")
-            
-            # Use protontricks-launch with local file path
-            cmd = ["protontricks-launch", "--appid", result.game.app_id, str(installer_path), "/q"]
-            self.logger.info(f"Starting .NET SDK installation with protontricks-launch...")
+
+            # Use Proton verb interface (same method as dependencies)
+            wine_prefix = str(result.prefix.path)
+
+            # Extract compat data path from prefix path
+            if "/compatdata/" in wine_prefix and wine_prefix.endswith("/pfx"):
+                compat_data_path = wine_prefix.rsplit("/pfx", 1)[0]
+                self.logger.info(f"Using compat data path: {compat_data_path}")
+            else:
+                installer_path.unlink(missing_ok=True)
+                return {
+                    "success": False,
+                    "error": f"Invalid Steam compatdata path format: {wine_prefix}",
+                    "platform": result.platform
+                }
+
+            # Find Steam root from compat data path
+            steam_root = compat_data_path.split("/steamapps/compatdata/")[0]
+            self.logger.info(f"Using Steam root: {steam_root}")
+
+            # Get Proton path (same method as dependencies)
+            proton_path = self._get_heroic_wine_binary_for_steam()
+            if not proton_path or not os.path.exists(proton_path):
+                installer_path.unlink(missing_ok=True)
+                return {
+                    "success": False,
+                    "error": "Proton path not found - cannot install .NET SDK",
+                    "platform": result.platform
+                }
+
+            self.logger.info(f"Using Proton: {proton_path}")
+
+            # Set up Proton environment (same as dependencies)
+            env = os.environ.copy()
+            env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = steam_root
+            env["STEAM_COMPAT_DATA_PATH"] = compat_data_path
+
+            # Set headless environment variables
+            env.setdefault("XDG_RUNTIME_DIR", "/tmp")
+            env.setdefault("DISPLAY", os.environ.get("DISPLAY", ":0"))
+
+            self.logger.info(f"Environment: STEAM_COMPAT_CLIENT_INSTALL_PATH={steam_root}")
+            self.logger.info(f"Environment: STEAM_COMPAT_DATA_PATH={compat_data_path}")
+
+            # Use Proton's verb interface: proton run <installer.exe> /quiet /norestart
+            cmd = [proton_path, "run", str(installer_path), "/quiet", "/norestart"]
+
+            self.logger.info(f"Starting .NET SDK installation with Proton verb interface...")
             self.logger.info(f"Command: {' '.join(cmd)}")
             self.logger.info("This may take several minutes...")
-            
-            result_cmd = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-            
+
+            result_cmd = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
+
             self.logger.info(f".NET SDK installation completed with return code: {result_cmd.returncode}")
             if result_cmd.stdout:
                 self.logger.info(f"Installation output:\n{result_cmd.stdout}")
             if result_cmd.stderr:
                 self.logger.info(f"Installation warnings/errors:\n{result_cmd.stderr}")
-            
+
             # Cleanup
             installer_path.unlink(missing_ok=True)
             self.logger.info("Cleaned up installer file")
-            
+
             if result_cmd.returncode == 0:
                 self.logger.info(f".NET SDK installed successfully for {result.game.name}")
                 return {
                     "success": True,
                     "message": f".NET SDK installed for {result.game.name}",
                     "platform": result.platform,
-                    "prefix_path": str(result.prefix.path)
+                    "prefix_path": wine_prefix
                 }
             else:
                 self.logger.warning(f".NET SDK installation returned non-zero exit code: {result_cmd.returncode}")
@@ -801,9 +862,14 @@ class SmartPrefixManager:
                     "error": f".NET SDK installation failed: {result_cmd.stderr}",
                     "platform": result.platform
                 }
-                
+
         except subprocess.TimeoutExpired:
             self.logger.error(f".NET SDK installation timed out after 10 minutes")
+            # Cleanup on timeout
+            try:
+                installer_path.unlink(missing_ok=True)
+            except:
+                pass
             return {
                 "success": False,
                 "error": ".NET SDK installation timed out after 10 minutes",
@@ -811,6 +877,11 @@ class SmartPrefixManager:
             }
         except Exception as e:
             self.logger.error(f"Failed to install .NET SDK: {e}")
+            # Cleanup on error
+            try:
+                installer_path.unlink(missing_ok=True)
+            except:
+                pass
             return {
                 "success": False,
                 "error": f"Failed to install .NET SDK: {e}",
@@ -1152,6 +1223,10 @@ class SmartPrefixManager:
             env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = steam_root
             env["STEAM_COMPAT_DATA_PATH"] = compat_data_path
 
+            # Set headless environment variables to prevent GUI errors
+            env.setdefault("XDG_RUNTIME_DIR", "/tmp")
+            env.setdefault("DISPLAY", os.environ.get("DISPLAY", ":0"))
+
             self.logger.info(f"Environment: STEAM_COMPAT_CLIENT_INSTALL_PATH={steam_root}")
             self.logger.info(f"Environment: STEAM_COMPAT_DATA_PATH={compat_data_path}")
 
@@ -1163,8 +1238,8 @@ class SmartPrefixManager:
             for i, dep in enumerate(dependencies, 1):
                 self.logger.info(f"   {i}/{len(dependencies)}: Installing {dep}...")
 
-                # Use Proton's verb interface: proton run winetricks dep
-                cmd = [proton_path, "run", "winetricks", dep]
+                # Use Proton's verb interface: proton run winetricks -q dep
+                cmd = [proton_path, "run", "winetricks", "-q", dep]
 
                 self.logger.info(f"Running: {' '.join(cmd)}")
 
@@ -1174,9 +1249,13 @@ class SmartPrefixManager:
                     if result_cmd.returncode == 0:
                         self.logger.info(f"   Successfully installed {dep}")
                         success_count += 1
+                        if self.dependency_progress_callback:
+                            self.dependency_progress_callback(dep, True)
                     else:
                         self.logger.warning(f"   Failed to install {dep}: {result_cmd.stderr}")
                         failed_deps.append(dep)
+                        if self.dependency_progress_callback:
+                            self.dependency_progress_callback(dep, False)
 
                 except subprocess.TimeoutExpired:
                     self.logger.warning(f"   Timeout installing {dep}")

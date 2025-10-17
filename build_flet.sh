@@ -168,13 +168,113 @@ SPEC
         fi
 
         # Bundle cabextract for extracting .cab files (needed for MO2 dependencies)
-        echo 'Bundling cabextract...'
+        echo 'Bundling cabextract and its dependencies...'
         if [ -f /usr/bin/cabextract ]; then
             cp /usr/bin/cabextract NaK-Flet.AppDir/usr/bin/
             echo '✓ Cabextract bundled'
+
+            # Bundle libmspack (required by cabextract)
+            if [ -f /lib/x86_64-linux-gnu/libmspack.so.0 ]; then
+                cp -L /lib/x86_64-linux-gnu/libmspack.so.0 NaK-Flet.AppDir/usr/lib/
+                echo '✓ libmspack.so.0 bundled'
+            elif [ -f /usr/lib/x86_64-linux-gnu/libmspack.so.0 ]; then
+                cp -L /usr/lib/x86_64-linux-gnu/libmspack.so.0 NaK-Flet.AppDir/usr/lib/
+                echo '✓ libmspack.so.0 bundled'
+            else
+                echo '⚠ Warning: libmspack.so.0 not found'
+            fi
         else
             echo '⚠ Warning: cabextract not found'
         fi
+
+        # Bundle zstd/unzstd for extracting .tar.zst files (needed for vkd3d-proton)
+        echo 'Bundling zstd/unzstd and its dependencies...'
+        if [ -f /usr/bin/unzstd ]; then
+            cp /usr/bin/unzstd NaK-Flet.AppDir/usr/bin/
+            echo '✓ unzstd bundled'
+
+            # Bundle liblzma (required by unzstd)
+            for libpath in /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu; do
+                if [ -f "$libpath/liblzma.so.5" ]; then
+                    cp -L "$libpath/liblzma.so.5" NaK-Flet.AppDir/usr/lib/
+                    echo '✓ liblzma.so.5 bundled'
+                    break
+                fi
+            done
+
+            # Bundle liblz4 (required by unzstd)
+            for libpath in /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu; do
+                if [ -f "$libpath/liblz4.so.1" ]; then
+                    cp -L "$libpath/liblz4.so.1" NaK-Flet.AppDir/usr/lib/
+                    echo '✓ liblz4.so.1 bundled'
+                    break
+                fi
+            done
+        else
+            echo '⚠ Warning: unzstd not found'
+        fi
+
+        # Bundle GTK pixbuf loaders and librsvg for proper icon support
+        echo 'Bundling GTK pixbuf loaders and librsvg...'
+
+        # Create directory for pixbuf loaders
+        mkdir -p NaK-Flet.AppDir/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders
+
+        # Copy all pixbuf loaders
+        if [ -d /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders ]; then
+            cp -r /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/* \
+                NaK-Flet.AppDir/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/ 2>/dev/null || true
+            echo '✓ Pixbuf loaders bundled'
+        fi
+
+        # Bundle librsvg for SVG support
+        for lib in librsvg-2.so.2 librsvg-2.so; do
+            if [ -f /usr/lib/x86_64-linux-gnu/\$lib ]; then
+                cp -L /usr/lib/x86_64-linux-gnu/\$lib NaK-Flet.AppDir/usr/lib/
+                echo \"✓ \$lib bundled\"
+            fi
+        done
+
+        # Bundle libxml2 (required by librsvg)
+        if [ -f /usr/lib/x86_64-linux-gnu/libxml2.so.2 ]; then
+            cp -L /usr/lib/x86_64-linux-gnu/libxml2.so.2 NaK-Flet.AppDir/usr/lib/
+            echo '✓ libxml2.so.2 bundled'
+        fi
+
+        # Bundle libcroco (required by librsvg)
+        if [ -f /usr/lib/x86_64-linux-gnu/libcroco-0.6.so.3 ]; then
+            cp -L /usr/lib/x86_64-linux-gnu/libcroco-0.6.so.3 NaK-Flet.AppDir/usr/lib/
+            echo '✓ libcroco-0.6.so.3 bundled'
+        fi
+
+        # Generate pixbuf loader cache file
+        echo 'Generating pixbuf loader cache...'
+        export GDK_PIXBUF_MODULE_FILE=NaK-Flet.AppDir/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache
+        export GDK_PIXBUF_MODULEDIR=NaK-Flet.AppDir/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders
+        gdk-pixbuf-query-loaders > \$GDK_PIXBUF_MODULE_FILE 2>/dev/null || true
+
+        # Update loader paths in cache file to use relative paths
+        sed -i \"s|/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/|\\$APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders/|g\" \$GDK_PIXBUF_MODULE_FILE 2>/dev/null || true
+
+        # Bundle GStreamer libraries for Flet viewer (audioplayers plugin)
+        echo 'Bundling GStreamer libraries...'
+
+        # Core GStreamer libraries needed by audioplayers_linux_plugin
+        for gst_lib in \
+            libgstreamer-1.0.so.0 \
+            libgstapp-1.0.so.0 \
+            libgstaudio-1.0.so.0 \
+            libgstbase-1.0.so.0 \
+            libgstpbutils-1.0.so.0 \
+            libgsttag-1.0.so.0 \
+            libgstvideo-1.0.so.0 \
+            libgstcodecparsers-1.0.so.0
+        do
+            if [ -f /usr/lib/x86_64-linux-gnu/\$gst_lib ]; then
+                cp -L /usr/lib/x86_64-linux-gnu/\$gst_lib NaK-Flet.AppDir/usr/lib/
+                echo \"✓ \$gst_lib bundled\"
+            fi
+        done
 
         # Bundle libmpv and its dependencies for Flet viewer
         echo 'Bundling libmpv and dependencies...'
@@ -256,11 +356,19 @@ EOF
         cat > NaK-Flet.AppDir/AppRun << 'EOF'
 #!/bin/bash
 export APPDIR=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"
-export LD_LIBRARY_PATH=\"\$APPDIR/usr/lib:\$LD_LIBRARY_PATH\"
+export LD_LIBRARY_PATH=\"\$APPDIR/usr/lib:\$APPDIR/usr/lib/x86_64-linux-gnu:\$LD_LIBRARY_PATH\"
 export PATH=\"\$APPDIR/usr/bin:\$PATH\"
+
+# Set up GTK pixbuf loaders
+export GDK_PIXBUF_MODULE_FILE=\"\$APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache\"
+export GDK_PIXBUF_MODULEDIR=\"\$APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders\"
 
 # Preserve display server environment for proper window decorations
 export DISPLAY=\"\${DISPLAY:-:0}\"
+
+# Debug mode for GTK issues (uncomment if needed)
+# export GTK_DEBUG=all
+# export GDK_DEBUG=all
 
 exec \"\$APPDIR/usr/bin/nak-modding-helper\" \"\$@\"
 EOF

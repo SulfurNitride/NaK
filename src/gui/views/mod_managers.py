@@ -344,8 +344,8 @@ class MO2SetupThread(QThread):
             # FORCE debug file logging from thread - get the main logger
             import logging
 
-            # Get the root NAK logger that writes to debug file
-            main_logger = logging.getLogger('nak')
+            # Get the actual root logger that writes to debug file
+            main_logger = logging.getLogger()
 
             # Force log to debug file AND GUI
             main_logger.info("═══════════════════════════════════════════════════════════════")

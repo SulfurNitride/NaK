@@ -25,11 +25,16 @@ class GameManagementResult:
 
 class ComprehensiveGameManager:
     """Unified game management across all platforms"""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.game_finder = GameFinder()
         self.prefix_manager = SmartPrefixManager()
+        self.progress_callback = None  # Optional callback for progress updates
+
+    def set_progress_callback(self, callback):
+        """Set a callback function to receive progress updates"""
+        self.progress_callback = callback
     
     def get_all_games(self) -> List[GameInfo]:
         """Get all games across all platforms"""
@@ -286,95 +291,54 @@ class ComprehensiveGameManager:
         return summary
     
     def setup_specific_game_complete(self, game: GameInfo) -> GameManagementResult:
-        """Complete setup for a specific game installation"""
+        """
+        Complete setup for a specific game installation
+        Uses the UNIFIED setup method (same as Setup Existing MO2)
+        """
         self.logger.info(f"Setting up specific game: {game.name} ({game.platform})")
-        
-        # Find the prefix for this specific game
-        prefix = self.prefix_manager.prefix_locator.find_game_prefix(game)
-        if not prefix:
+
+        # For Steam games, we can directly use their app_id
+        # For non-Steam games, they should already be added to Steam via shortcuts
+        app_id = game.app_id
+        if not app_id:
             return GameManagementResult(
                 success=False,
-                message=f"No prefix found for {game.name}",
+                message=f"No app_id found for {game.name}",
                 game_name=game.name,
                 platform=game.platform,
-                error="No prefix detected"
+                error="No app_id detected - game may not be properly configured in Steam"
             )
-        
-        # Create a SmartPrefixResult for this specific installation
-        from src.utils.smart_prefix_manager import SmartPrefixResult
-        installation = SmartPrefixResult(
-            game=game,
-            prefix=prefix,
-            platform=game.platform,
-            confidence=1.0,  # High confidence since user specifically selected this
-            reason=f"User selected {game.platform} installation"
-        )
-        
-        self.logger.info(f"Setting up {game.name} ({game.platform})")
-        self.logger.debug(f"Prefix path: {prefix.path}")
-        
-        # Use comprehensive dependency list for all games (like MO2 setup)
-        dependencies = [
-            "fontsmooth=rgb",
-            "xact",
-            "xact_x64",
-            "vcrun2022",
-            "dotnet6",
-            "dotnet7", 
-            "dotnet8",
-            "dotnetdesktop6",
-            "d3dcompiler_47",
-            "d3dx11_43",
-            "d3dcompiler_43",
-            "d3dx9_43",
-            "d3dx9",
-            "vkd3d",
-        ]
-        
-        self.logger.debug(f"Installing {len(dependencies)} dependencies")
-        
-        # Install dependencies using the specific platform method
-        if game.platform == "Steam":
-            dep_result = self.prefix_manager._install_dependencies_steam(installation, dependencies)
-        elif game.platform.startswith("Heroic"):
-            dep_result = self.prefix_manager._install_dependencies_heroic(installation, dependencies)
+
+        self.logger.info(f"Using app_id: {app_id} for {game.name}")
+
+        # Use the unified DependencyInstaller method (same as Setup Existing MO2)
+        from src.core.dependency_installer import DependencyInstaller
+        dep_installer = DependencyInstaller()
+
+        # Set up progress callback if we have one
+        if self.progress_callback:
+            dep_installer.set_log_callback(self.progress_callback)
+
+        # Call the UNIFIED setup method (same proven code path as MO2 setup)
+        result = dep_installer.install_complete_setup_for_app_id(app_id, game.name)
+
+        # Convert result to GameManagementResult
+        if result.get("success"):
+            return GameManagementResult(
+                success=True,
+                message=f"{game.name} setup complete for {game.platform}",
+                game_name=game.name,
+                platform=game.platform,
+                prefix_path=result.get("prefix_path")
+            )
         else:
-            dep_result = self.prefix_manager._install_dependencies_wine(installation, dependencies)
-        
-        if not dep_result["success"]:
             return GameManagementResult(
                 success=False,
-                message=f"Failed to install dependencies: {dep_result['error']}",
+                message=f"Failed to setup {game.name}: {result.get('error', 'Unknown error')}",
                 game_name=game.name,
                 platform=game.platform,
-                error=dep_result["error"]
+                error=result.get("error", "Unknown error")
             )
-        
-        # Apply registry settings using the specific installation
-        reg_file_path = Path(__file__).parent / "wine_settings.reg"
-        if reg_file_path.exists():
-            reg_success = self.prefix_manager.prefix_locator.apply_regedit_to_prefix(installation.prefix, str(reg_file_path))
-            if reg_success:
-                self.logger.info(f"Registry settings applied successfully to {game.name}")
-            else:
-                self.logger.warning(f"Registry settings failed for {game.name}")
-        
-        # Install .NET SDK using the specific installation
-        if game.platform == "Steam":
-            dotnet_result = self.prefix_manager._install_dotnet_steam(installation)
-        else:
-            dotnet_result = self.prefix_manager._install_dotnet_wine(installation)
-        
-        if not dotnet_result["success"]:
-            self.logger.warning(f".NET SDK installation failed: {dotnet_result['error']}")
-        
-        return GameManagementResult(
-            success=True,
-            message=f"{game.name} setup complete for {game.platform}",
-            game_name=game.name,
-            platform=game.platform,
-            prefix_path=str(installation.prefix.path)
-        )
     
     def find_best_nxm_prefix(self, game_name: str) -> Optional[SmartPrefixResult]:
         """Find the best prefix for NXM handler configuration"""

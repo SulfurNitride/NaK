@@ -6,6 +6,7 @@ This module contains all the business logic and is framework-agnostic
 import logging
 from typing import Dict, List, Any, Optional
 from src.core.mo2_installer import MO2Installer
+from src.core.vortex_installer import VortexInstaller
 from src.core.dependency_installer import DependencyInstaller
 from src.utils.steam_utils import SteamUtils
 from src.utils.game_utils import GameUtils
@@ -15,10 +16,16 @@ from src.utils.settings_manager import SettingsManager
 
 class Core:
     """Core represents the main business logic of the NaK application"""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.logger.info("=" * 80)
+        self.logger.info("CORE.__INIT__() CALLED - INITIALIZING CORE COMPONENTS")
+        self.logger.info("=" * 80)
         self.mo2 = MO2Installer()
+        self.logger.info("MO2Installer initialized")
+        self.vortex = VortexInstaller()
+        self.logger.info("VortexInstaller initialized")
         self.settings = SettingsManager()
 
         self.deps = DependencyInstaller()

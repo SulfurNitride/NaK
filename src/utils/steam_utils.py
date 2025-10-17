@@ -74,12 +74,11 @@ class SteamUtils:
     def get_non_steam_games(self) -> List[Dict[str, str]]:
         """Get a list of non-Steam games using our own VDF parsing (completely self-contained)"""
         # Use ONLY our own VDF parsing - no external dependencies
-        self.logger.info("*** USING BUILT-IN VDF PARSING (completely self-contained) ***")
-        self.logger.info("No protontricks dependency required for AppID discovery")
+        self.logger.debug("Using built-in VDF parsing (no protontricks dependency)")
 
         try:
             games = self._get_non_steam_games_via_vdf()
-            self.logger.info(f"*** SELF-CONTAINED: Found {len(games)} non-Steam games via VDF parsing ***")
+            self.logger.debug(f"Found {len(games)} non-Steam games via VDF parsing")
             return games
         except Exception as e:
             self.logger.error(f"VDF parsing failed: {e}")

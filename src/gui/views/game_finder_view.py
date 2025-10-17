@@ -67,7 +67,7 @@ class GameFinderView(QWidget):
         header_layout = QHBoxLayout()
 
         # Title
-        title_label = QLabel("Light Modifications")
+        title_label = QLabel("Simple Game Modding")
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
@@ -132,35 +132,12 @@ class GameFinderView(QWidget):
         self.dependencies_button.setEnabled(False)  # Disabled until games are found
         header_layout.addWidget(self.dependencies_button)
 
-        # Back button
-        back_button = QPushButton("← Back to Main Menu")
-        back_button.setStyleSheet("""
-            QPushButton {
-                background-color: #757575;
-                border: 2px solid #555555;
-                border-radius: 8px;
-                padding: 10px 20px;
-                color: #ffffff;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #616161;
-                border-color: #757575;
-            }
-            QPushButton:pressed {
-                background-color: #424242;
-            }
-        """)
-        back_button.clicked.connect(self.controller.show_main_menu)
-        header_layout.addWidget(back_button)
-
         main_layout.addLayout(header_layout)
 
         # Description
-        desc_text = """Want to do some modding on your own, like ReShade, OptiScaler, ENB, or others? This will discover your Heroic and Steam games and apply fixes (dependencies, registry edits, DLL overrides) on a per-game basis.
+        desc_text = """Simple game modding without MO2! Apply dependencies, registry edits, and fixes directly to your game prefixes. Perfect for ReShade, OptiScaler, ENB, and other mods.
 
-Your games will be automatically scanned."""
+Automatically detects games from Steam, Heroic, and non-Steam sources. Your games will be scanned automatically."""
 
         desc_label = QLabel(desc_text)
         desc_label.setWordWrap(True)
@@ -356,7 +333,7 @@ Your games will be automatically scanned."""
 
     def on_show(self):
         """Called when this view is shown"""
-        self.logger.info("Light modifications view shown")
+        self.logger.info("Simple Game Modding view shown")
         # Auto-scan for games when the view is first shown
         if not self.games_list:  # Only auto-scan if we haven't scanned yet
             self._start_game_scan()
