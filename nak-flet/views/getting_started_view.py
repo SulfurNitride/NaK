@@ -29,12 +29,22 @@ def get_getting_started_view(page: ft.Page, proton_manager_callback):
         proton_manager_callback()
 
     def open_faq(e):
-        """Show FAQ coming soon message"""
-        logger.info("FAQ - Coming soon")
-        page.snack_bar = ft.SnackBar(
-            content=ft.Text("FAQ & Known Issues - Coming soon!"),
-            bgcolor=ft.Colors.BLUE,
-        )
+        """Open GitHub FAQ in browser"""
+        import webbrowser
+        faq_url = "https://github.com/SulfurNitride/NaK/blob/main/docs/FAQ.md"
+        logger.info(f"Opening FAQ in browser: {faq_url}")
+        try:
+            webbrowser.open(faq_url)
+            page.snack_bar = ft.SnackBar(
+                content=ft.Text("Opening FAQ in browser..."),
+                bgcolor=ft.Colors.BLUE,
+            )
+        except Exception as e:
+            logger.error(f"Failed to open FAQ: {e}")
+            page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Failed to open FAQ: {e}"),
+                bgcolor=ft.Colors.RED,
+            )
         page.snack_bar.open = True
         page.update()
 
