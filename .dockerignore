@@ -1,0 +1,32 @@
+# Build artifacts
+dist/
+dist_*/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+
+# AppImage artifacts
+*.AppImage
+*.AppDir/
+squashfs-root/
+appimagetool*.AppImage
+
+# Git
+.git/
+
+# Large directories
+build-vm/
+dist_native/
+
+# Plugin directory with spaces
+"Plugin Support/"
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/

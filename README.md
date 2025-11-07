@@ -1,5 +1,4 @@
-<img width="3425" height="2145" alt="image" src="https://github.com/user-attachments/assets/4fc96d3e-b464-48ba-bb28-129a23f09e6a" />
-
+<img width="3425" height="2145" alt="image" src="https://github.com/user-attachments/assets/c38aedb3-5127-448c-bd07-093c64b1f160" />
 
 
 
@@ -16,7 +15,7 @@ You can find me in the [NaK Discord](https://discord.gg/9JWQzSeUWt)
 
 To run it:
 
-Download the latest version from the [releases](https://github.com/SulfurNitride/NaK/releases) tab. And it should just be as easy as double clicking it. The GUI should also be compatible with the steamdeck.
+Download the latest version from the [releases](https://github.com/SulfurNitride/NaK/releases) tab. And it should just be as easy as double clicking it. The GUI should also be compatibile with the Steamdeck.
 
 Requirements:
 - Only system binary of steam (flatpak steam is not supported, will be coming soon!)

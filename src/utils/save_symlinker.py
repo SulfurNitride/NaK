@@ -4,20 +4,21 @@ Manages symlinks between game save locations for seamless save sharing between
 original games and MO2-launched modded versions
 """
 
-import logging
 import os
 from pathlib import Path
 from typing import Dict, Optional, List
 import shutil
+from src.utils.logger import get_logger
 
 
 class SaveSymlinker:
     """Manages save game symlinks for Bethesda games"""
 
-    # Bethesda game configurations
+    # Game configurations
     # Format: Game Name: (Steam AppID, Save Identifier, Save Location Type, Game Install Path, Custom Save Subdir)
     # Save Location Types:
     #   - "my_games": Uses My Documents/My Games/<folder>
+    #   - "saved_games": Uses Saved Games/<folder> (for games like Cyberpunk 2077)
     #   - "install_dir_saves": Saves in game install directory/Saves/
     #   - "install_dir_data": Saves in game install directory/data/savegame/
     #   - "install_dir_custom": Saves in game install directory/<custom_subdir>/
@@ -38,10 +39,13 @@ class SaveSymlinker:
         "Skyrim Special Edition": (489830, "Skyrim Special Edition", "my_games", "Skyrim Special Edition", None),
         "Fallout 4": (377160, "Fallout4", "my_games", "Fallout 4", None),
         "Starfield": (1716740, "Starfield", "my_games", None, None),
+
+        # CD Projekt RED games
+        "Cyberpunk 2077": (1091500, "CD Projekt Red/Cyberpunk 2077", "saved_games", "Cyberpunk 2077", None),
     }
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.steam_paths = [
             Path.home() / ".steam" / "steam",
             Path.home() / ".local" / "share" / "Steam",
@@ -111,6 +115,11 @@ class SaveSymlinker:
         if location_type == "my_games":
             # Modern Bethesda games: compatdata/<appid>/pfx/drive_c/users/steamuser/My Documents/My Games/<GameFolder>
             save_path = compatdata / "pfx" / "drive_c" / "users" / "steamuser" / "My Documents" / "My Games" / save_identifier
+            return save_path if save_path.exists() else None
+
+        elif location_type == "saved_games":
+            # Games using Saved Games folder: compatdata/<appid>/pfx/drive_c/users/steamuser/Saved Games/<GameFolder>
+            save_path = compatdata / "pfx" / "drive_c" / "users" / "steamuser" / "Saved Games" / save_identifier
             return save_path if save_path.exists() else None
 
         elif location_type == "install_dir_saves":
@@ -282,6 +291,8 @@ class SaveSymlinker:
         # Build the target path based on location type
         if location_type == "my_games":
             target_save_path = target_compatdata / "pfx" / "drive_c" / "users" / "steamuser" / "My Documents" / "My Games" / save_identifier
+        elif location_type == "saved_games":
+            target_save_path = target_compatdata / "pfx" / "drive_c" / "users" / "steamuser" / "Saved Games" / save_identifier
         elif location_type == "install_dir_saves":
             # For install_dir types, symlink at the same level in target prefix
             game_install = self.get_game_install_path(target_appid, game_install_folder) if game_install_folder else None
@@ -470,6 +481,12 @@ class SaveSymlinker:
                 self.logger.info(f"Created save directory for {save_identifier}: {save_path}")
                 return save_path
 
+            elif location_type == "saved_games":
+                save_path = compatdata / "pfx" / "drive_c" / "users" / "steamuser" / "Saved Games" / save_identifier
+                save_path.mkdir(parents=True, exist_ok=True)
+                self.logger.info(f"Created save directory for {save_identifier}: {save_path}")
+                return save_path
+
             elif location_type == "install_dir_saves":
                 # Check real Steam directory first
                 for steam_path in self.steam_paths:
@@ -571,3 +588,200 @@ class SaveSymlinker:
             })
 
         return available_games
+
+    def setup_saves_for_nak_prefix(
+        self,
+        nak_prefix_path: str,
+        manager_install_dir: str
+    ) -> Dict[str, any]:
+        """
+        Setup save symlinks for Bethesda games detected via GameFinder
+        Works with NaK prefix structure (~/NaK/Prefixes/mo2_*/pfx)
+
+        Args:
+            nak_prefix_path: Path to NaK prefix (e.g., ~/NaK/Prefixes/mo2_skyrim/pfx)
+            manager_install_dir: Mod manager install dir (e.g., ~/Games/ModOrganizer2)
+
+        Returns:
+            Dictionary with:
+                - success: bool
+                - message: str
+                - games_symlinked: int
+                - total_games_detected: int
+                - symlinked_games: list
+        """
+        try:
+            from src.utils.game_finder import GameFinder
+
+            self.logger.info("=" * 70)
+            self.logger.info("SETTING UP SAVE SYMLINKS FOR NAK PREFIX")
+            self.logger.info("=" * 70)
+            self.logger.info(f"NaK Prefix: {nak_prefix_path}")
+            self.logger.info(f"Manager Install Dir: {manager_install_dir}")
+
+            # Use GameFinder to detect all games across all platforms
+            game_finder = GameFinder()
+            all_games = game_finder.find_all_games()
+
+            self.logger.info(f"GameFinder detected {len(all_games)} total games")
+
+            # Filter to Bethesda games
+            bethesda_games_detected = []
+            for game in all_games:
+                # Check if this game matches any in our BETHESDA_GAMES dict
+                for bethesda_name, (bethesda_appid, save_id, location_type, install_folder, custom_subdir) in self.BETHESDA_GAMES.items():
+                    # Match by AppID or name
+                    if (game.app_id and str(game.app_id) == str(bethesda_appid)) or \
+                       (bethesda_name.lower() in game.name.lower()):
+                        bethesda_games_detected.append({
+                            "game_info": game,
+                            "bethesda_name": bethesda_name,
+                            "save_identifier": save_id,
+                            "location_type": location_type,
+                            "install_folder": install_folder,
+                            "custom_subdir": custom_subdir
+                        })
+                        self.logger.info(f"Found Bethesda game: {game.name} ({game.platform}) with prefix: {game.prefix_path}")
+                        break
+
+            self.logger.info(f"Detected {len(bethesda_games_detected)} Bethesda games")
+
+            if not bethesda_games_detected:
+                return {
+                    "success": True,
+                    "message": "No Bethesda games detected",
+                    "games_symlinked": 0,
+                    "total_games_detected": 0,
+                    "symlinked_games": []
+                }
+
+            # Create "Save Games Folder" in manager directory
+            manager_path = Path(manager_install_dir)
+            save_games_folder = manager_path / "Save Games Folder"
+            save_games_folder.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Created Save Games Folder: {save_games_folder}")
+
+            # Create symlinks for each detected game
+            symlinked_games = []
+            nak_prefix = Path(nak_prefix_path)
+
+            for game_data in bethesda_games_detected:
+                game_info = game_data["game_info"]
+                bethesda_name = game_data["bethesda_name"]
+                save_id = game_data["save_identifier"]
+                location_type = game_data["location_type"]
+
+                if not game_info.prefix_path:
+                    self.logger.warning(f"No prefix path for {bethesda_name}, skipping")
+                    continue
+
+                game_prefix = Path(game_info.prefix_path)
+
+                # Find save location in the game's prefix based on location_type
+                save_path = None
+
+                if location_type == "my_games":
+                    # Modern games: prefix/drive_c/users/steamuser/My Documents/My Games/<GameFolder>
+                    save_path = game_prefix / "drive_c" / "users" / "steamuser" / "My Documents" / "My Games" / save_id
+
+                elif location_type == "saved_games":
+                    # Games using Saved Games: prefix/drive_c/users/steamuser/Saved Games/<GameFolder>
+                    save_path = game_prefix / "drive_c" / "users" / "steamuser" / "Saved Games" / save_id
+
+                elif location_type == "install_dir_saves":
+                    # Games with saves in install dir (Morrowind)
+                    if game_info.path:
+                        potential_save_path = Path(game_info.path) / "Saves"
+                        if potential_save_path.exists():
+                            save_path = potential_save_path
+
+                elif location_type == "install_dir_data":
+                    # Classic games (Fallout 1/2)
+                    if game_info.path:
+                        for data_variant in ["data/savegame", "DATA/SAVEGAME", "Data/Savegame"]:
+                            potential_save_path = Path(game_info.path) / data_variant
+                            if potential_save_path.exists():
+                                save_path = potential_save_path
+                                break
+
+                elif location_type == "install_dir_custom" and game_data["custom_subdir"]:
+                    # Custom subdirectory (Arena, Daggerfall)
+                    if game_info.path:
+                        save_path = Path(game_info.path) / game_data["custom_subdir"]
+
+                # Create save location if it doesn't exist but game is installed
+                if not save_path and location_type == "my_games":
+                    save_path = game_prefix / "drive_c" / "users" / "steamuser" / "My Documents" / "My Games" / save_id
+                    save_path.mkdir(parents=True, exist_ok=True)
+                    self.logger.info(f"Created save location for {bethesda_name}: {save_path}")
+                elif not save_path and location_type == "saved_games":
+                    save_path = game_prefix / "drive_c" / "users" / "steamuser" / "Saved Games" / save_id
+                    save_path.mkdir(parents=True, exist_ok=True)
+                    self.logger.info(f"Created save location for {bethesda_name}: {save_path}")
+
+                if not save_path or not save_path.exists():
+                    self.logger.warning(f"Could not find save location for {bethesda_name}")
+                    continue
+
+                # Create symlink in NaK prefix based on location type
+                if location_type == "my_games":
+                    nak_save_target = nak_prefix / "drive_c" / "users" / "steamuser" / "My Documents" / "My Games" / save_id
+                elif location_type == "saved_games":
+                    nak_save_target = nak_prefix / "drive_c" / "users" / "steamuser" / "Saved Games" / save_id
+                else:
+                    # For install_dir types, use my_games as default fallback
+                    nak_save_target = nak_prefix / "drive_c" / "users" / "steamuser" / "My Documents" / "My Games" / save_id
+
+                nak_save_target.parent.mkdir(parents=True, exist_ok=True)
+
+                # Create symlink if it doesn't exist
+                if nak_save_target.exists() or nak_save_target.is_symlink():
+                    if nak_save_target.is_symlink() and nak_save_target.resolve() == save_path.resolve():
+                        self.logger.info(f"Symlink already exists for {bethesda_name}")
+                        symlinked_games.append(bethesda_name)
+                        continue
+                    else:
+                        self.logger.warning(f"Removing old/broken symlink for {bethesda_name}")
+                        try:
+                            nak_save_target.unlink()
+                        except Exception as e:
+                            self.logger.error(f"Failed to remove old symlink: {e}")
+                            continue
+
+                try:
+                    nak_save_target.symlink_to(save_path, target_is_directory=True)
+                    self.logger.info(f"✓ Created save symlink: {bethesda_name}")
+                    self.logger.info(f"  {nak_save_target} → {save_path}")
+                    symlinked_games.append(bethesda_name)
+
+                    # Also create symlink in "Save Games Folder" for easy access
+                    safe_name = bethesda_name.replace(":", "").replace("/", "-")
+                    manager_symlink = save_games_folder / safe_name
+                    if not manager_symlink.exists():
+                        manager_symlink.symlink_to(save_path, target_is_directory=True)
+                        self.logger.info(f"  Also linked in Save Games Folder: {safe_name}")
+
+                except Exception as e:
+                    self.logger.error(f"Failed to create symlink for {bethesda_name}: {e}")
+
+            self.logger.info("=" * 70)
+            self.logger.info(f"SAVE SYMLINK SETUP COMPLETE: {len(symlinked_games)}/{len(bethesda_games_detected)} games")
+            self.logger.info("=" * 70)
+
+            return {
+                "success": True,
+                "message": f"Successfully symlinked saves for {len(symlinked_games)} game(s)",
+                "games_symlinked": len(symlinked_games),
+                "total_games_detected": len(bethesda_games_detected),
+                "symlinked_games": symlinked_games
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to setup save symlinks: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Failed: {str(e)}",
+                "games_symlinked": 0,
+                "total_games_detected": 0,
+                "symlinked_games": []
+            }

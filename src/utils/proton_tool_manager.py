@@ -6,9 +6,9 @@ Handles automatic Proton tool setting for Steam games
 import os
 import json
 import subprocess
-import logging
 from pathlib import Path
 from typing import Optional, Dict, List
+from src.utils.logger import get_logger
 try:
     import vdf
     VDF_AVAILABLE = True
@@ -20,41 +20,98 @@ class ProtonToolManager:
     """Manages Proton tool selection for Steam games"""
     
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.steam_root = self._find_steam_root()
         self.user_id = self._find_steam_user_id()
         
     def _find_steam_root(self) -> str:
-        """Find Steam installation directory"""
+        """Find Steam installation directory (supports native and Flatpak Steam)"""
         home_dir = Path.home()
-        
+
         candidates = [
+            # Native Steam locations
             home_dir / ".local" / "share" / "Steam",
             home_dir / ".steam" / "steam",
             home_dir / ".steam" / "debian-installation",
             Path("/usr/local/steam"),
             Path("/usr/share/steam"),
+            # Flatpak Steam location
+            home_dir / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam",
         ]
-        
+
         for candidate in candidates:
             if candidate.exists():
                 self.logger.info(f"Found Steam root: {candidate}")
                 return str(candidate)
-        
+
         raise RuntimeError("Could not find Steam installation")
     
+    def _steam_id64_to_account_id(self, steam_id64: int) -> int:
+        """Convert Steam ID64 to Account ID (userdata folder ID)"""
+        # Steam ID64 = 76561197960265728 + AccountID
+        # So: AccountID = Steam ID64 - 76561197960265728
+        STEAM_ID64_BASE = 76561197960265728
+        return steam_id64 - STEAM_ID64_BASE
+
+    def _find_logged_in_user_from_loginusers(self) -> Optional[str]:
+        """Find the currently logged in Steam user from loginusers.vdf"""
+        try:
+            if not VDF_AVAILABLE or vdf is None:
+                self.logger.warning("VDF library not available, cannot parse loginusers.vdf")
+                return None
+
+            loginusers_path = Path(self.steam_root) / "config" / "loginusers.vdf"
+
+            if not loginusers_path.exists():
+                self.logger.warning(f"loginusers.vdf not found at {loginusers_path}")
+                return None
+
+            # Parse loginusers.vdf
+            with open(loginusers_path, 'r', encoding='utf-8') as f:
+                loginusers_data = vdf.load(f)
+
+            users = loginusers_data.get('users', {})
+
+            # Find the user with MostRecent = 1
+            for steam_id64_str, user_data in users.items():
+                if user_data.get('MostRecent') == '1':
+                    # Convert Steam ID64 string to int
+                    steam_id64 = int(steam_id64_str)
+                    # Convert to account ID (userdata folder ID)
+                    account_id = self._steam_id64_to_account_id(steam_id64)
+                    self.logger.info(f"Found logged in user from loginusers.vdf: Steam ID64={steam_id64}, Account ID={account_id}")
+                    return str(account_id)
+
+            self.logger.warning("No user with MostRecent=1 found in loginusers.vdf")
+            return None
+
+        except Exception as e:
+            self.logger.warning(f"Failed to parse loginusers.vdf: {e}")
+            return None
+
     def _find_steam_user_id(self) -> str:
-        """Find Steam user ID"""
+        """Find the currently logged in Steam user ID (or first user as fallback)"""
         userdata_path = Path(self.steam_root) / "userdata"
         if not userdata_path.exists():
             raise RuntimeError("Could not find Steam userdata directory")
-        
-        # Find the first user directory
+
+        # PRIORITY 1: Try to find the currently logged in user from loginusers.vdf
+        logged_in_user = self._find_logged_in_user_from_loginusers()
+        if logged_in_user:
+            user_path = userdata_path / logged_in_user
+            if user_path.exists() and user_path.is_dir():
+                self.logger.info(f"Using currently logged in Steam user: {logged_in_user}")
+                return logged_in_user
+            else:
+                self.logger.warning(f"Logged in user folder not found: {user_path}")
+
+        # PRIORITY 2: Fallback to first user directory (old behavior)
+        self.logger.info("Falling back to first user directory for user detection")
         for user_dir in userdata_path.iterdir():
             if user_dir.is_dir() and user_dir.name.isdigit():
                 self.logger.info(f"Found Steam user ID: {user_dir.name}")
                 return user_dir.name
-        
+
         raise RuntimeError("Could not find Steam user ID")
     
     def set_proton_tool(self, app_id: str, proton_tool: str = "proton_experimental") -> bool:

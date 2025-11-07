@@ -4,16 +4,16 @@ Handles user preferences and manual configuration of Wine/Proton paths
 """
 
 import json
-import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
+from src.utils.logger import get_logger
 
 
 class SettingsManager:
     """Manages user settings and preferences"""
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.settings_file = Path.home() / ".config" / "nak" / "settings.json"
         self.settings = self._load_settings()
 
@@ -29,8 +29,11 @@ class SettingsManager:
         return {
             "proton_path": "",
             "wine_path": "",
+            "steam_path": "",  # User's preferred Steam installation (if multiple exist)
             "auto_detect": True,
-            "preferred_proton_version": "Proton - Experimental"
+            "preferred_proton_version": "Proton - Experimental",
+            "first_run_complete": False,  # Track if first-run welcome has been shown
+            "nak_storage_location": ""  # Custom location for NaK folder (empty = default ~/NaK)
         }
 
     def _save_settings(self):
@@ -136,6 +139,17 @@ class SettingsManager:
         """Get preferred Proton version"""
         return self.settings.get("preferred_proton_version", "Proton - Experimental")
 
+    def set_steam_path(self, path: str):
+        """Set user's preferred Steam installation path"""
+        self.settings["steam_path"] = path
+        self._save_settings()
+        self.logger.info(f"Set Steam path: {path}")
+
+    def get_steam_path(self) -> Optional[str]:
+        """Get user's preferred Steam installation path"""
+        steam_path = self.settings.get("steam_path", "")
+        return steam_path if steam_path else None
+
     def set_show_heroic_games(self, enabled: bool):
         """Set whether to show Heroic games in NXM handler setup"""
         self.settings["show_heroic_games"] = enabled
@@ -169,6 +183,27 @@ class SettingsManager:
         """Get all settings"""
         return self.settings.copy()
 
+    def is_first_run(self) -> bool:
+        """Check if this is the first run"""
+        return not self.settings.get("first_run_complete", False)
+
+    def set_first_run_complete(self):
+        """Mark first-run as complete"""
+        self.settings["first_run_complete"] = True
+        self._save_settings()
+        self.logger.info("Marked first-run as complete")
+
+    def set_nak_storage_location(self, location: str):
+        """Set custom NaK storage location"""
+        self.settings["nak_storage_location"] = location
+        self._save_settings()
+        self.logger.info(f"Set NaK storage location: {location}")
+
+    def get_nak_storage_location(self) -> Optional[str]:
+        """Get custom NaK storage location (returns None if using default ~/NaK)"""
+        location = self.settings.get("nak_storage_location", "")
+        return location if location else None
+
     def reset_to_defaults(self):
         """Reset all settings to defaults"""
         self.settings = {
@@ -176,7 +211,9 @@ class SettingsManager:
             "wine_path": "",
             "auto_detect": True,
             "preferred_proton_version": "Proton - Experimental",
-            "show_heroic_games": False
+            "show_heroic_games": False,
+            "first_run_complete": False,
+            "nak_storage_location": ""
         }
         self._save_settings()
         self.logger.info("Reset settings to defaults")

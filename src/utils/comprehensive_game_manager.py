@@ -3,13 +3,13 @@ Comprehensive Game Manager - Unified game and prefix management
 Provides high-level interface for managing games across all platforms
 """
 
-import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
 from src.utils.game_finder import GameFinder, GameInfo
 from src.utils.smart_prefix_manager import SmartPrefixManager, SmartPrefixResult
+from src.utils.logger import get_logger
 
 
 @dataclass
@@ -27,7 +27,7 @@ class ComprehensiveGameManager:
     """Unified game management across all platforms"""
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.game_finder = GameFinder()
         self.prefix_manager = SmartPrefixManager()
         self.progress_callback = None  # Optional callback for progress updates
@@ -157,7 +157,8 @@ class ComprehensiveGameManager:
             "vcrun2022",
             "dotnet6",
             "dotnet7",
-            "dotnet8"
+            "dotnet8",
+            "dotnet9"
         ]
         
         # Install dependencies using the specific platform method
@@ -228,7 +229,8 @@ class ComprehensiveGameManager:
             "vcrun2022",
             "dotnet6",
             "dotnet7",
-            "dotnet8"
+            "dotnet8",
+            "dotnet9"
         ]
         
         # Install dependencies using the specific platform method
@@ -319,8 +321,8 @@ class ComprehensiveGameManager:
         if self.progress_callback:
             dep_installer.set_log_callback(self.progress_callback)
 
-        # Call the UNIFIED setup method (same proven code path as MO2 setup)
-        result = dep_installer.install_complete_setup_for_app_id(app_id, game.name)
+        # Call the UNIFIED setup method (for simple game modding)
+        result = dep_installer.install_complete_setup_for_app_id(app_id, game.name, is_for_mod_manager=False)
 
         # Convert result to GameManagementResult
         if result.get("success"):

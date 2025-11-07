@@ -12,33 +12,49 @@ from logging.handlers import RotatingFileHandler
 
 
 def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
-    """Get a logger with consistent configuration"""
+    """Get a logger with consistent configuration
+
+    If the root logger has handlers (from setup_comprehensive_logging),
+    just return a logger that propagates to the root logger.
+    Otherwise, configure it independently.
+    """
     logger = logging.getLogger(name)
 
-    # Only configure if not already configured
+    # Check if root logger is configured
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        # Root logger is configured, just set level and propagate
+        if level is not None:
+            logger.setLevel(level)
+        else:
+            logger.setLevel(logging.NOTSET)  # Inherit from root
+        logger.propagate = True  # Let it propagate to root logger
+        return logger
+
+    # Only configure if root logger is not configured and logger has no handlers
     if not logger.handlers:
         # Set level - use INFO by default for cleaner output
         if level is None:
             level = logging.INFO
         logger.setLevel(level)
-        
+
         # Create formatter with more detail
         formatter = logging.Formatter(
             '%(asctime)s.%(msecs)03d [%(levelname)8s] %(name)s:%(lineno)d - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
-        
+
         # Create console handler
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(level)
         console_handler.setFormatter(formatter)
-        
+
         # Add handler to logger
         logger.addHandler(console_handler)
-        
+
         # Prevent propagation to root logger
         logger.propagate = False
-    
+
     return logger
 
 

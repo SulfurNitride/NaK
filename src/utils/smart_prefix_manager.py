@@ -3,7 +3,6 @@ Smart Prefix Manager - Intelligent prefix detection and management
 Finds the best prefix for games across all platforms and manages dependencies
 """
 
-import logging
 import os
 import subprocess
 from pathlib import Path
@@ -13,6 +12,7 @@ from dataclasses import dataclass
 from src.utils.game_finder import GameFinder, GameInfo
 from src.utils.prefix_locator import PrefixLocator, PrefixInfo
 from src.utils.settings_manager import SettingsManager
+from src.utils.logger import get_logger
 
 
 @dataclass
@@ -29,7 +29,7 @@ class SmartPrefixManager:
     """Intelligent prefix management for cross-platform games"""
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.game_finder = GameFinder()
         self.prefix_locator = PrefixLocator()
         self.settings = SettingsManager()
@@ -469,9 +469,6 @@ class SmartPrefixManager:
             # Ensure we target the detected prefix
             if result.prefix and result.prefix.path:
                 env["WINEPREFIX"] = str(result.prefix.path)
-                self.logger.info(f"*** DEBUG: Using WINEPREFIX={env['WINEPREFIX']}")
-            else:
-                self.logger.warning("*** DEBUG: No prefix path supplied – falling back to default Wine prefix")
 
             # Provide sane defaults for headless-friendly execution
             env.setdefault("XDG_RUNTIME_DIR", "/tmp")
@@ -868,8 +865,8 @@ class SmartPrefixManager:
             # Cleanup on timeout
             try:
                 installer_path.unlink(missing_ok=True)
-            except:
-                pass
+            except (OSError, PermissionError) as e:
+                self.logger.debug(f"Could not delete installer file: {e}")
             return {
                 "success": False,
                 "error": ".NET SDK installation timed out after 10 minutes",
@@ -880,8 +877,8 @@ class SmartPrefixManager:
             # Cleanup on error
             try:
                 installer_path.unlink(missing_ok=True)
-            except:
-                pass
+            except (OSError, PermissionError) as e:
+                self.logger.debug(f"Could not delete installer file: {e}")
             return {
                 "success": False,
                 "error": f"Failed to install .NET SDK: {e}",
@@ -1122,9 +1119,13 @@ class SmartPrefixManager:
                 ]
 
                 # Check ALL Steam libraries for Proton installations
-                from src.utils.steam_shortcut_manager import SteamShortcutManager
-                steam_manager = SteamShortcutManager()
-                all_libraries = steam_manager._get_steam_libraries()
+                # DISABLED: Steam integration feature is disabled
+                # from src.utils.steam_shortcut_manager import SteamShortcutManager
+                # steam_manager = SteamShortcutManager()
+                # all_libraries = steam_manager._get_steam_libraries()
+
+                # Fallback: Check default Steam library only
+                all_libraries = [steam_root]
 
                 for library_path in all_libraries:
                     library_path = Path(library_path)

@@ -5,15 +5,15 @@ Handles common utility operations
 
 import os
 import subprocess
-import logging
 from pathlib import Path
 from typing import Optional
+from src.utils.logger import get_logger
 
 class Utils:
     """General utility functions"""
     
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
     
     def command_exists(self, command: str) -> bool:
         """Check if a command exists in PATH"""

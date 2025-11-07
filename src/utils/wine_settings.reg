@@ -96,6 +96,12 @@ Windows Registry Editor Version 5.00
 [HKEY_CURRENT_USER\Software\Wine\DllOverrides]
 "dinput8"="native,builtin"
 
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dinput8.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"mscoree"="native"
+
 [HKEY_CURRENT_USER\Software\Wine]
 "ShowDotFiles"="Y"
 
@@ -106,6 +112,9 @@ Windows Registry Editor Version 5.00
 "FontSmoothingType"=dword:00000002
 
 [HKEY_CURRENT_USER\Software\Wine\AppDefaults\Pandora Behaviour Engine+.exe\X11 Driver]
+"Decorated"="N"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\Vortex.exe\X11 Driver]
 "Decorated"="N"
 
 [HKEY_CURRENT_USER\Software\Wine\AppDefaults\SSEEdit.exe]

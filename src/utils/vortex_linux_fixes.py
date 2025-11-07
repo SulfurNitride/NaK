@@ -62,7 +62,7 @@ class VortexLinuxFixes:
                 staging_path = staging_root / game_id
                 staging_path.mkdir(exist_ok=True)
                 created_folders[game_id] = str(staging_path)
-                self.logger.info(f"  ✓ Created staging folder for {game_info['name']}: {staging_path}")
+                self.logger.info(f"  [OK] Created staging folder for {game_info['name']}: {staging_path}")
 
             return created_folders
 
@@ -131,7 +131,7 @@ class VortexLinuxFixes:
 
                 # Skip if lowercase already exists
                 if target_file.exists() or target_file.is_symlink():
-                    self.logger.info(f"  ✓ Lowercase symlink already exists: {lowercase_name}")
+                    self.logger.info(f"  [OK] Lowercase symlink already exists: {lowercase_name}")
                     skipped_symlinks.append(lowercase_name)
                     continue
 
@@ -139,9 +139,9 @@ class VortexLinuxFixes:
                 try:
                     target_file.symlink_to(esm_file)
                     created_symlinks.append(lowercase_name)
-                    self.logger.info(f"  ✓ Created symlink: {lowercase_name} → {esm_file}")
+                    self.logger.info(f"  [OK] Created symlink: {lowercase_name} → {esm_file}")
                 except Exception as e:
-                    self.logger.error(f"  ✗ Failed to create symlink for {esm_file}: {e}")
+                    self.logger.error(f"  [FAILED] Failed to create symlink for {esm_file}: {e}")
 
             # Also handle _ResourcePack.esl for Skyrim SE/AE
             if game_id in ["skyrimse", "skyrimvr"]:
@@ -152,9 +152,9 @@ class VortexLinuxFixes:
                         try:
                             lowercase_resource.symlink_to("_ResourcePack.esl")
                             created_symlinks.append("_resourcepack.esl")
-                            self.logger.info(f"  ✓ Created symlink: _resourcepack.esl → _ResourcePack.esl")
+                            self.logger.info(f"  [OK] Created symlink: _resourcepack.esl → _ResourcePack.esl")
                         except Exception as e:
-                            self.logger.error(f"  ✗ Failed to create _resourcepack symlink: {e}")
+                            self.logger.error(f"  [FAILED] Failed to create _resourcepack symlink: {e}")
 
             result = {
                 "success": True,
@@ -165,7 +165,7 @@ class VortexLinuxFixes:
             }
 
             if created_symlinks:
-                self.logger.info(f"✓ Created {len(created_symlinks)} lowercase ESM symlinks for case-sensitivity fix")
+                self.logger.info(f"[OK] Created {len(created_symlinks)} lowercase ESM symlinks for case-sensitivity fix")
             else:
                 self.logger.info("No new symlinks needed (all already exist)")
 
@@ -241,7 +241,7 @@ class VortexLinuxFixes:
                     path_info = self.get_vortex_staging_path_instructions(game_id, steam_library)
                     results["vortex_paths"][game_id] = path_info
 
-                    self.logger.info(f"✓ Fixed {game_name}")
+                    self.logger.info(f"[OK] Fixed {game_name}")
                 else:
                     results["games_not_found"].append(game_id)
 

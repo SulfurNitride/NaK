@@ -3,132 +3,157 @@ Core business logic for NaK application
 This module contains all the business logic and is framework-agnostic
 """
 
-import logging
+from pathlib import Path
 from typing import Dict, List, Any, Optional
-from src.core.mo2_installer import MO2Installer
-from src.core.vortex_installer import VortexInstaller
+from src.mod_managers.mo2 import MO2Installer
+from src.mod_managers.vortex import VortexInstaller
+from src.core.unverum_installer import UnverumInstaller
 from src.core.dependency_installer import DependencyInstaller
 from src.utils.steam_utils import SteamUtils
 from src.utils.game_utils import GameUtils
 from src.utils.utils import Utils
 from src.utils.comprehensive_game_manager import ComprehensiveGameManager
 from src.utils.settings_manager import SettingsManager
+from src.utils.logger import get_logger
+
+# Import feature flags and version info (if available, for backward compatibility)
+try:
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'nak-flet'))
+    from constants import FeatureFlags, APP_VERSION, APP_DATE
+except ImportError:
+    # Fallback if constants not found
+    class FeatureFlags:
+        ENABLE_STEAM_INTEGRATION = False
+        ENABLE_PROTON_GE = True
+        ENABLE_AUTO_GAME_DETECTION = False
+    APP_VERSION = "4.0.0"
+    APP_DATE = "11/6/25"
 
 class Core:
     """Core represents the main business logic of the NaK application"""
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.logger.info("=" * 80)
-        self.logger.info("CORE.__INIT__() CALLED - INITIALIZING CORE COMPONENTS")
-        self.logger.info("=" * 80)
-        self.mo2 = MO2Installer()
-        self.logger.info("MO2Installer initialized")
-        self.vortex = VortexInstaller()
-        self.logger.info("VortexInstaller initialized")
+        self.logger = get_logger(__name__)
+        self.logger.debug("Core initialization starting...")
+
+        # Initialize utilities
+        self.steam_utils = SteamUtils()
         self.settings = SettingsManager()
 
-        self.deps = DependencyInstaller()
-        self.steam_utils = SteamUtils()
+        # Initialize installers
+        self.mo2 = MO2Installer(core=self)
+        self.logger.debug("MO2Installer initialized")
+        self.vortex = VortexInstaller(core=self)
+        self.logger.debug("VortexInstaller initialized")
+        self.unverum = UnverumInstaller(core=self)
+        self.logger.debug("UnverumInstaller initialized")
+
+        self.deps = DependencyInstaller(settings_manager=self.settings)
         self.game_utils = GameUtils()
         self.utils = Utils()
-        self.game_manager = ComprehensiveGameManager()
+
+        # Only initialize game manager if auto-detection is enabled
+        if FeatureFlags.ENABLE_AUTO_GAME_DETECTION:
+            self.game_manager = ComprehensiveGameManager()
+            self.logger.debug("Game manager initialized (auto-detection enabled)")
+        else:
+            self.game_manager = None
+            self.logger.debug("Game manager disabled (auto-detection off)")
 
         # Start background dependency caching
         self._start_background_caching()
-    
+
     def get_version_info(self) -> tuple[str, str]:
-        """Get version information"""
-        return "3.0.0", "2025-09-07"
-    
+        """Get version information from constants"""
+        return APP_VERSION, APP_DATE
+
     def check_dependencies(self) -> bool:
-        """Check if all required dependencies are available"""
+        """
+        Check if all required dependencies are available
+
+        NOTE: Simplified check - Proton-GE is now managed separately via ProtonGEManager
+        """
         self.logger.info("Checking dependencies...")
-        
+
         try:
-            self.logger.info("Starting dependency check...")
-            # Check for protontricks (native or flatpak)
-            protontricks_cmd = ""
-            if self.steam_utils.command_exists("protontricks"):
-                protontricks_cmd = "protontricks"
-                self.logger.info("Using native protontricks")
-            elif self.steam_utils.command_exists("flatpak"):
-                # Check if protontricks flatpak is installed
-                try:
-                    output = self.steam_utils.run_command(
-                        "sh", "-c", 
-                        "flatpak list --app --columns=application | grep -q com.github.Matoking.protontricks && echo 'found'"
-                    )
-                    if "found" in output:
-                        protontricks_cmd = "flatpak run com.github.Matoking.protontricks"
-                        self.logger.info("Using flatpak protontricks")
-                except Exception as e:
-                    self.logger.warning(f"Could not check flatpak protontricks: {e}")
-            
-            self.logger.info(f"Protontricks command: {protontricks_cmd}")
-            if not protontricks_cmd:
-                self.logger.warning("protontricks is not installed (optional - some features may be limited)")
-                # Don't return False - protontricks is optional
-            
             # Check for Steam (not flatpak)
             self.logger.info("Checking Steam installation...")
-            if self.steam_utils.command_exists("flatpak"):
-                try:
-                    output = self.steam_utils.run_command(
-                        "flatpak", "list", "--app", "--columns=application"
-                    )
-                    if "com.valvesoftware.Steam" in output:
-                        self.logger.error("steam is installed via flatpak, which is not supported")
-                        return False
-                except Exception as e:
-                    self.logger.warning(f"Could not check flatpak steam: {e}")
-            
+            try:
+                steam_root = self.steam_utils.get_steam_root()
+                self.logger.info(f"Steam found at: {steam_root}")
+            except Exception as e:
+                self.logger.warning(f"Steam not found: {e}")
+                # Steam is optional with Proton-GE
+
             self.logger.info("All dependencies are available")
-            self.logger.info("Dependency check returning True")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Dependency check failed: {e}")
             return False
-    
-    def get_non_steam_games(self) -> List[Dict[str, str]]:
-        """Get a list of non-Steam games"""
-        return self.steam_utils.get_non_steam_games()
 
-    def launch_protontricks(self, app_id: str) -> Dict[str, Any]:
-        """Launch protontricks for a specific AppID"""
-        try:
-            protontricks_cmd = self.steam_utils.get_protontricks_command()
-            cmd_list = protontricks_cmd.split() + [app_id]
+    def get_dependency_details(self) -> Dict[str, Any]:
+        """
+        Get detailed information about dependencies for display
 
-            self.logger.info(f"Launching protontricks: {' '.join(cmd_list)}")
+        NOTE: Proton-GE status should be checked via ProtonGEManager directly
+        """
+        self.logger.info("Getting dependency details for UI display...")
 
-            # Launch protontricks in a new terminal or directly
-            import subprocess
-            result = subprocess.run(cmd_list, check=True, timeout=30)
-
-            return {
-                "success": True,
-                "message": f"Protontricks launched successfully for AppID {app_id}"
+        details = {
+            "proton_ge": {
+                "available": "Check via ProtonGEManager",
+                "status": "use_proton_ge_manager"
+            },
+            "steam_installation": {
+                "type": "unknown",
+                "path": None,
+                "status": "error"
+            },
+            "winetricks": {
+                "available": True,
+                "bundled": True,
+                "status": "success"
             }
+        }
+
+        try:
+            # Check Steam installation
+            steam_root = self.steam_utils.get_steam_root()
+            self.logger.info(f"Steam root detected: {steam_root}")
+
+            # Check Steam installation type
+            if "debian-installation" in steam_root:
+                details["steam_installation"]["type"] = "Debian Package"
+                details["steam_installation"]["path"] = steam_root
+                details["steam_installation"]["status"] = "success"
+                self.logger.info(f"Steam installation type: Debian Package")
+            elif ".local/share/Steam" in steam_root or ".steam/steam" in steam_root:
+                details["steam_installation"]["type"] = "Native"
+                details["steam_installation"]["path"] = steam_root
+                details["steam_installation"]["status"] = "success"
+                self.logger.info(f"Steam installation type: Native")
+            else:
+                self.logger.warning(f"Unknown Steam installation type for path: {steam_root}")
+
+            self.logger.info(f"Dependency details: {details}")
 
         except Exception as e:
-            self.logger.error(f"Failed to launch protontricks: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
+            self.logger.error(f"Failed to get dependency details: {e}", exc_info=True)
+
+        return details
+
     def install_mo2(self, install_dir: Optional[str] = None) -> Dict[str, Any]:
         """Download and install Mod Organizer 2"""
         try:
             result = self.mo2.download_mo2(install_dir=install_dir)
-            # Return the result directly since MO2Installer already returns the proper format
             return result
         except Exception as e:
             self.logger.error(f"Failed to install MO2: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def setup_existing_mo2(self, mo2_path: str, custom_name: str) -> Dict[str, Any]:
         """Setup existing MO2 installation"""
         try:
@@ -138,7 +163,7 @@ class Core:
                 "success": False,
                 "error": str(e)
             }
-    
+
     def remove_nxm_handlers(self) -> Dict[str, Any]:
         """Remove NXM handlers"""
         try:
@@ -148,7 +173,7 @@ class Core:
                 "success": False,
                 "error": str(e)
             }
-    
+
     def configure_nxm_handler(self, app_id: str, nxm_handler_path: str) -> Dict[str, Any]:
         """Configure NXM handler for a specific game"""
         try:
@@ -158,43 +183,80 @@ class Core:
                 "success": False,
                 "error": str(e)
             }
-    
+
+    def test_nxm_handler(self, test_url: str = "nxm://skyrimspecialedition/mods/12345/files/67890") -> Dict[str, Any]:
+        """
+        Test the NXM handler by simulating an nxm:// link
+
+        Args:
+            test_url: Test NXM URL (default is a Skyrim SE test URL)
+
+        Returns:
+            Dictionary with test results
+        """
+        try:
+            from src.utils.nxm_handler_manager import NXMHandlerManager
+            nxm_manager = NXMHandlerManager()
+            return nxm_manager.test_nxm_handler(test_url)
+        except Exception as e:
+            self.logger.error(f"Failed to test NXM handler: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def get_nxm_handler_status(self) -> Dict[str, Any]:
+        """
+        Get the current status of the NXM handler configuration
+
+        Returns:
+            Dictionary with handler status information
+        """
+        try:
+            from src.utils.nxm_handler_manager import NXMHandlerManager
+            nxm_manager = NXMHandlerManager()
+            return nxm_manager.get_nxm_handler_status()
+        except Exception as e:
+            self.logger.error(f"Failed to get NXM handler status: {e}")
+            return {
+                "error": str(e)
+            }
+
     def get_game_info(self) -> Dict[str, Any]:
         """Get information about supported games"""
         result = {
             "supported_games": [
                 "Skyrim Special Edition",
-                "Fallout 4", 
+                "Fallout 4",
                 "Fallout 76",
                 "Cyberpunk 2077",
                 "And many more..."
             ],
             "launch_options": [
-                "Proton with Wine",
+                "Proton-GE with Wine",
                 "Native Linux (if available)",
-                "Steam Play"
             ]
         }
-        
+
         # Try to detect installed games
         try:
             steam_root = self.steam_utils.get_steam_root()
-            
+
             # Check for FNV (AppID: 22380)
             fnv_compatdata = self.game_utils.find_game_compatdata("22380", steam_root)
             if fnv_compatdata:
                 result["fnv_compatdata"] = fnv_compatdata
-            
+
             # Check for Enderal (AppID: 976620)
             enderal_compatdata = self.game_utils.find_game_compatdata("976620", steam_root)
             if enderal_compatdata:
                 result["enderal_compatdata"] = enderal_compatdata
-                
+
         except Exception as e:
             self.logger.warning(f"Could not find Steam installation: {e}")
-        
+
         return result
-    
+
     def check_for_updates(self) -> Dict[str, Any]:
         """Check if updates are available"""
         try:
@@ -204,61 +266,13 @@ class Core:
         except Exception as e:
             self.logger.error(f"Failed to check for updates: {e}")
             return {"success": False, "error": str(e)}
-    
-    def install_dependencies(self) -> Dict[str, Any]:
-        """Install basic dependencies"""
-        try:
-            result = self.deps.install_basic_dependencies()
-            return {"success": True, "result": result}
-        except Exception as e:
-            self.logger.error(f"Failed to install dependencies: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def install_dependencies_for_game(self, game_app_id: str) -> Dict[str, Any]:
-        """Install dependencies for a specific game"""
-        try:
-            result = self.deps.install_proton_dependencies(game_app_id)
-            return {"success": True, "result": result}
-        except Exception as e:
-            self.logger.error(f"Failed to install dependencies for game {game_app_id}: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def setup_mo2_dependencies(self, mo2_name: str, mo2_exe: str) -> Dict[str, Any]:
-        """Setup MO2 dependencies"""
-        try:
-            games = self.get_non_steam_games()
-            if not games:
-                return {"success": False, "error": "No non-Steam games found. Add some games to Steam first."}
-            
-            return {
-                "success": True,
-                "games": games,
-                "message": f"Found {len(games)} non-Steam games. Please select one to install MO2 dependencies:"
-            }
-        except Exception as e:
-            self.logger.error(f"Failed to setup MO2 dependencies: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def setup_fnv_dependencies(self) -> Dict[str, Any]:
-        """Setup Fallout New Vegas dependencies"""
-        try:
-            result = self.deps.install_fnv_dependencies()
-            return {"success": True, "result": result}
-        except Exception as e:
-            self.logger.error(f"Failed to setup FNV dependencies: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def setup_enderal_dependencies(self) -> Dict[str, Any]:
-        """Setup Enderal dependencies"""
-        try:
-            result = self.deps.install_enderal_dependencies()
-            return {"success": True, "result": result}
-        except Exception as e:
-            self.logger.error(f"Failed to setup Enderal dependencies: {e}")
-            return {"success": False, "error": str(e)}
 
     def get_all_games(self) -> List[Dict[str, Any]]:
         """Get all games across all platforms"""
+        # Return empty list if auto-detection is disabled
+        if not FeatureFlags.ENABLE_AUTO_GAME_DETECTION or self.game_manager is None:
+            return []
+
         try:
             games = self.game_manager.get_all_games()
             return [{
@@ -375,7 +389,7 @@ class Core:
         except Exception as e:
             self.logger.error(f"Failed to get game summary: {e}")
             return {"error": str(e)}
-    
+
     def cache_all_dependencies(self, force_download: bool = False) -> Dict[str, Any]:
         """Cache all dependency files for faster future installations"""
         try:
@@ -383,7 +397,7 @@ class Core:
         except Exception as e:
             self.logger.error(f"Failed to cache dependencies: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def get_cache_status(self) -> Dict[str, Any]:
         """Get status of the dependency cache"""
         try:
@@ -391,7 +405,7 @@ class Core:
         except Exception as e:
             self.logger.error(f"Failed to get cache status: {e}")
             return {"error": str(e)}
-    
+
     def clear_dependency_cache(self) -> Dict[str, Any]:
         """Clear all cached dependency files"""
         try:
@@ -399,81 +413,11 @@ class Core:
         except Exception as e:
             self.logger.error(f"Failed to clear cache: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def _start_background_caching(self):
-        """Start background dependency caching and MO2 caching in a separate thread"""
-        try:
-            import threading
-            
-            def cache_dependencies():
-                try:
-                    self.logger.info("Starting background dependency caching...")
-                    result = self.deps.cache_all_dependencies(force_download=False)
-                    cached_count = sum(1 for success in result.values() if success)
-                    total_count = len(result)
-                    self.logger.info(f"Background caching completed: {cached_count}/{total_count} dependencies cached")
-                except Exception as e:
-                    self.logger.error(f"Background caching failed: {e}")
-            
-            def cache_mo2():
-                try:
-                    self.logger.info("Starting background MO2 caching...")
-                    
-                    # Test if requests module is available
-                    try:
-                        import requests
-                        self.logger.info("MO2 Cache: requests module is available")
-                    except ImportError as e:
-                        self.logger.error(f"MO2 Cache: requests module not available: {e}")
-                        return
-                    
-                    # Set up a simple progress callback for logging
-                    def progress_callback(message):
-                        self.logger.info(f"MO2 Cache: {message}")
-                    
-                    self.mo2.set_progress_callback(progress_callback)
-                    
-                    # Try to get latest release and cache it
-                    self.logger.info("MO2 Cache: Fetching latest release from GitHub...")
-                    release = self.mo2._get_latest_release()
-                    if release:
-                        self.logger.info(f"MO2 Cache: Found release: {release.tag_name}")
-                        self.logger.info("MO2 Cache: Finding download asset...")
-                        download_url, filename = self.mo2._find_mo2_asset(release)
-                        if download_url and filename:
-                            self.logger.info(f"MO2 Cache: Found asset: {filename}")
-                            self.logger.info(f"MO2 Cache: Download URL: {download_url}")
-                            # This will cache the file if not already cached
-                            cached_file = self.mo2._download_file(download_url, filename)
-                            if cached_file:
-                                self.logger.info(f"MO2 Cache: Successfully cached to: {cached_file}")
-                                # Verify the file exists and show size
-                                import os
-                                if os.path.exists(cached_file):
-                                    file_size = os.path.getsize(cached_file)
-                                    self.logger.info(f"MO2 Cache: File size: {file_size / (1024*1024):.1f} MB")
-                                else:
-                                    self.logger.error("MO2 Cache: Cached file doesn't exist after download!")
-                            else:
-                                self.logger.error("MO2 Cache: Failed to cache MO2 - download_file returned None")
-                        else:
-                            self.logger.error(f"MO2 Cache: Could not find asset - URL: {download_url}, Filename: {filename}")
-                    else:
-                        self.logger.error("MO2 Cache: Could not get latest release from GitHub")
-                except Exception as e:
-                    self.logger.error(f"MO2 caching failed with exception: {e}")
-                    import traceback
-                    self.logger.error(f"MO2 caching traceback: {traceback.format_exc()}")
-            
-            # Start dependency caching in background thread
-            cache_thread = threading.Thread(target=cache_dependencies, daemon=True)
-            cache_thread.start()
-            self.logger.info("Background dependency caching thread started")
-            
-            # Run MO2 caching synchronously (not in background thread) for debugging
-            self.logger.info("Starting synchronous MO2 caching for debugging...")
-            cache_mo2()
-            self.logger.info("Synchronous MO2 caching completed")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to start background caching: {e}")
+        """Background caching disabled - dependencies are now cached on-demand during installation"""
+        # Background caching has been disabled to avoid unnecessary downloads at startup
+        # Dependencies are now cached on-demand when winetricks runs (via W_CACHE environment variable)
+        # MO2 archives are cached when first downloading during installation
+        self.logger.info("Background caching is disabled - dependencies will be cached on-demand")
+        return

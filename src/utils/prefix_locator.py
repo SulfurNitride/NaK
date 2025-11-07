@@ -3,7 +3,6 @@ Wine/Proton prefix locator system
 Finds Wine prefixes for games to apply regedits and fixes
 """
 
-import logging
 import os
 import json
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import List, Dict, Optional, NamedTuple
 from dataclasses import dataclass
 
 from src.utils.game_finder import GameInfo
+from src.utils.logger import get_logger
 
 
 @dataclass
@@ -27,7 +27,7 @@ class PrefixLocator:
     """Locates Wine/Proton prefixes for games"""
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
     def find_game_prefix(self, game: GameInfo) -> Optional[PrefixInfo]:
         """Find the Wine/Proton prefix for a specific game"""

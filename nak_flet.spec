@@ -1,6 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
+
+# Collect flet_desktop data files (from flet-desktop-light package - lightweight Flutter engine without mpv)
+flet_desktop_datas = collect_data_files('flet_desktop')
 
 a = Analysis(
     ['nak-flet/main.py'],
@@ -9,10 +13,9 @@ a = Analysis(
     datas=[
         ('src', 'src'),
         ('nak-flet/assets', 'assets'),
-    ],
+    ] + flet_desktop_datas,
     hiddenimports=[
         'flet',
-        'flet_desktop',
         'flet.auth',
         'flet.auth.providers',
         'requests',
@@ -30,22 +33,29 @@ a = Analysis(
         'logging.handlers',
         'logging.config',
         'src.core.core',
-        'src.core.mo2_installer',
         'src.core.dependency_installer',
+        'src.core.unverum_installer',
+        'src.core.dotnet9sdk_installer',
+        'src.mod_managers.mo2.installer',
+        'src.mod_managers.vortex.installer',
         'src.utils.steam_utils',
         'src.utils.game_utils',
         'src.utils.game_finder',
-        'src.utils.steam_shortcut_manager',
         'src.utils.comprehensive_game_manager',
         'src.utils.smart_prefix_manager',
         'src.utils.prefix_locator',
-        'src.utils.heroic_utils',
         'src.utils.settings_manager',
         'src.utils.logger',
         'src.utils.proton_tool_manager',
         'src.utils.dependency_cache_manager',
         'src.utils.utils',
         'src.utils.command_cache',
+        'src.utils.proton_ge_manager',
+        'src.utils.proton_finder',
+        'src.utils.nak_paths',
+        'src.utils.nak_storage_manager',
+        'src.utils.nxm_handler_manager',
+        'src.utils.launch_script_generator',
     ],
     hookspath=[],
     hooksconfig={},
@@ -55,6 +65,13 @@ a = Analysis(
         'libgcc_s.so.1',
         'libssl.so.3',
         'libcrypto.so.3',
+        'libglib-2.0.so',
+        'libgobject-2.0.so',
+        'libgio-2.0.so',
+        'libgmodule-2.0.so',
+        'libgthread-2.0.so',
+        'libmount.so',
+        'libblkid.so',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -68,6 +85,13 @@ a.binaries = [x for x in a.binaries if not any(lib in x[0] for lib in [
     'libgcc_s.so.1',
     'libssl.so.3',
     'libcrypto.so.3',
+    'libglib-2.0.so',
+    'libgobject-2.0.so',
+    'libgio-2.0.so',
+    'libgmodule-2.0.so',
+    'libgthread-2.0.so',
+    'libmount.so',
+    'libblkid.so',
 ])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)

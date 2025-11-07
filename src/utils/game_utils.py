@@ -4,15 +4,15 @@ Handles game-related operations
 """
 
 import os
-import logging
 from pathlib import Path
 from typing import Optional
+from src.utils.logger import get_logger
 
 class GameUtils:
     """Utilities for game operations"""
-    
+
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
     
     def find_game_compatdata(self, app_id: str, steam_root: str) -> Optional[str]:
         """Find the compatdata directory for a game"""

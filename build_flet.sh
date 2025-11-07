@@ -2,18 +2,43 @@
 set -e
 
 echo "============================================"
-echo "Building NaK Flet GUI with Ubuntu 22.04"
-echo "Compatible with glibc 2.35+ (most modern Linux)"
+echo "Building NaK Flet GUI with Debian 12"
+echo "Compatible with glibc 2.36+ (most modern Linux)"
 echo "============================================"
 
-# Build Docker image
+# Build Docker image with host networking (fixes DNS issues)
 echo "Building Docker image..."
-docker build -f Dockerfile.flet -t nak-flet-builder .
+docker build --network=host -f Dockerfile.flet -t nak-flet-builder .
+
+# Create 7z wrapper script before Docker build
+cat > /tmp/7z_wrapper.sh << 'EOF'
+#!/bin/sh
+# Universal 7z wrapper that works across different distros
+# Tries multiple common 7z installation paths
+
+# Try different paths for 7z binary
+if [ -x /usr/lib/7zip/7z ]; then
+    exec /usr/lib/7zip/7z "$@"
+elif [ -x /usr/lib/p7zip/7z ]; then
+    exec /usr/lib/p7zip/7z "$@"
+elif [ -x /usr/bin/7zz ]; then
+    exec /usr/bin/7zz "$@"
+elif [ -x /usr/bin/7za ]; then
+    exec /usr/bin/7za "$@"
+elif [ -x /usr/bin/7zr ]; then
+    exec /usr/bin/7zr "$@"
+else
+    echo "Error: Could not find 7z binary. Please install p7zip-full or 7zip package." >&2
+    exit 127
+fi
+EOF
+chmod +x /tmp/7z_wrapper.sh
 
 echo ""
 echo "Running build in Docker container..."
 docker run --rm \
     -v "$(pwd):/build" \
+    -v "/tmp/7z_wrapper.sh:/tmp/7z_wrapper.sh:ro" \
     -w /build \
     nak-flet-builder \
     bash -c "
@@ -23,110 +48,10 @@ docker run --rm \
         echo 'Cleaning up old build artifacts...'
         rm -rf NaK-Flet.AppDir dist_flet build
 
-        # Create PyInstaller spec if it doesn't exist
-        if [ ! -f nak_flet.spec ]; then
-            echo 'Creating PyInstaller spec...'
-            cat > nak_flet.spec << 'SPEC'
-# -*- mode: python ; coding: utf-8 -*-
+        # PyInstaller spec file (nak_flet.spec) is in the repository
+        # No need to generate it - it will be mounted via the volume mount
 
-block_cipher = None
-
-a = Analysis(
-    ['nak-flet/main.py'],
-    pathex=[],
-    binaries=[
-        ('winetricks', '.'),
-    ],
-    datas=[
-        ('src', 'src'),
-    ],
-    hiddenimports=[
-        'flet',
-        'flet_desktop',
-        'flet.auth',
-        'flet.auth.providers',
-        'requests',
-        'urllib3',
-        'certifi',
-        'charset_normalizer',
-        'idna',
-        'vdf',
-        'psutil',
-        'py7zr',
-        'pillow',
-        'PIL',
-        'PIL.Image',
-        'logging',
-        'logging.handlers',
-        'logging.config',
-        'src.core.core',
-        'src.core.mo2_installer',
-        'src.core.dependency_installer',
-        'src.utils.steam_utils',
-        'src.utils.game_utils',
-        'src.utils.game_finder',
-        'src.utils.steam_shortcut_manager',
-        'src.utils.comprehensive_game_manager',
-        'src.utils.smart_prefix_manager',
-        'src.utils.prefix_locator',
-        'src.utils.heroic_utils',
-        'src.utils.settings_manager',
-        'src.utils.logger',
-        'src.utils.proton_tool_manager',
-        'src.utils.dependency_cache_manager',
-        'src.utils.utils',
-        'src.utils.command_cache',
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[
-        'libstdc++.so.6',
-        'libgcc_s.so.1',
-        'libssl.so.3',
-        'libcrypto.so.3',
-    ],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-# Exclude problematic system libraries that conflict with newer systems
-a.binaries = [x for x in a.binaries if not any(lib in x[0] for lib in [
-    'libstdc++.so.6',
-    'libgcc_s.so.1',
-    'libssl.so.3',
-    'libcrypto.so.3',
-])]
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='nak-modding-helper',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-SPEC
-        fi
-
-        # Build with PyInstaller
+        # Build with PyInstaller (no Flutter engine bundling for Light mode)
         echo 'Building with PyInstaller...'
         pyinstaller nak_flet.spec --clean --distpath dist_flet
 
@@ -148,24 +73,12 @@ SPEC
         # Copy binary
         cp dist_flet/nak-modding-helper NaK-Flet.AppDir/usr/bin/
 
-        # Bundle zenity for file dialogs
-        echo 'Bundling zenity for file dialogs...'
-        if [ -f /usr/bin/zenity ]; then
-            cp /usr/bin/zenity NaK-Flet.AppDir/usr/bin/
-            echo '✓ Zenity bundled'
-        else
-            echo '⚠ Warning: zenity not found, file dialogs may not work'
-        fi
+        # Note: Using YAD for file dialogs (lightweight GTK dialogs without webkit!)
+        # YAD is bundled below (zenity fork without webkit2gtk dependency)
 
-        # Bundle winetricks
-        echo 'Bundling winetricks...'
-        if [ -f winetricks ]; then
-            cp winetricks NaK-Flet.AppDir/usr/bin/
-            chmod +x NaK-Flet.AppDir/usr/bin/winetricks
-            echo '✓ Winetricks bundled'
-        else
-            echo '⚠ Warning: winetricks not found'
-        fi
+        # Winetricks is now downloaded from GitHub at runtime
+        # No longer bundled to always use the latest version
+        echo '✓ Winetricks will be downloaded at runtime (from GitHub)'
 
         # Bundle cabextract for extracting .cab files (needed for MO2 dependencies)
         echo 'Bundling cabextract and its dependencies...'
@@ -212,6 +125,22 @@ SPEC
             done
         else
             echo '⚠ Warning: unzstd not found'
+        fi
+
+        # Bundle 7z for extracting .7z files (needed for various mod archives)
+        echo 'Bundling 7z and its dependencies...'
+        # Copy pre-created universal 7z wrapper
+        cp /tmp/7z_wrapper.sh NaK-Flet.AppDir/usr/bin/7z
+        chmod +x NaK-Flet.AppDir/usr/bin/7z
+        echo '✓ Universal 7z wrapper bundled'
+
+        # Bundle YAD for file picker dialogs (lightweight, no webkit!)
+        echo 'Bundling YAD and its dependencies...'
+        if [ -f /usr/bin/yad ]; then
+            cp /usr/bin/yad NaK-Flet.AppDir/usr/bin/
+            echo '✓ YAD bundled'
+        else
+            echo '⚠ Warning: yad not found'
         fi
 
         # Bundle GTK pixbuf loaders and librsvg for proper icon support
@@ -276,121 +205,114 @@ SPEC
             fi
         done
 
-        # Bundle libmpv and its dependencies for Flet viewer
+        # Bundle libmpv and its dependencies (required by Flet engine)
         echo 'Bundling libmpv and dependencies...'
+        if [ -f /usr/lib/x86_64-linux-gnu/libmpv.so.1 ]; then
+            cp -L /usr/lib/x86_64-linux-gnu/libmpv.so.1 NaK-Flet.AppDir/usr/lib/
 
-        # Core library to bundle
-        cp -L /usr/lib/x86_64-linux-gnu/libmpv.so.1 NaK-Flet.AppDir/usr/lib/ || true
+            # Bundle libmpv dependencies
+            ldd /usr/lib/x86_64-linux-gnu/libmpv.so.1 | grep '=>' | awk '{print \$3}' | while read lib; do
+                if [ -f \"\$lib\" ]; then
+                    case \"\$lib\" in
+                        # Skip core system libraries
+                        */libc.so*|*/libm.so*|*/libdl.so*|*/libpthread.so*|*/librt.so*) ;;
+                        */libstdc++.so*|*/libgcc_s.so*) ;;
+                        # Skip graphics/windowing (use system)
+                        */libGL.so*|*/libEGL.so*|*/libGLX.so*|*/libGLdispatch.so*) ;;
+                        */libX11.so*|*/libxcb.so*|*/libXau.so*|*/libXdmcp.so*|*/libXext.so*|*/libXv.so*) ;;
+                        */libdrm.so*|*/libgbm.so*) ;;
+                        # Skip audio (use system)
+                        */libasound.so*|*/libpulse*.so*|*/libjack.so*) ;;
+                        # Skip wayland (use system)
+                        */libwayland*.so*) ;;
+                        # Skip SSL/crypto (use system)
+                        */libssl.so*|*/libcrypto.so*) ;;
+                        # Skip GLib (use system - already excluded in spec)
+                        */libglib-2.0.so*|*/libgobject-2.0.so*|*/libgio-2.0.so*) ;;
+                        # Bundle everything else (mujs, ffmpeg libs, etc.)
+                        *)
+                            cp -L \"\$lib\" NaK-Flet.AppDir/usr/lib/ 2>/dev/null || true
+                            ;;
+                    esac
+                fi
+            done
 
-        # Get all dependencies of libmpv, excluding core system libraries
-        ldd /usr/lib/x86_64-linux-gnu/libmpv.so.1 | grep '=>' | awk '{print \$3}' | while read lib; do
-            if [ -f \"\$lib\" ]; then
-                # Exclude core system libraries that should use system versions
-                case \"\$lib\" in
-                    */libc.so.6|*/libm.so.6|*/libdl.so.2|*/libpthread.so.0|*/librt.so.1)
-                        # Skip core C libraries
-                        ;;
-                    */libstdc++.so.6|*/libgcc_s.so.1)
-                        # Skip C++ runtime (use system version)
-                        ;;
-                    */libssl.so.3|*/libcrypto.so.3)
-                        # Skip SSL/crypto (use system version)
-                        ;;
-                    */libz.so.1|*/libbz2.so.1)
-                        # Skip common compression libs (usually present)
-                        ;;
-                    */libGL.so.1|*/libEGL.so.1|*/libGLX.so.0|*/libGLdispatch.so.0)
-                        # Skip OpenGL libraries (use system version)
-                        ;;
-                    */libX11.so.6|*/libXext.so.6|*/libXrandr.so.2|*/libXv.so.1|*/libXinerama.so.1|*/libXss.so.1|*/libxcb.so.1|*/libXau.so.6|*/libXdmcp.so.6|*/libX11-xcb.so.1)
-                        # Skip X11 libraries (use system version)
-                        ;;
-                    */libwayland*.so*)
-                        # Skip Wayland libraries (use system version)
-                        ;;
-                    */libdrm.so.2|*/libgbm.so.1)
-                        # Skip DRM libraries (use system version)
-                        ;;
-                    */libpulse*.so*|*/libasound.so.2|*/libjack.so.0)
-                        # Skip audio system libraries (use system version)
-                        ;;
-                    */libglib*.so*|*/libgobject*.so*|*/libgio*.so*|*/libgmodule*.so*)
-                        # Skip glib libraries (use system version)
-                        ;;
-                    */libmount.so.1|*/libblkid.so.1|*/libuuid.so.1)
-                        # Skip mount/block device libs (use system version)
-                        ;;
-                    *)
-                        # Bundle everything else
-                        cp -L \"\$lib\" NaK-Flet.AppDir/usr/lib/ 2>/dev/null || true
-                        ;;
-                esac
+            echo \"✓ libmpv and dependencies bundled\"
+        fi
+
+        # Bundle ICU libraries (required by Flutter engine)
+        echo 'Bundling ICU libraries...'
+        for icu_lib in \
+            libicuuc.so.70 \
+            libicui18n.so.70 \
+            libicudata.so.70
+        do
+            if [ -f /usr/lib/x86_64-linux-gnu/\$icu_lib ]; then
+                cp -L /usr/lib/x86_64-linux-gnu/\$icu_lib NaK-Flet.AppDir/usr/lib/
+                echo \"✓ \$icu_lib bundled\"
             fi
         done
 
         # Create desktop file
-        cat > NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=NaK Linux Modding Helper
-Exec=nak-modding-helper
-Icon=nak-modding-helper
-Categories=Game;Utility;
-Terminal=false
-EOF
+        echo '[Desktop Entry]' > NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop
+        echo 'Type=Application' >> NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop
+        echo 'Name=NaK Linux Modding Helper' >> NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop
+        echo 'Exec=nak-modding-helper' >> NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop
+        echo 'Icon=nak-modding-helper' >> NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop
+        echo 'Categories=Game;Utility;' >> NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop
+        echo 'Terminal=false' >> NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop
 
-        # Create icon
-        cat > NaK-Flet.AppDir/nak-modding-helper.svg << 'EOF'
-<svg width=\"256\" height=\"256\" xmlns=\"http://www.w3.org/2000/svg\">
-  <rect width=\"256\" height=\"256\" fill=\"#2c5282\"/>
-  <text x=\"128\" y=\"140\" font-size=\"80\" fill=\"#7dd3fc\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-weight=\"bold\">NaK</text>
-</svg>
-EOF
-
-        cp NaK-Flet.AppDir/nak-modding-helper.svg NaK-Flet.AppDir/usr/share/icons/hicolor/256x256/apps/
+        # Copy doro.png icon
+        if [ -f nak-flet/assets/icons/icon.png ]; then
+            cp nak-flet/assets/icons/icon.png NaK-Flet.AppDir/nak-modding-helper.png
+            cp nak-flet/assets/icons/icon.png NaK-Flet.AppDir/usr/share/icons/hicolor/256x256/apps/nak-modding-helper.png
+            echo '✓ Doro icon bundled'
+        else
+            echo '⚠ Warning: icon.png not found, using fallback SVG'
+            # Fallback SVG
+            echo '<svg width=\"256\" height=\"256\" xmlns=\"http://www.w3.org/2000/svg\">' > NaK-Flet.AppDir/nak-modding-helper.svg
+            echo '  <rect width=\"256\" height=\"256\" fill=\"#2c5282\"/>' >> NaK-Flet.AppDir/nak-modding-helper.svg
+            echo '  <text x=\"128\" y=\"140\" font-size=\"80\" fill=\"#7dd3fc\" text-anchor=\"middle\" font-family=\"Arial, sans-serif\" font-weight=\"bold\">NaK</text>' >> NaK-Flet.AppDir/nak-modding-helper.svg
+            echo '</svg>' >> NaK-Flet.AppDir/nak-modding-helper.svg
+            cp NaK-Flet.AppDir/nak-modding-helper.svg NaK-Flet.AppDir/usr/share/icons/hicolor/256x256/apps/
+        fi
 
         # Copy desktop file to root
         cp NaK-Flet.AppDir/usr/share/applications/nak-modding-helper.desktop NaK-Flet.AppDir/
 
         # Create AppRun
-        cat > NaK-Flet.AppDir/AppRun << 'EOF'
-#!/bin/bash
-export APPDIR=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"
-export LD_LIBRARY_PATH=\"\$APPDIR/usr/lib:\$APPDIR/usr/lib/x86_64-linux-gnu:\$LD_LIBRARY_PATH\"
-export PATH=\"\$APPDIR/usr/bin:\$PATH\"
-
-# Set up GTK pixbuf loaders
-export GDK_PIXBUF_MODULE_FILE=\"\$APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache\"
-export GDK_PIXBUF_MODULEDIR=\"\$APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders\"
-
-# Preserve display server environment for proper window decorations
-export DISPLAY=\"\${DISPLAY:-:0}\"
-
-# Debug mode for GTK issues (uncomment if needed)
-# export GTK_DEBUG=all
-# export GDK_DEBUG=all
-
-exec \"\$APPDIR/usr/bin/nak-modding-helper\" \"\$@\"
-EOF
+        echo '#!/bin/bash' > NaK-Flet.AppDir/AppRun
+        echo 'export APPDIR=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"' >> NaK-Flet.AppDir/AppRun
+        echo '' >> NaK-Flet.AppDir/AppRun
+        echo '# Explicitly set system lib paths FIRST, then AppImage libs' >> NaK-Flet.AppDir/AppRun
+        echo '# This prevents conflicts with system binaries and libraries' >> NaK-Flet.AppDir/AppRun
+        echo 'export LD_LIBRARY_PATH=\"/usr/lib:/usr/lib/x86_64-linux-gnu:\$APPDIR/usr/lib:\$APPDIR/usr/lib/x86_64-linux-gnu\"' >> NaK-Flet.AppDir/AppRun
+        echo 'export PATH=\"\$APPDIR/usr/bin:\$PATH\"' >> NaK-Flet.AppDir/AppRun
+        echo '' >> NaK-Flet.AppDir/AppRun
+        echo '# Set up GTK pixbuf loaders' >> NaK-Flet.AppDir/AppRun
+        echo 'export GDK_PIXBUF_MODULE_FILE=\"\$APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache\"' >> NaK-Flet.AppDir/AppRun
+        echo 'export GDK_PIXBUF_MODULEDIR=\"\$APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders\"' >> NaK-Flet.AppDir/AppRun
+        echo '' >> NaK-Flet.AppDir/AppRun
+        echo '# Preserve display server environment for proper window decorations' >> NaK-Flet.AppDir/AppRun
+        echo 'export DISPLAY=\"\${DISPLAY:-:0}\"' >> NaK-Flet.AppDir/AppRun
+        echo '' >> NaK-Flet.AppDir/AppRun
+        echo '# Debug mode for GTK issues (uncomment if needed)' >> NaK-Flet.AppDir/AppRun
+        echo '# export GTK_DEBUG=all' >> NaK-Flet.AppDir/AppRun
+        echo '# export GDK_DEBUG=all' >> NaK-Flet.AppDir/AppRun
+        echo '' >> NaK-Flet.AppDir/AppRun
+        echo 'exec \"\$APPDIR/usr/bin/nak-modding-helper\" \"\$@\"' >> NaK-Flet.AppDir/AppRun
 
         chmod +x NaK-Flet.AppDir/AppRun
-
-        # Download appimagetool if needed
-        if [ ! -f appimagetool-x86_64.AppImage ]; then
-            echo 'Downloading appimagetool...'
-            wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-            chmod +x appimagetool-x86_64.AppImage
-        fi
 
         # Extract appimagetool (FUSE not available in Docker)
         if [ ! -d squashfs-root ]; then
             echo 'Extracting appimagetool...'
-            ./appimagetool-x86_64.AppImage --appimage-extract
+            /usr/local/bin/appimagetool --appimage-extract
         fi
 
-        # Create AppImage using extracted appimagetool
+        # Create AppImage using extracted appimagetool (skip ALL tests)
         echo 'Creating AppImage...'
-        ARCH=x86_64 ./squashfs-root/AppRun NaK-Flet.AppDir NaK-Linux-Modding-Helper-Flet.AppImage
+        NO_APPSTREAM=1 ARCH=x86_64 ./squashfs-root/AppRun --no-appstream NaK-Flet.AppDir NaK-Linux-Modding-Helper-Flet.AppImage || true
 
         if [ -f NaK-Linux-Modding-Helper-Flet.AppImage ]; then
             chmod +x NaK-Linux-Modding-Helper-Flet.AppImage

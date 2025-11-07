@@ -3,12 +3,12 @@ Native Python GameFinder
 Pure Python implementation for finding games across Heroic and Steam platforms
 """
 
-import logging
 import os
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
+from src.utils.logger import get_logger
 
 
 @dataclass
@@ -29,7 +29,7 @@ class GameFinder:
     """GameFinder using pythonnet + .NET GameFinder library"""
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         self.detected_games: List[GameInfo] = []
         self._initialize_gamefinder()
 
@@ -71,7 +71,7 @@ class GameFinder:
             self.gog_handler = GOGHandler()
             self._dotnet_available = True
 
-            self.logger.info(f"✓ GameFinder .NET library loaded via pythonnet from: {gamefinder_path}")
+            self.logger.info(f"[OK] GameFinder .NET library loaded via pythonnet from: {gamefinder_path}")
 
         except Exception as e:
             self.logger.debug(f".NET GameFinder not available: {e}")
@@ -115,7 +115,7 @@ class GameFinder:
         self.detected_games.extend(non_steam_games)
         self.logger.debug(f"Found {len(non_steam_games)} non-Steam games via VDF parsing")
 
-        self.logger.info(f"Detected {len(self.detected_games)} games across all platforms")
+        self.logger.debug(f"Detected {len(self.detected_games)} games across all platforms")
         return self.detected_games
 
     def _find_heroic_games(self) -> List[GameInfo]:
@@ -413,7 +413,7 @@ class GameFinder:
             except Exception as e:
                 self.logger.debug(f"Failed to scan Heroic games directory {games_dir}: {e}")
 
-        self.logger.info(f"Found {len(games)} manually added Heroic games")
+        self.logger.debug(f"Found {len(games)} manually added Heroic games")
         return games
 
     def _get_heroic_game_name(self, config_path: Path, app_id: str) -> Optional[str]:
@@ -469,13 +469,40 @@ class GameFinder:
 
         return None
 
+    def _get_steam_compatdata_prefix(self, app_id: str) -> Optional[str]:
+        """Get the Wine prefix path for a Steam game's compatdata (supports native and Flatpak Steam)
+
+        Args:
+            app_id: Steam AppID
+
+        Returns:
+            Path to the pfx directory, or None if not found
+        """
+        steam_paths = [
+            # Native Steam locations
+            Path.home() / ".steam" / "steam",
+            Path.home() / ".local" / "share" / "Steam",
+            # Flatpak Steam location
+            Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam",
+        ]
+
+        for steam_path in steam_paths:
+            compatdata_path = steam_path / "steamapps" / "compatdata" / str(app_id) / "pfx"
+            if compatdata_path.exists():
+                return str(compatdata_path)
+
+        return None
+
     def _get_steam_library_folders(self) -> List[Path]:
-        """Get all Steam library folders from libraryfolders.vdf"""
+        """Get all Steam library folders from libraryfolders.vdf (supports native and Flatpak Steam)"""
         library_folders = []
 
         steam_paths = [
+            # Native Steam locations
             Path.home() / ".steam" / "steam",
             Path.home() / ".local" / "share" / "Steam",
+            # Flatpak Steam location
+            Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam",
         ]
 
         for steam_path in steam_paths:
@@ -485,24 +512,8 @@ class GameFinder:
                 library_folders.append(steamapps)
                 self.logger.debug(f"Found main Steam library: {steamapps}")
 
-            # Parse libraryfolders.vdf for additional libraries
-            libraryfolders_vdf = steamapps / "libraryfolders.vdf"
-            if libraryfolders_vdf.exists():
-                try:
-                    import vdf
-                    with open(libraryfolders_vdf, 'r', encoding='utf-8') as f:
-                        library_data = vdf.load(f)
-
-                    if 'libraryfolders' in library_data:
-                        for key, value in library_data['libraryfolders'].items():
-                            if isinstance(value, dict) and 'path' in value:
-                                library_path = Path(value['path']) / "steamapps"
-                                if library_path.exists() and library_path not in library_folders:
-                                    library_folders.append(library_path)
-                                    self.logger.info(f"Found additional Steam library: {library_path}")
-
-                except Exception as e:
-                    self.logger.warning(f"Failed to parse libraryfolders.vdf: {e}")
+            # Note: Steam library folder detection removed - only detects main Steam library
+            # Additional Steam libraries on other drives are no longer auto-detected
 
         return library_folders
 
@@ -513,7 +524,7 @@ class GameFinder:
 
         # Get all Steam library folders (including additional libraries)
         library_folders = self._get_steam_library_folders()
-        self.logger.info(f"Scanning {len(library_folders)} Steam library folder(s) for games...")
+        self.logger.debug(f"Scanning {len(library_folders)} Steam library folder(s) for games...")
 
         for steamapps in library_folders:
             self.logger.debug(f"Scanning library folder: {steamapps}")
@@ -551,16 +562,21 @@ class GameFinder:
                             continue
 
                         game_path = steamapps / "common" / install_dir
+
+                        # Get Steam compatdata prefix path
+                        prefix_path = self._get_steam_compatdata_prefix(app_id)
+
                         game_info = GameInfo(
                             name=name,
                             path=str(game_path),
                             platform="Steam",
                             app_id=app_id,
-                            install_dir=install_dir
+                            install_dir=install_dir,
+                            prefix_path=prefix_path
                         )
                         games.append(game_info)
                         seen_games[app_id] = game_info  # Track by app_id to deduplicate across symlinked paths
-                        self.logger.debug(f"Found Steam game: {name} (AppID: {app_id})")
+                        self.logger.debug(f"Found Steam game: {name} (AppID: {app_id})" + (f" with prefix: {prefix_path}" if prefix_path else ""))
 
                 except Exception as e:
                     self.logger.warning(f"Failed to parse {acf_file}: {e}")
