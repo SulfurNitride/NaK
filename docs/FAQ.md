@@ -73,7 +73,8 @@ If this doesn't work, please make a report on the [GitHub Issues](https://github
 
 **Problem:** Fallout 3, Fallout New Vegas, or Enderal prompts you to install/reinstall the game.
 
-SS
+<img width="794" height="390" alt="image" src="https://github.com/user-attachments/assets/85980fc9-1453-49c5-b37e-4b33e5e841f4" />
+
 
 **Solution:** This is a known issue with an easy fix. Inside of your mod folder (MO2 or Vortex), you will find a file called `Fix Game Registry`. You need to run this file in your terminal:
 
@@ -97,7 +98,8 @@ The script will apply the necessary registry fixes.
 
 **Problem:** Tools like xEdit, LOOT, BodySlide, etc. don't detect your installed mods.
 
-SS
+<img width="3718" height="1481" alt="image" src="https://github.com/user-attachments/assets/acd6b546-cd9f-49c5-be6d-84f24e98a00d" />
+
 
 **Solution:** This is an issue with the Wine registry. Run the `Fix Game Registry` file and provide the Linux path of your game folder that you are modding. This should resolve the issue.
 
