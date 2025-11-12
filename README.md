@@ -12,6 +12,8 @@ If you have any requests or anything just let me know or open up an issue!
 
 You can find me in the [NaK Discord](https://discord.gg/9JWQzSeUWt)
 
+FAQ can be found [here](https://github.com/SulfurNitride/NaK/blob/main/docs/FAQ.md).
+
 ----------------------------------------------------------------------------------------------------------------------------
 
 To run it:
