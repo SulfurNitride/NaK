@@ -456,3 +456,99 @@ class ProtonGEManager:
         version_path = self.proton_ge_dir / tag_name
         proton_binary = version_path / "proton"
         return proton_binary.exists()
+
+    def parse_version_number(self, tag_name: str) -> Tuple[int, int]:
+        """
+        Parse Proton-GE version number from tag name
+
+        Examples:
+            - "GE-Proton10-18" -> (10, 18)
+            - "GE-Proton9-15" -> (9, 15)
+            - "GE-Proton10-1" -> (10, 1)
+
+        Args:
+            tag_name: Version tag name (e.g., "GE-Proton10-18")
+
+        Returns:
+            Tuple of (major, minor) version numbers, or (0, 0) if parsing fails
+        """
+        try:
+            # Extract version from tag like "GE-Proton10-18"
+            import re
+            match = re.search(r'GE-Proton(\d+)-(\d+)', tag_name)
+            if match:
+                major = int(match.group(1))
+                minor = int(match.group(2))
+                return (major, minor)
+            return (0, 0)
+        except Exception as e:
+            self.logger.warning(f"Failed to parse version from {tag_name}: {e}")
+            return (0, 0)
+
+    def is_proton_ge(self, tag_name: Optional[str] = None) -> bool:
+        """
+        Check if the version is Proton-GE (not Proton Experimental)
+
+        Args:
+            tag_name: Version tag name, or None to check active version
+
+        Returns:
+            True if this is Proton-GE, False if Proton Experimental or unknown
+        """
+        try:
+            # Use active version if no tag specified
+            if tag_name is None:
+                tag_name = self.get_active_version()
+                if tag_name is None:
+                    return False
+
+            # Check if tag contains "GE-Proton" (Proton-GE) or "Proton" (Experimental)
+            # GE-Proton tags: "GE-Proton10-18", "GE-Proton9-15", etc.
+            # Proton Experimental: Usually symlinked to system Proton, not a GE release
+            return "GE-Proton" in tag_name
+
+        except Exception as e:
+            self.logger.error(f"Failed to check if Proton-GE: {e}")
+            return False
+
+    def supports_dotnet48(self, tag_name: Optional[str] = None) -> bool:
+        """
+        Check if a Proton version supports .NET Framework 4.8
+
+        .NET Framework 4.8 requires:
+        - Proton-GE (NOT Proton Experimental)
+        - GE-Proton 10-18+ (Wine 10.0+)
+
+        Args:
+            tag_name: Version tag name, or None to check active version
+
+        Returns:
+            True if version supports dotnet48, False otherwise
+        """
+        try:
+            # Use active version if no tag specified
+            if tag_name is None:
+                tag_name = self.get_active_version()
+                if tag_name is None:
+                    return False
+
+            # CRITICAL: Proton Experimental does NOT support dotnet48
+            # Only Proton-GE with the right version supports it
+            if not self.is_proton_ge(tag_name):
+                self.logger.info(f"{tag_name} is not Proton-GE - dotnet48 not supported")
+                return False
+
+            # Parse GE-Proton version
+            major, minor = self.parse_version_number(tag_name)
+
+            # Requires GE-Proton 10-18 or newer (Wine 10.0+)
+            if major > 10:
+                return True
+            elif major == 10 and minor >= 18:
+                return True
+            else:
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to check dotnet48 support: {e}")
+            return False

@@ -240,12 +240,12 @@ docker run --rm \
             echo \"✓ libmpv and dependencies bundled\"
         fi
 
-        # Bundle ICU libraries (required by Flutter engine)
+        # Bundle ICU libraries (required by Flutter engine and Flet)
         echo 'Bundling ICU libraries...'
         for icu_lib in \
-            libicuuc.so.70 \
-            libicui18n.so.70 \
-            libicudata.so.70
+            libicuuc.so.72 \
+            libicui18n.so.72 \
+            libicudata.so.72
         do
             if [ -f /usr/lib/x86_64-linux-gnu/\$icu_lib ]; then
                 cp -L /usr/lib/x86_64-linux-gnu/\$icu_lib NaK-Flet.AppDir/usr/lib/

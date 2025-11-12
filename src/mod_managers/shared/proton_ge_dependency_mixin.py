@@ -47,10 +47,38 @@ class ProtonGEDependencyMixin:
             if not wine_path.exists():
                 return {"success": False, "error": f"Wine not found at {wine_path}"}
 
-            # IMPORTANT: Don't manually run wineboot! Proton-GE handles prefix initialization
-            # automatically when running winetricks or any wine command. Manual wineboot can cause hangs.
+            # Check Proton-GE version for dotnet48 support
+            from src.utils.proton_ge_manager import ProtonGEManager
+            ge_manager = ProtonGEManager()
+            active_version = ge_manager.get_active_version()
 
-            # Install dependencies with winetricks using DependencyInstaller (Proton will auto-init prefix on first run)
+            if not active_version:
+                return {
+                    "success": False,
+                    "error": "No Proton-GE version is currently active. Please select a Proton-GE version first."
+                }
+
+            supports_dotnet = ge_manager.supports_dotnet48(active_version)
+
+            # Remove dotnet48/dotnet40 if Proton-GE version doesn't support it
+            if not supports_dotnet:
+                self.logger.warning(f"Proton-GE {active_version} doesn't support .NET Framework 4.8 (requires GE-Proton 10-18+)")
+                self._log_progress(f"[WARNING] {active_version} doesn't support .NET Framework 4.8 - skipping dotnet48/dotnet40")
+
+                # Filter out dotnet48 and dotnet40 from dependencies
+                original_count = len(dependencies)
+                dependencies = [dep for dep in dependencies if dep not in ["dotnet48", "dotnet40"]]
+
+                if len(dependencies) < original_count:
+                    self.logger.info(f"Removed dotnet48/dotnet40 from dependencies (not supported by {active_version})")
+            else:
+                self.logger.info(f"Proton-GE {active_version} supports .NET Framework 4.8")
+
+            # IMPORTANT: Don't manually run wineboot! Let winetricks create the prefix.
+            # Wineboot installs Mono which interferes with .NET Framework installation.
+            # Winetricks will create the prefix correctly without Mono when installing dotnet48.
+
+            # Install dependencies with winetricks using DependencyInstaller
             self._log_progress("Installing Windows dependencies...")
 
             # Set callbacks for DependencyInstaller

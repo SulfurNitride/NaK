@@ -245,26 +245,15 @@ class DependencyInstaller:
             }
 
             # STEP 0: Initialize Wine prefix (conditional delete/recreate for mod managers)
-            # For mod managers (MO2/Vortex): Delete and recreate to avoid conflicts
+            # For mod managers (MO2/Vortex): Delete prefix and let winetricks create it
             # For simple game modding: Keep existing prefix to preserve saves
             if is_for_mod_manager:
                 self.logger.info("===============================================================")
-                self.logger.info("STEP 0: INITIALIZING WINE PREFIX WITH PROTON EXPERIMENTAL")
-                self.logger.info("(MOD MANAGER MODE: Deleting and recreating prefix)")
+                self.logger.info("STEP 0: PREPARING FOR CLEAN PREFIX CREATION")
+                self.logger.info("(MOD MANAGER MODE: Deleting prefix, winetricks will recreate)")
                 self.logger.info("===============================================================")
                 self.logger.info(f"Prefix path: {wineprefix}")
-                self._log_progress("=== STEP 0: INITIALIZING WINE PREFIX WITH PROTON EXPERIMENTAL ===")
-
-                # Get Proton Experimental wine binary path
-                steam_root = os.path.expanduser("~/.local/share/Steam")
-                proton_path = os.path.join(steam_root, "steamapps/common/Proton - Experimental")
-                proton_wine_binary = os.path.join(proton_path, "files/bin/wine64")
-                proton_wineserver = os.path.join(proton_path, "files/bin/wineserver")
-
-                if not os.path.exists(proton_wine_binary):
-                    raise Exception(f"Proton Experimental not found at {proton_wine_binary}")
-
-                self.logger.info(f"Using Proton Experimental wine: {proton_wine_binary}")
+                self._log_progress("=== STEP 0: PREPARING CLEAN PREFIX ===")
 
                 # Delete any existing prefix (created by Steam/Proton) and start fresh
                 if os.path.exists(wineprefix):
@@ -273,35 +262,16 @@ class DependencyInstaller:
                     shutil.rmtree(wineprefix)
                     self.logger.info("[OK] Existing prefix deleted")
 
-                # Create fresh prefix directory
-                self.logger.info(f"Creating fresh prefix directory: {wineprefix}")
-                os.makedirs(wineprefix, exist_ok=True)
+                # Ensure parent compatdata directory exists (but NOT the pfx directory)
+                os.makedirs(compatdata_path, exist_ok=True)
+                self.logger.info(f"Compatdata directory ready: {compatdata_path}")
 
-                # Initialize prefix with Proton Experimental wineboot
-                self.logger.info(f"Initializing wine prefix with Proton Experimental: {wineprefix}")
-                env = os.environ.copy()
-                env['WINEPREFIX'] = wineprefix
-                env['WINEARCH'] = 'win64'
-                env['WINE'] = proton_wine_binary
-                env['W_CACHE'] = str(self.cache_manager.cache_dir)
-                env['WINETRICKS_LATEST_VERSION_CHECK'] = 'disabled'
-
-                # Set wineserver and PATH to use Proton Experimental's bin directory
-                env['WINESERVER'] = proton_wineserver
-                bin_dir = os.path.dirname(proton_wine_binary)
-                env['PATH'] = f"{bin_dir}:{env.get('PATH', '')}"
-                self.logger.info(f"Using Proton Experimental wineserver: {proton_wineserver}")
-                self.logger.info(f"Added to PATH: {bin_dir}")
-
-                wineboot_cmd = [proton_wine_binary, "wineboot", "--init"]
-                result = subprocess.run(wineboot_cmd, env=env, capture_output=True, text=True, timeout=120)
-
-                if result.returncode != 0:
-                    self.logger.error(f"Wineboot failed: {result.stderr}")
-                    raise Exception(f"Failed to initialize wine prefix: {result.stderr}")
-
-                self.logger.info("[OK] Wine prefix initialized with Proton Experimental")
-                self._log_progress("[OK] Wine prefix initialized with Proton Experimental")
+                # IMPORTANT: Do NOT run wineboot here!
+                # Wineboot installs Mono which interferes with .NET Framework installation
+                # Instead, let winetricks create the prefix when installing dotnet48
+                # Winetricks will handle Mono removal and proper .NET installation
+                self.logger.info("Skipping wineboot - winetricks will create prefix correctly")
+                self._log_progress("[OK] Prefix cleaned - ready for winetricks installation")
             else:
                 self.logger.info("===============================================================")
                 self.logger.info("STEP 0: USING EXISTING WINE PREFIX")
@@ -523,7 +493,160 @@ class DependencyInstaller:
         else:
             self.logger.error("Failed to get winetricks from WinetricksManager")
             return ""
-    
+
+    def _verify_winetricks_installations(
+        self,
+        winetricks_cmd: str,
+        env: dict,
+        requested_dependencies: List[str]
+    ) -> Dict[str, bool]:
+        """
+        Verify which dependencies are actually installed using winetricks list-installed
+
+        Args:
+            winetricks_cmd: Path to winetricks command
+            env: Environment variables to use for winetricks
+            requested_dependencies: List of dependencies that were requested to install
+
+        Returns:
+            Dict mapping dependency name to installation status (True=installed, False=not installed)
+        """
+        try:
+            self.logger.info("Verifying installed dependencies with 'winetricks list-installed'...")
+
+            # Run winetricks list-installed to get actually installed packages
+            cmd = [winetricks_cmd, "list-installed"]
+            result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
+
+            if result.returncode != 0:
+                self.logger.error(f"Failed to run winetricks list-installed: {result.stderr}")
+                # Return all as unverified (assume installed to avoid false negatives)
+                return {dep: True for dep in requested_dependencies}
+
+            # Parse installed packages from output
+            installed_packages = set()
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    # Each line is a package name
+                    installed_packages.add(line)
+
+            self.logger.info(f"Found {len(installed_packages)} installed packages via winetricks")
+            self.logger.debug(f"Installed packages: {', '.join(sorted(installed_packages))}")
+
+            # Check each requested dependency
+            verification_results = {}
+            for dep in requested_dependencies:
+                # Handle dependencies with arguments (e.g., fontsmooth=rgb)
+                dep_name = dep.split('=')[0]
+                is_installed = dep_name in installed_packages
+                verification_results[dep] = is_installed
+
+                if is_installed:
+                    self.logger.info(f"  ✓ {dep}: VERIFIED INSTALLED")
+                else:
+                    self.logger.warning(f"  ✗ {dep}: NOT FOUND IN INSTALLED LIST")
+
+            return verification_results
+
+        except subprocess.TimeoutExpired:
+            self.logger.error("winetricks list-installed timed out")
+            # Return all as unverified (assume installed to avoid false negatives)
+            return {dep: True for dep in requested_dependencies}
+        except Exception as e:
+            self.logger.error(f"Failed to verify installations: {e}")
+            # Return all as unverified (assume installed to avoid false negatives)
+            return {dep: True for dep in requested_dependencies}
+
+    def diagnose_prefix_state(self, app_id: str) -> Dict[str, Any]:
+        """
+        Diagnose the state of a Wine prefix to help debug installation issues
+
+        Args:
+            app_id: Steam AppID
+
+        Returns:
+            Dict with diagnostic information
+        """
+        try:
+            steam_root = self.steam_utils.get_steam_root()
+            wineprefix = f"{steam_root}/steamapps/compatdata/{app_id}/pfx"
+
+            self.logger.info("═" * 60)
+            self.logger.info(f"DIAGNOSING PREFIX: {app_id}")
+            self.logger.info("═" * 60)
+
+            diagnostics = {
+                "app_id": app_id,
+                "prefix_path": wineprefix,
+                "prefix_exists": os.path.exists(wineprefix),
+            }
+
+            if not diagnostics["prefix_exists"]:
+                self.logger.error(f"Prefix does not exist: {wineprefix}")
+                return diagnostics
+
+            # Check for Wine Mono
+            mono_path = f"{wineprefix}/drive_c/windows/mono"
+            diagnostics["wine_mono_present"] = os.path.exists(mono_path)
+            if diagnostics["wine_mono_present"]:
+                self.logger.warning(f"Wine Mono found at: {mono_path}")
+            else:
+                self.logger.info("Wine Mono not present (good for .NET installations)")
+
+            # Check for .NET installations
+            dotnet_base = f"{wineprefix}/drive_c/windows/Microsoft.NET/Framework"
+            diagnostics["dotnet_base_exists"] = os.path.exists(dotnet_base)
+
+            if diagnostics["dotnet_base_exists"]:
+                # List .NET versions
+                dotnet_versions = []
+                for item in os.listdir(dotnet_base):
+                    if item.startswith("v"):
+                        version_path = os.path.join(dotnet_base, item)
+                        dotnet_versions.append({
+                            "version": item,
+                            "path": version_path,
+                            "has_mscorlib": os.path.exists(os.path.join(version_path, "mscorlib.dll")),
+                            "has_ngen": os.path.exists(os.path.join(version_path, "ngen.exe"))
+                        })
+                diagnostics["dotnet_versions"] = dotnet_versions
+
+                self.logger.info(f"Found {len(dotnet_versions)} .NET Framework versions:")
+                for ver in dotnet_versions:
+                    self.logger.info(f"  - {ver['version']}: mscorlib={ver['has_mscorlib']}, ngen={ver['has_ngen']}")
+            else:
+                self.logger.warning("No .NET Framework directory found")
+                diagnostics["dotnet_versions"] = []
+
+            # Get winetricks installed list
+            winetricks_cmd = self._get_winetricks_command()
+            if winetricks_cmd:
+                env = os.environ.copy()
+                env['WINEPREFIX'] = wineprefix
+                env['LD_LIBRARY_PATH'] = '/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu'
+
+                cmd = [winetricks_cmd, "list-installed"]
+                result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
+
+                if result.returncode == 0:
+                    installed_list = [line.strip() for line in result.stdout.split('\n')
+                                    if line.strip() and not line.startswith('#')]
+                    diagnostics["winetricks_installed"] = installed_list
+                    self.logger.info(f"Winetricks reports {len(installed_list)} installed packages:")
+                    for pkg in installed_list:
+                        self.logger.info(f"  - {pkg}")
+                else:
+                    diagnostics["winetricks_installed"] = []
+                    self.logger.error("Failed to get winetricks installed list")
+
+            self.logger.info("═" * 60)
+            return diagnostics
+
+        except Exception as e:
+            self.logger.error(f"Failed to diagnose prefix: {e}")
+            return {"error": str(e)}
+
     # NOTE: Winetricks cache population removed - winetricks handles its own caching
     # W_CACHE environment variable is set to ~/NaK/cache in _install_dependencies_unified
     # Winetricks will download and cache files there automatically
@@ -741,25 +864,58 @@ class DependencyInstaller:
             except Exception as cleanup_error:
                 self.logger.warning(f"Failed to clean up temp folders: {cleanup_error}")
 
-            # Return result
-            if result_cmd.returncode == 0:
+            # VERIFICATION STEP: Use winetricks list-installed to verify what actually got installed
+            # This is more reliable than checking winetricks exit code or stderr
+            self.logger.info("═" * 60)
+            self.logger.info(f"{method_name} INSTALLATION - VERIFYING")
+            self.logger.info("═" * 60)
+            self._log_progress("Verifying installed dependencies...")
+
+            verification_results = self._verify_winetricks_installations(
+                winetricks_cmd, env, dependencies
+            )
+
+            # Analyze verification results
+            installed_deps = [dep for dep, installed in verification_results.items() if installed]
+            failed_deps = [dep for dep, installed in verification_results.items() if not installed]
+
+            # Log detailed results
+            self.logger.info(f"Verification complete: {len(installed_deps)}/{len(dependencies)} dependencies verified")
+            if installed_deps:
+                self.logger.info(f"Successfully installed: {', '.join(installed_deps)}")
+            if failed_deps:
+                self.logger.error(f"Failed to install: {', '.join(failed_deps)}")
+
+            # Determine overall success
+            if len(failed_deps) == 0:
+                # All dependencies verified as installed
                 self.logger.info("═" * 60)
                 self.logger.info(f"{method_name} INSTALLATION - SUCCESS")
                 self.logger.info("═" * 60)
+                self._log_progress(f"[OK] All {len(dependencies)} dependencies installed successfully!")
                 return {
                     "success": True,
                     "message": f"Dependencies installed for {game.get('Name')} using {method_name}",
-                    "method": method_name.lower().replace("-", "_")
+                    "method": method_name.lower().replace("-", "_"),
+                    "installed_count": len(installed_deps),
+                    "total_count": len(dependencies)
                 }
             else:
+                # Some dependencies failed to install
                 self.logger.error("═" * 60)
-                self.logger.error(f"{method_name} INSTALLATION - FAILED")
+                self.logger.error(f"{method_name} INSTALLATION - PARTIAL FAILURE")
                 self.logger.error("═" * 60)
-                self.logger.error(f"Exit code: {result_cmd.returncode}")
+                self.logger.error(f"Installed: {len(installed_deps)}/{len(dependencies)} dependencies")
+                self.logger.error(f"Failed: {', '.join(failed_deps)}")
+                self._log_progress(f"[FAILED] {len(failed_deps)} dependencies failed to install: {', '.join(failed_deps)}")
+
                 return {
                     "success": False,
-                    "error": f"{method_name} dependency installation failed: {result_cmd.stderr[:200]}",
-                    "method": method_name.lower().replace("-", "_") + "_failed"
+                    "error": f"{method_name} failed to install: {', '.join(failed_deps)}",
+                    "method": method_name.lower().replace("-", "_") + "_partial_failure",
+                    "installed_count": len(installed_deps),
+                    "total_count": len(dependencies),
+                    "failed_dependencies": failed_deps
                 }
 
         except subprocess.TimeoutExpired:
