@@ -41,6 +41,13 @@ d3dx9 vkd3d
 
 Additionally, the DotNet 9 SDK is installed for Synthesis support.
 
+
+### HOW DO I RUN IT?
+
+Inside you mod manager folder there will be 3 symliked files. Kill Prefix (Kills the wineserver). Fix Game Registries. And Launch Mod Manager.
+
+<img width="314" height="163" alt="image" src="https://github.com/user-attachments/assets/5cc0b978-1e33-4e2e-90ce-c720d748c6f1" />
+
 ---
 
 ## Known Issues
