@@ -21,16 +21,7 @@ class DependencyInstaller:
 
     def __init__(self, settings_manager=None):
         self.logger = get_logger(__name__)
-        # Force logger to write to debug file by ensuring it has the same handlers
-        import logging
-        root_logger = logging.getLogger()  # Get the actual root logger, not 'nak'
-        if root_logger.handlers:
-            # Copy handlers from root logger to ensure debug file logging
-            for handler in root_logger.handlers:
-                if handler not in self.logger.handlers:
-                    self.logger.addHandler(handler)
-            # Ensure logger level allows all messages
-            self.logger.setLevel(logging.DEBUG)
+        # Logger will propagate to root logger which has file and console handlers
 
         self.steam_utils = SteamUtils()
         self.cache_manager = DependencyCacheManager()
@@ -759,11 +750,19 @@ class DependencyInstaller:
             # Set wineserver if provided
             if wineserver_binary:
                 env["WINESERVER"] = wineserver_binary
-                # Add bin directory to PATH
+                # Add wine bin directory to PATH
                 bin_dir = os.path.dirname(wine_binary)
                 env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
                 self.logger.info(f"Using wineserver: {wineserver_binary}")
                 self.logger.info(f"Added Proton bin to PATH: {bin_dir}")
+
+            # If running from AppImage, ensure bundled tools are in PATH
+            appdir = os.environ.get('APPDIR')
+            if appdir:
+                appimage_bin = f"{appdir}/usr/bin"
+                if appimage_bin not in env.get('PATH', ''):
+                    env["PATH"] = f"{appimage_bin}:{env.get('PATH', '')}"
+                    self.logger.info(f"Added AppImage bin to PATH: {appimage_bin}")
 
             # Set wine prefix
             if wine_prefix:
@@ -785,6 +784,10 @@ class DependencyInstaller:
             # Clean AppImage environment to avoid library conflicts
             # This prevents winetricks from using AppImage-bundled libraries
             # which can cause symbol lookup errors (e.g., readline incompatibility)
+
+            # Save APPDIR for bundled tools (cabextract, etc.) before cleaning
+            appdir = os.environ.get('APPDIR')
+
             appimage_vars = [
                 'APPIMAGE', 'APPDIR', 'OWD', 'ARGV0',
                 'LIBRARY_PATH', 'LD_PRELOAD',
@@ -796,10 +799,17 @@ class DependencyInstaller:
                     env.pop(var)
                     cleaned_vars.append(var)
 
-            # CRITICAL: Set LD_LIBRARY_PATH to system-only paths
-            # Don't remove it entirely - system binaries like /bin/sh need it
-            env['LD_LIBRARY_PATH'] = '/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu'
-            cleaned_vars.append('LD_LIBRARY_PATH (reset to system paths)')
+            # CRITICAL: Set LD_LIBRARY_PATH to system paths FIRST to avoid conflicts
+            # But append AppImage lib paths so bundled tools (cabextract, unzstd) can find their dependencies
+            system_lib_paths = '/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu'
+            if appdir:
+                # Add AppImage lib paths AFTER system paths (lower priority to avoid conflicts)
+                env['LD_LIBRARY_PATH'] = f"{system_lib_paths}:{appdir}/usr/lib:{appdir}/usr/lib/x86_64-linux-gnu"
+                cleaned_vars.append('LD_LIBRARY_PATH (system paths + AppImage libs for bundled tools)')
+            else:
+                # Not running from AppImage, use system paths only
+                env['LD_LIBRARY_PATH'] = system_lib_paths
+                cleaned_vars.append('LD_LIBRARY_PATH (reset to system paths)')
 
             if cleaned_vars:
                 self.logger.info(f"Cleaned AppImage environment variables: {', '.join(cleaned_vars)}")
