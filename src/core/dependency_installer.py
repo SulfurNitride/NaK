@@ -815,6 +815,44 @@ class DependencyInstaller:
                 self.logger.info(f"Cleaned AppImage environment variables: {', '.join(cleaned_vars)}")
                 self.logger.info("This prevents library conflicts when running winetricks")
 
+            # Initialize Proton prefix first if using Proton
+            # This creates the proper Proton directory structure (tracked_files, etc.)
+            # and prevents "Upgrading prefix from None" errors
+            if steam_compat_data_path and (method_name.startswith("Proton") or method_name == "GE-Proton"):
+                # Find the proton script (should be in wine binary's grandparent directory)
+                wine_bin_dir = os.path.dirname(wine_binary)  # .../files/bin
+                proton_root = os.path.dirname(os.path.dirname(wine_bin_dir))  # .../
+                proton_script = os.path.join(proton_root, "proton")
+
+                if os.path.isfile(proton_script):
+                    self.logger.info("Initializing Proton prefix before running winetricks...")
+                    self.logger.info(f"Proton script: {proton_script}")
+                    self._log_progress("Initializing Proton prefix...")
+
+                    # Run a simple command through Proton to initialize the prefix
+                    # This creates tracked_files and other Proton-specific files
+                    try:
+                        init_cmd = [proton_script, "waitforexitandrun", "wineboot", "-i"]
+                        init_result = subprocess.run(
+                            init_cmd,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=60
+                        )
+                        if init_result.returncode == 0:
+                            self.logger.info("✓ Proton prefix initialized successfully")
+                        else:
+                            self.logger.warning(f"Proton prefix initialization exited with code {init_result.returncode}")
+                            self.logger.debug(f"STDERR: {init_result.stderr[:500]}")
+                    except subprocess.TimeoutExpired:
+                        self.logger.warning("Proton prefix initialization timed out (may still have succeeded)")
+                    except Exception as e:
+                        self.logger.warning(f"Could not initialize Proton prefix: {e}")
+                        self.logger.warning("Continuing anyway - winetricks will create a basic Wine prefix")
+                else:
+                    self.logger.warning(f"Proton script not found at {proton_script} - skipping prefix initialization")
+
             # Get winetricks command
             winetricks_cmd = self._get_winetricks_command()
             if not winetricks_cmd:

@@ -89,12 +89,28 @@ class ProtonGEDependencyMixin:
 
             # Delegate to DependencyInstaller for unified dependency installation
             game_dict = {"Name": app_name, "AppID": app_name.lower()}
+
+            # Calculate steam_compat_data_path (parent of prefix for Proton)
+            # This is needed for Proton to initialize the prefix correctly
+            steam_compat_data = str(prefix_path.parent)
+
+            # Get Steam client path for Proton
+            from src.utils.steam_utils import SteamUtils
+            steam_utils = SteamUtils()
+            try:
+                steam_client_path = steam_utils.get_steam_root()
+            except Exception as e:
+                self.logger.warning(f"Could not detect Steam path: {e}, using /tmp")
+                steam_client_path = "/tmp"
+
             result = self.dependency_installer._install_dependencies_unified(
                 game=game_dict,
                 dependencies=dependencies,
                 wine_binary=str(wine_path),
                 wineserver_binary=str(wineserver_path),
                 wine_prefix=str(prefix_path),
+                steam_compat_data_path=steam_compat_data,
+                steam_compat_client_path=steam_client_path,
                 method_name="Proton-GE"
             )
 
