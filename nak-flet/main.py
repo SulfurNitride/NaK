@@ -58,6 +58,7 @@ from views.manager_options_view import get_manager_options_view
 from views.simple_game_modding_view import get_simple_game_modding_view
 from views.instance_management_view import get_instance_management_view
 from views.wineprefix_manager_view import get_wineprefix_manager_view
+from views.addons_view import get_addons_view
 
 # Import dialogs
 from dialogs.info_dialog import show_info as show_info_dialog
@@ -395,6 +396,15 @@ class NaKApp:
             )
         )
 
+        # Always show Addons
+        nav_destinations.append(
+            ft.NavigationRailDestination(
+                icon="add_box_outlined",
+                selected_icon="add_box",
+                label="Addons",
+            )
+        )
+
         # Navigation rail
         rail = ft.NavigationRail(
             selected_index=0,
@@ -438,6 +448,7 @@ class NaKApp:
             views.append("simple_game_modding")
 
         views.append("mod_managers")
+        views.append("addons")
 
         self.current_view = views[index]
 
@@ -452,6 +463,8 @@ class NaKApp:
             self.content_area.content = self.get_simple_game_modding_view()
         elif self.current_view == "mod_managers":
             self.content_area.content = self.get_mod_managers_view()
+        elif self.current_view == "addons":
+            self.content_area.content = self.get_addons_view()
 
         self.page.update()
 
@@ -506,6 +519,10 @@ class NaKApp:
             return self.get_manager_options_view()
 
         return get_mod_managers_view(self.show_instance_management, self.select_manager_type)
+
+    def get_addons_view(self):
+        """Addons view - delegated to views/addons_view.py"""
+        return get_addons_view(self.page, self.show_error)
 
     def select_manager_type(self, manager_type):
         """Select a mod manager type to view options"""
