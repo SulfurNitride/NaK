@@ -165,40 +165,21 @@ def get_addons_view(page: ft.Page, show_error_callback):
         show_installed_addons()
 
     def install_addon(addon_info):
-        """Install an addon with progress dialog"""
-        progress_text = ft.Text("Preparing installation...")
-        progress_bar = ft.ProgressBar(value=0)
-
-        dlg = ft.AlertDialog(
-            title=ft.Text(f"Installing {addon_info['name']}"),
-            content=ft.Column([
-                progress_text,
-                progress_bar,
-            ], tight=True, height=80),
-            modal=True,
+        """Install an addon (fast, no dialog needed)"""
+        # Show loading notification
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text(f"Installing {addon_info['name']}..."),
+            bgcolor=ft.Colors.BLUE,
         )
-
-        page.overlay.append(dlg)
-        dlg.open = True
+        page.snack_bar.open = True
         page.update()
-
-        def progress_callback(current, total, message):
-            progress_text.value = message
-            progress_bar.value = current / total
-            page.update()
 
         # Install addon (runs synchronously but is fast)
         try:
-            success = addon_manager.install_addon(addon_info, progress_callback=progress_callback)
+            success = addon_manager.install_addon(addon_info, progress_callback=None)
         except Exception as e:
             success = False
             print(f"Installation error: {e}")
-
-        # Close dialog
-        dlg.open = False
-        if dlg in page.overlay:
-            page.overlay.remove(dlg)
-        page.update()
 
         # Show result
         if success:
