@@ -2,7 +2,7 @@
 Progress Dialog Component
 
 Reusable installation progress dialog with terminal output and progress bar.
-Used by all mod manager installation workflows (MO2, Vortex, Unverum).
+Used by all mod manager installation workflows (MO2, Vortex).
 """
 
 import flet as ft

@@ -80,27 +80,6 @@ def get_mod_managers_view(show_instance_management_callback, select_manager_type
         )
     )
 
-    # Unverum Card with official icon
-    content.append(
-        ft.Card(
-            content=ft.Container(
-                content=ft.ListTile(
-                    leading=ft.Image(
-                        src="icons/unverum.jpg",
-                        width=48,
-                        height=48,
-                        fit=ft.ImageFit.CONTAIN,
-                    ),
-                    title=ft.Text("Unverum", size=20, weight=ft.FontWeight.BOLD),
-                    subtitle=ft.Text("Mod manager for Unreal Engine 4 games", size=14),
-                    trailing=ft.Icon("chevron_right"),
-                    on_click=lambda _: select_manager_type_callback("unverum"),
-                ),
-                padding=10,
-            ),
-        )
-    )
-
     return ft.Column(
         content,
         scroll=ft.ScrollMode.AUTO,

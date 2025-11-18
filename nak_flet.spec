@@ -34,7 +34,6 @@ a = Analysis(
         'logging.config',
         'src.core.core',
         'src.core.dependency_installer',
-        'src.core.unverum_installer',
         'src.core.dotnet9sdk_installer',
         'src.mod_managers.mo2.installer',
         'src.mod_managers.vortex.installer',

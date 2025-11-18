@@ -47,7 +47,6 @@ from components.terminal_output import TerminalOutput
 # Import workflows
 from workflows.mo2_workflow import MO2Workflow
 from workflows.vortex_workflow import VortexWorkflow
-from workflows.unverum_workflow import UnverumWorkflow
 
 # Import views
 from views.getting_started_view import get_getting_started_view
@@ -229,7 +228,6 @@ class NaKApp:
         # Initialize workflows
         self.mo2_workflow = MO2Workflow(self.page, self.core, self.show_error, self.show_info, self.file_picker_mo2)
         self.vortex_workflow = VortexWorkflow(self.page, self.core, self.show_error, self.show_info)
-        self.unverum_workflow = UnverumWorkflow(self.page, self.core, self.show_error, self.show_info)
 
         # Initialize game scanner (only if auto-detection is enabled)
         self.game_scanner = None
@@ -539,9 +537,7 @@ class NaKApp:
             self.setup_existing_mo2_dialog,
             self.install_vortex_dialog,
             self.setup_existing_vortex_dialog,
-            self.show_vortex_staging_info,
-            self.install_unverum_dialog,
-            self.setup_existing_unverum_dialog
+            self.show_vortex_staging_info
         )
 
     def back_to_manager_types(self):
@@ -856,12 +852,6 @@ class NaKApp:
         """Install Vortex - delegated to workflow"""
         self.vortex_workflow.install_vortex(install_dir, custom_name)
 
-
-    def install_unverum(self, install_dir=None, custom_name=None):
-        """Install Unverum - delegated to workflow"""
-        self.unverum_workflow.install_unverum(install_dir, custom_name)
-
-
     def handle_window_event(self, e):
         """Handle window events (close, minimize, etc.)"""
         if e.data == "close":
@@ -912,17 +902,6 @@ class NaKApp:
     def show_vortex_staging_folder_popup(self, vortex_paths):
         """Show Vortex staging folder configuration popup - delegated to workflow"""
         self.vortex_workflow.show_vortex_staging_folder_popup(vortex_paths)
-
-
-    def install_unverum_dialog(self):
-        """Show install Unverum dialog - delegated to workflow"""
-        self.unverum_workflow.install_unverum_dialog()
-
-
-    def setup_existing_unverum_dialog(self):
-        """Show setup existing Unverum dialog - delegated to workflow"""
-        self.unverum_workflow.setup_existing_unverum_dialog()
-
 
     def show_info(self, title: str, message: str):
         """Show info dialog - delegated to dialogs/info_dialog.py"""

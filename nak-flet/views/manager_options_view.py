@@ -1,6 +1,6 @@
 """
 Manager Options view for NaK application
-Shows management options for a selected mod manager (MO2, Vortex, or Unverum)
+Shows management options for a selected mod manager (MO2, Vortex)
 """
 import flet as ft
 
@@ -12,9 +12,7 @@ def get_manager_options_view(
     setup_existing_mo2_callback,
     install_vortex_callback,
     setup_existing_vortex_callback,
-    show_vortex_staging_info_callback,
-    install_unverum_callback=None,
-    setup_existing_unverum_callback=None
+    show_vortex_staging_info_callback
 ):
     """
     Create and return the manager options view
@@ -40,10 +38,6 @@ def get_manager_options_view(
         title = "Vortex"
         icon = "cyclone"
         color = ft.Colors.PURPLE
-    elif manager_type == "unverum":
-        title = "Unverum"
-        icon = "gamepad"
-        color = ft.Colors.TEAL
     else:
         title = "Mod Manager"
         icon = "help"
@@ -151,44 +145,5 @@ def get_manager_options_view(
                 ),
             )
         )
-
-    elif manager_type == "unverum":
-        # Unverum Management Options
-        content.append(ft.Text("Management Options", size=20, weight=ft.FontWeight.BOLD))
-        content.append(ft.Divider(height=10))
-
-        # Install New Unverum
-        if install_unverum_callback:
-            content.append(
-                ft.Card(
-                    content=ft.Container(
-                        content=ft.ListTile(
-                            leading=ft.Icon("download", size=40, color=ft.Colors.TEAL),
-                            title=ft.Text("Install New Unverum", size=18, weight=ft.FontWeight.BOLD),
-                            subtitle=ft.Text("Download and install the latest version"),
-                            trailing=ft.Icon("chevron_right"),
-                            on_click=lambda _: install_unverum_callback(),
-                        ),
-                        padding=5,
-                    ),
-                )
-            )
-
-        # Setup Existing Unverum
-        if setup_existing_unverum_callback:
-            content.append(
-                ft.Card(
-                    content=ft.Container(
-                        content=ft.ListTile(
-                            leading=ft.Icon("folder_open", size=40, color=ft.Colors.ORANGE),
-                            title=ft.Text("Setup Existing Unverum", size=18, weight=ft.FontWeight.BOLD),
-                            subtitle=ft.Text("Add an already installed Unverum"),
-                            trailing=ft.Icon("chevron_right"),
-                            on_click=lambda _: setup_existing_unverum_callback(),
-                        ),
-                        padding=5,
-                    ),
-                )
-            )
 
     return ft.Column(content, scroll=ft.ScrollMode.AUTO, expand=True)

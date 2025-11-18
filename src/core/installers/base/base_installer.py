@@ -2,7 +2,7 @@
 Base Installer Class
 
 This module provides the base class for all mod manager installers.
-It contains common functionality shared across MO2, Vortex, and Unverum installers.
+It contains common functionality shared across MO2 and Vortex installers.
 """
 
 import os
@@ -37,7 +37,7 @@ class BaseInstaller:
     - Cache management
     - Steam utilities integration
 
-    All mod manager installers (MO2, Vortex, Unverum) should inherit from this class.
+    All mod manager installers (MO2, Vortex) should inherit from this class.
     """
 
     def __init__(self, core=None, installer_name: Optional[str] = None):
@@ -113,7 +113,7 @@ class BaseInstaller:
 
         Args:
             current_filename: Current file to keep (don't delete this)
-            prefix: Filename prefix to match (e.g., "ModOrganizer", "Vortex", "Unverum")
+            prefix: Filename prefix to match (e.g., "ModOrganizer", "Vortex")
             extension: Optional file extension to require (e.g., ".7z")
 
         Example:

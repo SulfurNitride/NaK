@@ -36,7 +36,7 @@ class GitHubDownloader:
         Args:
             repo_owner: GitHub repository owner (e.g., "ModOrganizer2")
             repo_name: GitHub repository name (e.g., "modorganizer")
-            cache_prefix: Prefix for cache files (e.g., "mo2", "vortex", "unverum")
+            cache_prefix: Prefix for cache files (e.g., "mo2", "vortex")
         """
         self.repo_owner = repo_owner
         self.repo_name = repo_name

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from src.mod_managers.mo2 import MO2Installer
 from src.mod_managers.vortex import VortexInstaller
-from src.core.unverum_installer import UnverumInstaller
 from src.core.dependency_installer import DependencyInstaller
 from src.utils.steam_utils import SteamUtils
 from src.utils.game_utils import GameUtils
@@ -47,8 +46,6 @@ class Core:
         self.logger.debug("MO2Installer initialized")
         self.vortex = VortexInstaller(core=self)
         self.logger.debug("VortexInstaller initialized")
-        self.unverum = UnverumInstaller(core=self)
-        self.logger.debug("UnverumInstaller initialized")
 
         self.deps = DependencyInstaller(settings_manager=self.settings)
         self.game_utils = GameUtils()
