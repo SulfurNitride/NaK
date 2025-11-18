@@ -3,7 +3,7 @@ Addons view for NaK application
 Browse and install community addons for additional mod loader support
 """
 import flet as ft
-import threading
+import asyncio
 from src.addons import AddonManager
 
 
@@ -188,12 +188,16 @@ def get_addons_view(page: ft.Page, show_error_callback):
             progress_bar.value = current / total
             page.update()
 
-        def run_installation():
-            """Run installation in background thread"""
-            # Install addon
-            success = addon_manager.install_addon(addon_info, progress_callback=progress_callback)
+        async def run_installation():
+            """Run installation asynchronously"""
+            # Install addon (blocking call, run in executor)
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(
+                None,
+                lambda: addon_manager.install_addon(addon_info, progress_callback=progress_callback)
+            )
 
-            # Close dialog
+            # Close dialog (on main thread)
             dlg.open = False
             page.overlay.remove(dlg)
 
@@ -212,8 +216,8 @@ def get_addons_view(page: ft.Page, show_error_callback):
 
             page.update()
 
-        # Run installation in background thread
-        threading.Thread(target=run_installation, daemon=True).start()
+        # Run installation asynchronously
+        asyncio.create_task(run_installation())
 
     def uninstall_addon(addon_info):
         """Uninstall an addon"""
