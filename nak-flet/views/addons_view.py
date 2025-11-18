@@ -92,16 +92,12 @@ def get_addons_view(page: ft.Page, show_error_callback):
 
                     # Build action button
                     if is_installed:
-                        action_button = ft.ElevatedButton(
-                            "Uninstall",
-                            icon="delete_outline",
-                            on_click=lambda _, a=addon: uninstall_addon(a),
-                            color=ft.Colors.RED,
-                        )
+                        # For installed addons, just show status chip (uninstall from Installed Addons section)
+                        action_button = None
                         status_chip = ft.Container(
-                            content=ft.Text("Installed", size=12, color=ft.Colors.WHITE),
+                            content=ft.Text("Installed", size=14, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
                             bgcolor=ft.Colors.GREEN,
-                            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                            padding=ft.padding.symmetric(horizontal=15, vertical=8),
                             border_radius=10,
                         )
                     else:
@@ -130,9 +126,8 @@ def get_addons_view(page: ft.Page, show_error_callback):
                                 ),
                                 ft.Container(
                                     content=ft.Row([
-                                        action_button,
-                                        status_chip,
-                                    ] if status_chip else [action_button], spacing=10),
+                                        item for item in [action_button, status_chip] if item is not None
+                                    ], spacing=10),
                                     padding=ft.padding.only(left=10, right=10, bottom=10, top=5),
                                 ),
                             ], spacing=5),
