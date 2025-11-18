@@ -4,8 +4,8 @@ Centralized configuration values and magic numbers
 """
 
 # Application Version
-APP_VERSION = "4.0.0"
-APP_DATE = "11/6/25"
+APP_VERSION = "4.0.1"
+APP_DATE = "11/18/25"
 
 # Feature Flags
 class FeatureFlags:
