@@ -162,6 +162,9 @@ def get_addons_view(page: ft.Page, show_error_callback):
             )
             page.update()
 
+        # Also refresh the installed addons section
+        show_installed_addons()
+
     def install_addon(addon_info):
         """Install an addon with progress dialog"""
         progress_text = ft.Text("Preparing installation...")
