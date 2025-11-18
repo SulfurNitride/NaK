@@ -3,7 +3,6 @@ Addons view for NaK application
 Browse and install community addons for additional mod loader support
 """
 import flet as ft
-import asyncio
 from src.addons import AddonManager
 
 
@@ -188,36 +187,34 @@ def get_addons_view(page: ft.Page, show_error_callback):
             progress_bar.value = current / total
             page.update()
 
-        async def run_installation():
-            """Run installation asynchronously"""
-            # Install addon (blocking call, run in executor)
-            loop = asyncio.get_event_loop()
-            success = await loop.run_in_executor(
-                None,
-                lambda: addon_manager.install_addon(addon_info, progress_callback=progress_callback)
+        # Install addon (runs synchronously but is fast)
+        try:
+            success = addon_manager.install_addon(addon_info, progress_callback=progress_callback)
+        except Exception as e:
+            success = False
+            print(f"Installation error: {e}")
+
+        # Close dialog
+        dlg.open = False
+        if dlg in page.overlay:
+            page.overlay.remove(dlg)
+        page.update()
+
+        # Show result
+        if success:
+            page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"{addon_info['name']} installed successfully!"),
+                bgcolor=ft.Colors.GREEN,
+            )
+            page.snack_bar.open = True
+            refresh_addons()  # Refresh to show "Installed" status
+        else:
+            show_error_callback(
+                "Installation Failed",
+                f"Failed to install {addon_info['name']}. Check logs for details."
             )
 
-            # Close dialog (on main thread)
-            dlg.open = False
-            page.overlay.remove(dlg)
-
-            if success:
-                page.snack_bar = ft.SnackBar(
-                    content=ft.Text(f"{addon_info['name']} installed successfully!"),
-                    bgcolor=ft.Colors.GREEN,
-                )
-                page.snack_bar.open = True
-                refresh_addons()  # Refresh to show "Installed" status
-            else:
-                show_error_callback(
-                    "Installation Failed",
-                    f"Failed to install {addon_info['name']}. Check logs for details."
-                )
-
-            page.update()
-
-        # Run installation asynchronously
-        asyncio.create_task(run_installation())
+        page.update()
 
     def uninstall_addon(addon_info):
         """Uninstall an addon"""
