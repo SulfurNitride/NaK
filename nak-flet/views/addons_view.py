@@ -240,7 +240,7 @@ def get_addons_view(page: ft.Page, show_error_callback):
                 ft.Column([
                     ft.Text("About Addons", weight=ft.FontWeight.BOLD),
                     ft.Text(
-                        "Addons provide support for additional mod loaders beyond MO2, Vortex, and Unverum. "
+                        "Addons provide support for additional mod loaders beyond MO2 and Vortex. "
                         "Install only the addons you need for your specific games.",
                         size=12,
                         color=ft.Colors.GREY_400,
