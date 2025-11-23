@@ -14,21 +14,7 @@ from src.utils.utils import Utils
 from src.utils.comprehensive_game_manager import ComprehensiveGameManager
 from src.utils.settings_manager import SettingsManager
 from src.utils.logger import get_logger
-
-# Import feature flags and version info (if available, for backward compatibility)
-try:
-    import sys
-    import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'nak-flet'))
-    from constants import FeatureFlags, APP_VERSION, APP_DATE
-except ImportError:
-    # Fallback if constants not found
-    class FeatureFlags:
-        ENABLE_STEAM_INTEGRATION = False
-        ENABLE_PROTON_GE = True
-        ENABLE_AUTO_GAME_DETECTION = False
-    APP_VERSION = "4.0.0"
-    APP_DATE = "11/6/25"
+from src.constants import FeatureFlags, APP_VERSION, APP_DATE
 
 class Core:
     """Core represents the main business logic of the NaK application"""

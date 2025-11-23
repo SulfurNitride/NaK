@@ -1,11 +1,12 @@
 """
-Constants for NaK Flet application
-Centralized configuration values and magic numbers
+Constants for NaK Application
+Centralized configuration values and magic numbers.
+Shared between Frontend (Flet) and Backend (src).
 """
 
 # Application Version
-APP_VERSION = "4.0.1"
-APP_DATE = "11/18/25"
+APP_VERSION = "4.0.1.1"
+APP_DATE = "11/22/25"
 
 # Feature Flags
 class FeatureFlags:

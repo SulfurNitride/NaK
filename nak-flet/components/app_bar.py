@@ -6,18 +6,17 @@ Extracted from main.py to improve code organization.
 """
 
 import flet as ft
-from constants import APP_VERSION
+from src.constants import APP_VERSION
 
-
-def create_custom_app_bar(page: ft.Page, show_proton_ge_manager_callback, show_settings_callback, close_app_callback):
+def create_custom_app_bar(page, on_proton_ge_click, on_settings_click, on_exit_click):
     """
     Create custom app bar with drag area and window controls
 
     Args:
         page: Flet page instance
-        show_proton_ge_manager_callback: Callback to show Proton-GE manager
-        show_settings_callback: Callback to show settings dialog
-        close_app_callback: Callback to close the application
+        on_proton_ge_click: Callback to show Proton-GE manager
+        on_settings_click: Callback to show settings dialog
+        on_exit_click: Callback to close the application
 
     Returns:
         ft.Container: Custom app bar container
@@ -42,19 +41,19 @@ def create_custom_app_bar(page: ft.Page, show_proton_ge_manager_callback, show_s
                 ft.IconButton(
                     icon="cloud_download",
                     icon_color=ft.Colors.LIGHT_BLUE_300,
-                    on_click=lambda _: show_proton_ge_manager_callback(),
+                    on_click=lambda _: on_proton_ge_click(),
                     tooltip="Proton-GE Manager"
                 ),
                 ft.IconButton(
                     icon="settings",
                     icon_color=ft.Colors.WHITE,
-                    on_click=lambda _: show_settings_callback(),
+                    on_click=lambda _: on_settings_click(),
                     tooltip="Settings"
                 ),
                 ft.IconButton(
                     icon="close",
                     icon_color=ft.Colors.WHITE,
-                    on_click=lambda _: close_app_callback(),
+                    on_click=lambda _: on_exit_click(),
                     tooltip="Exit"
                 ),
             ],

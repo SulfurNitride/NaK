@@ -5,7 +5,7 @@ Allows user to choose which Steam installation to use when multiple are detected
 
 import flet as ft
 from src.utils.logger import get_logger
-from constants import UILimits
+from src.constants import UILimits
 
 logger = get_logger(__name__)
 

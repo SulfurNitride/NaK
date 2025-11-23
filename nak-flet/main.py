@@ -77,7 +77,7 @@ from dialogs.nxm_remove_dialog import show_nxm_remove_dialog
 from dialogs.save_symlinker_test_dialog import show_save_symlinker_test_dialog
 
 # Import constants
-from constants import WindowDefaults, DialogDelays, ScanningConfig, UILimits, FeatureFlags
+from src.constants import WindowDefaults, DialogDelays, ScanningConfig, UILimits, FeatureFlags
 
 # Setup logging with INFO level (shows important events, errors, warnings)
 # Users can change to DEBUG in Settings for detailed troubleshooting
@@ -864,14 +864,16 @@ class NaKApp:
 
     def close_app(self):
         """Close the application"""
-        # Hide window first to avoid showing loading spinner
-        self.page.window.visible = False
-        self.page.update()
+        logger.info("Application closing requested.")
+        # Hide window to provide immediate feedback
+        try:
+            self.page.window.visible = False
+            self.page.update()
+        except Exception:
+            pass
 
-        # Then force quit
-        import subprocess
-        import os
-        subprocess.Popen(['kill', '-9', str(os.getpid())])
+        # Clean exit
+        sys.exit(0)
 
     def test_save_symlinker(self):
         """Test save symlinker - delegated to dialogs/save_symlinker_test_dialog.py"""

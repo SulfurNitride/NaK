@@ -4,6 +4,7 @@ Main landing page with quick access cards
 """
 import flet as ft
 from src.utils.logger import get_logger
+from src.constants import FeatureFlags
 
 logger = get_logger(__name__)
 

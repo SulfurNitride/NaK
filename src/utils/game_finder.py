@@ -26,76 +26,17 @@ class GameInfo:
 
 
 class GameFinder:
-    """GameFinder using pythonnet + .NET GameFinder library"""
+    """GameFinder using pure Python implementation"""
 
     def __init__(self):
         self.logger = get_logger(__name__)
         self.detected_games: List[GameInfo] = []
-        self._initialize_gamefinder()
-
-    def _initialize_gamefinder(self):
-        """Initialize .NET GameFinder via pythonnet"""
-        try:
-            # Let pythonnet handle runtime detection automatically
-            import clr
-            import sys
-
-            # Look for GameFinder DLLs
-            gamefinder_dll_paths = [
-                # AppImage path
-                os.path.join(os.environ.get('APPDIR', ''), 'usr', 'lib', 'gamefinder'),
-                # Development path
-                os.path.join(os.getcwd(), 'lib', 'gamefinder', 'GameFinderDownloader', 'bin', 'Release', 'net9.0'),
-            ]
-
-            gamefinder_path = None
-            for path in gamefinder_dll_paths:
-                dll_path = os.path.join(path, 'GameFinder.StoreHandlers.Steam.dll')
-                if os.path.exists(dll_path):
-                    gamefinder_path = path
-                    break
-
-            if not gamefinder_path:
-                raise FileNotFoundError("GameFinder DLLs not found")
-
-            # Load GameFinder .NET assemblies
-            sys.path.append(gamefinder_path)
-            clr.AddReference(os.path.join(gamefinder_path, 'GameFinder.StoreHandlers.Steam.dll'))
-            clr.AddReference(os.path.join(gamefinder_path, 'GameFinder.StoreHandlers.GOG.dll'))
-
-            # Import .NET classes
-            from GameFinder.StoreHandlers.Steam import SteamHandler
-            from GameFinder.StoreHandlers.GOG import GOGHandler
-
-            self.steam_handler = SteamHandler()
-            self.gog_handler = GOGHandler()
-            self._dotnet_available = True
-
-            self.logger.info(f"[OK] GameFinder .NET library loaded via pythonnet from: {gamefinder_path}")
-
-        except Exception as e:
-            self.logger.debug(f".NET GameFinder not available: {e}")
-            self.logger.debug("Using pure Python game detection (works great!)")
-            self._dotnet_available = False
-            self.steam_handler = None
-            self.gog_handler = None
+        self.logger.debug("GameFinder initialized (Pure Python mode)")
 
     def find_all_games(self) -> List[GameInfo]:
-        """Find all games using .NET GameFinder when available, otherwise pure Python"""
+        """Find all games using pure Python detection"""
         self.detected_games.clear()
-
-        if self._dotnet_available:
-            self.logger.debug("Using .NET GameFinder for comprehensive detection...")
-            return self._find_games_dotnet()
-        else:
-            self.logger.debug("Using pure Python detection...")
-            return self._find_games_python()
-
-    def _find_games_dotnet(self) -> List[GameInfo]:
-        """Find games using .NET GameFinder library"""
-        # TODO: Implement .NET GameFinder calls
-        # For now, fall back to Python method
-        self.logger.info("Using comprehensive .NET GameFinder detection")
+        self.logger.debug("Using pure Python detection...")
         return self._find_games_python()
 
     def _find_games_python(self) -> List[GameInfo]:
@@ -109,11 +50,6 @@ class GameFinder:
         steam_games = self._find_steam_games()
         self.detected_games.extend(steam_games)
         self.logger.debug(f"Found {len(steam_games)} Steam games")
-
-        # Non-Steam games via VDF parsing (only true non-Steam games)
-        non_steam_games = self._find_non_steam_games(steam_games)
-        self.detected_games.extend(non_steam_games)
-        self.logger.debug(f"Found {len(non_steam_games)} non-Steam games via VDF parsing")
 
         self.logger.debug(f"Detected {len(self.detected_games)} games across all platforms")
         return self.detected_games
@@ -494,26 +430,57 @@ class GameFinder:
         return None
 
     def _get_steam_library_folders(self) -> List[Path]:
-        """Get all Steam library folders from libraryfolders.vdf (supports native and Flatpak Steam)"""
+        """Get all Steam library folders from libraryfolders.vdf"""
         library_folders = []
-
-        steam_paths = [
-            # Native Steam locations
-            Path.home() / ".steam" / "steam",
-            Path.home() / ".local" / "share" / "Steam",
-            # Flatpak Steam location
-            Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam",
+        home = Path.home()
+        
+        # Common Steam config paths
+        steam_config_paths = [
+            home / ".steam" / "steam" / "steamapps" / "libraryfolders.vdf",
+            home / ".local" / "share" / "Steam" / "steamapps" / "libraryfolders.vdf",
+            home / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam" / "steamapps" / "libraryfolders.vdf"
         ]
 
-        for steam_path in steam_paths:
-            # Add the main Steam path
-            steamapps = steam_path / "steamapps"
-            if steamapps.exists():
+        # Also check for main steamapps folders directly as fallback
+        main_steamapps_paths = [
+            home / ".steam" / "steam" / "steamapps",
+            home / ".local" / "share" / "Steam" / "steamapps",
+            home / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam" / "steamapps"
+        ]
+        
+        # First, try to find and parse libraryfolders.vdf
+        vdf_found = False
+        for vdf_path in steam_config_paths:
+            if vdf_path.exists():
+                try:
+                    self.logger.debug(f"Parsing library folders from: {vdf_path}")
+                    with open(vdf_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    
+                    # Simple VDF parsing to find "path" keys
+                    # Format is typically: "path" "/path/to/library"
+                    import re
+                    # Match "path" followed by whitespace and then a quoted string
+                    matches = re.finditer(r'"path"\s+"([^"]+)"', content)
+                    
+                    for match in matches:
+                        path_str = match.group(1)
+                        # Clean up path (sometimes has double backslashes on Windows/Wine, but usually standard on Linux)
+                        library_path = Path(path_str) / "steamapps"
+                        if library_path.exists():
+                            if library_path not in library_folders:
+                                library_folders.append(library_path)
+                                self.logger.debug(f"Found Steam library: {library_path}")
+                                vdf_found = True
+                                
+                except Exception as e:
+                    self.logger.warning(f"Failed to parse {vdf_path}: {e}")
+        
+        # Fallback: If no VDF parsed or to ensure main library is included
+        for steamapps in main_steamapps_paths:
+            if steamapps.exists() and steamapps not in library_folders:
                 library_folders.append(steamapps)
-                self.logger.debug(f"Found main Steam library: {steamapps}")
-
-            # Note: Steam library folder detection removed - only detects main Steam library
-            # Additional Steam libraries on other drives are no longer auto-detected
+                self.logger.debug(f"Found main Steam library (fallback): {steamapps}")
 
         return library_folders
 
@@ -582,43 +549,6 @@ class GameFinder:
                     self.logger.warning(f"Failed to parse {acf_file}: {e}")
 
             self.logger.debug(f"Found {acf_count} ACF file(s) in {steamapps}")
-
-        return games
-
-    def _find_non_steam_games(self, existing_steam_games: List[GameInfo]) -> List[GameInfo]:
-        """Find non-Steam games via VDF parsing (shows all non-Steam games, even if they share names with Steam games)"""
-        games = []
-
-        try:
-            # Import here to avoid circular imports
-            from src.utils.steam_utils import SteamUtils
-            steam_utils = SteamUtils()
-
-            # Get non-Steam games via VDF parsing
-            non_steam_games = steam_utils.get_non_steam_games()
-
-            for game_data in non_steam_games:
-                game_name = game_data.get('Name', 'Unknown Game')
-                app_id = game_data.get('AppID', '')
-
-                # Only filter out if it has a low AppID (likely a real Steam game misdetected as non-Steam)
-                if app_id.isdigit() and int(app_id) <= 2000000000:
-                    self.logger.debug(f"Skipping VDF game with low AppID (likely Steam): {game_name} (AppID: {app_id})")
-                    continue
-
-                game_info = GameInfo(
-                    name=game_name,
-                    path=game_data.get('Exe', ''),
-                    platform="Steam (Non-Steam)",
-                    app_id=app_id,
-                    install_dir="",  # Non-Steam games don't have install dirs
-                    exe_path=game_data.get('Exe', '')
-                )
-                games.append(game_info)
-                self.logger.debug(f"Found non-Steam game via VDF: {game_info.name} (AppID: {game_info.app_id})")
-
-        except Exception as e:
-            self.logger.warning(f"Failed to get non-Steam games via VDF: {e}")
 
         return games
 
