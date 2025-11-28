@@ -208,6 +208,7 @@ class ProtonFinder:
             Path.home() / ".steam" / "steam",
             Path.home() / ".local" / "share" / "Steam",
             Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam",  # Flatpak
+            Path("/") / "usr" / "share" / "steam", # proton-cachyos
         ]
 
         for steam_path in steam_paths:
