@@ -29,7 +29,7 @@ jobs:
             pkg-config
 
       - name: Setup Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build release
         run: cargo build --release
