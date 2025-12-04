@@ -245,10 +245,13 @@ impl DependencyManager {
             return Err(format!("Wine binary not found at {:?}", wine_bin).into());
         }
 
+        // Debug: show NaK path resolution
+        let nak_resolved = get_nak_real_path();
+        log_info(&format!("[SYMLINK DEBUG] NaK resolved to: {:?}", nak_resolved));
+        log_info(&format!("[SYMLINK DEBUG] Winetricks at: {:?}", winetricks_real));
+        log_info(&format!("[SYMLINK DEBUG] Wine at: {:?}", wine_bin));
+        log_info(&format!("[SYMLINK DEBUG] Prefix at: {:?}", prefix_real));
         status_callback(format!("Installing dependencies: {}", dependencies.join(", ")));
-        status_callback(format!("[DEBUG] Winetricks: {:?}", winetricks_real));
-        status_callback(format!("[DEBUG] Wine: {:?}", wine_bin));
-        status_callback(format!("[DEBUG] Prefix: {:?}", prefix_real));
 
         let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
