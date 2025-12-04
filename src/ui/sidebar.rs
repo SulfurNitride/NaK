@@ -55,7 +55,7 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
     }
 
     ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-        ui.label("v0.1.0-rust");
+        ui.label("v4.1.0-rust");
         ui.separator();
     });
 }
