@@ -148,10 +148,10 @@ impl ProtonFinder {
     }
 }
 
-/// Sets the 'active' symlink for the selected proton (single symlink at ~/NaK/active)
+/// Sets the 'active' symlink for the selected proton (at ~/NaK/ProtonGE/active)
 pub fn set_active_proton(proton: &ProtonInfo) -> Result<(), Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
-    let active_link = PathBuf::from(format!("{}/NaK/active", home));
+    let active_link = PathBuf::from(format!("{}/NaK/ProtonGE/active", home));
 
     // Remove existing symlink if present
     if active_link.exists() || fs::symlink_metadata(&active_link).is_ok() {
