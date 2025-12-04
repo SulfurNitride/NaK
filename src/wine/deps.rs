@@ -24,33 +24,18 @@ pub fn get_nak_real_path() -> PathBuf {
     let nak_base = PathBuf::from(format!("{}/NaK", home));
 
     // Try to read symlink directly first
-    match fs::read_link(&nak_base) {
-        Ok(target) => {
-            eprintln!("[NaK DEBUG] read_link success: {:?} -> {:?}", nak_base, target);
-            // If it's a relative symlink, resolve it relative to parent
-            if target.is_relative() {
-                if let Some(parent) = nak_base.parent() {
-                    return parent.join(&target);
-                }
+    if let Ok(target) = fs::read_link(&nak_base) {
+        // If it's a relative symlink, resolve it relative to parent
+        if target.is_relative() {
+            if let Some(parent) = nak_base.parent() {
+                return parent.join(&target);
             }
-            return target;
         }
-        Err(e) => {
-            eprintln!("[NaK DEBUG] read_link failed for {:?}: {}", nak_base, e);
-        }
+        return target;
     }
 
     // Fallback to canonicalize
-    match fs::canonicalize(&nak_base) {
-        Ok(real) => {
-            eprintln!("[NaK DEBUG] canonicalize success: {:?} -> {:?}", nak_base, real);
-            real
-        }
-        Err(e) => {
-            eprintln!("[NaK DEBUG] canonicalize failed for {:?}: {}", nak_base, e);
-            nak_base
-        }
-    }
+    fs::canonicalize(&nak_base).unwrap_or(nak_base)
 }
 
 /// Get the NaK bin directory path (~//NaK/bin)
@@ -245,12 +230,6 @@ impl DependencyManager {
             return Err(format!("Wine binary not found at {:?}", wine_bin).into());
         }
 
-        // Debug: show NaK path resolution
-        let nak_resolved = get_nak_real_path();
-        log_info(&format!("[SYMLINK DEBUG] NaK resolved to: {:?}", nak_resolved));
-        log_info(&format!("[SYMLINK DEBUG] Winetricks at: {:?}", winetricks_real));
-        log_info(&format!("[SYMLINK DEBUG] Wine at: {:?}", wine_bin));
-        log_info(&format!("[SYMLINK DEBUG] Prefix at: {:?}", prefix_real));
         status_callback(format!("Installing dependencies: {}", dependencies.join(", ")));
 
         let mut cmd = Command::new(&winetricks_real);
