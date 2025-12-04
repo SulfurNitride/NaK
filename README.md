@@ -24,7 +24,6 @@ Download the latest version from the [releases](https://github.com/SulfurNitride
 Requirements:
 - Steam... (Flatpak steam needs testing!)
 - A proton!
-- Fuse2 is a requirement for the AppImage to run.
 
 My YT: https://www.youtube.com/@sulfurnitride
 
