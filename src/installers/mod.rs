@@ -3,14 +3,15 @@
 mod mo2;
 mod vortex;
 
-pub use mo2::install_mo2;
-pub use vortex::install_vortex;
+pub use mo2::{install_mo2, setup_existing_mo2};
+pub use vortex::{install_vortex, setup_existing_vortex};
 
 use std::path::Path;
 use std::error::Error;
 use std::fs;
 
 use crate::wine::{ProtonInfo, GithubRelease};
+use crate::logging::{log_install, log_warning};
 
 // ============================================================================
 // Shared Wine Registry Settings
@@ -214,12 +215,40 @@ pub fn apply_wine_registry_settings(
 
     // Get wine binary path
     let wine_bin = proton.path.join("files/bin/wine");
+    let wineboot_bin = proton.path.join("files/bin/wineboot");
     if !wine_bin.exists() {
         log_callback(format!("Warning: Wine binary not found at {:?}", wine_bin));
         return Ok(());
     }
 
+    // Initialize prefix with wineboot first (required before regedit)
+    log_callback("Initializing Wine prefix...".to_string());
+    log_install("Initializing Wine prefix with wineboot...");
+
+    let wineboot_status = std::process::Command::new(&wineboot_bin)
+        .arg("-u")
+        .env("WINEPREFIX", prefix_path)
+        .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
+        .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d")
+        .status();
+
+    match wineboot_status {
+        Ok(s) if s.success() => {
+            log_callback("Prefix initialized successfully".to_string());
+        }
+        Ok(s) => {
+            log_callback(format!("Warning: wineboot exited with code {:?}", s.code()));
+        }
+        Err(e) => {
+            log_callback(format!("Warning: Failed to run wineboot: {}", e));
+        }
+    }
+
+    // Give Wine a moment to settle
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
     log_callback("Running wine regedit...".to_string());
+    log_install("Applying Wine registry settings...");
 
     // Run wine regedit
     let status = std::process::Command::new(&wine_bin)
@@ -232,12 +261,15 @@ pub fn apply_wine_registry_settings(
     match status {
         Ok(s) if s.success() => {
             log_callback("Registry settings applied successfully".to_string());
+            log_install("Wine registry settings applied successfully");
         }
         Ok(s) => {
             log_callback(format!("Warning: regedit exited with code {:?}", s.code()));
+            log_warning(&format!("regedit exited with code {:?}", s.code()));
         }
         Err(e) => {
             log_callback(format!("Warning: Failed to run regedit: {}", e));
+            log_warning(&format!("Failed to run regedit: {}", e));
         }
     }
 

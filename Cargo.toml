@@ -19,6 +19,7 @@ chrono = "0.4"  # For timestamps in logging
 flate2 = "1.0"
 tar = "0.4"
 rfd = "0.16"
+xz2 = "0.1"  # For CachyOS Proton .tar.xz extraction
 
 
 

@@ -6,9 +6,10 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 
 use crate::wine::{ProtonInfo, ProtonFinder, NakPrefix, PrefixManager, GithubRelease};
-use crate::wine::{fetch_ge_releases, ensure_winetricks, ensure_cabextract, check_command_available};
-use crate::config::AppConfig;
+use crate::wine::{fetch_ge_releases, fetch_cachyos_releases, ensure_winetricks, ensure_cabextract, check_command_available};
+use crate::config::{AppConfig, CacheConfig};
 use crate::nxm::NxmHandler;
+use crate::utils::detect_steam_path_checked;
 
 // ============================================================================
 // Types
@@ -70,6 +71,7 @@ pub struct MyApp {
 
     // Configuration (Persisted)
     pub config: AppConfig,
+    pub cache_config: CacheConfig,
 
     // Page State: Proton Tools
     pub proton_versions: Vec<ProtonInfo>,
@@ -79,6 +81,11 @@ pub struct MyApp {
     pub ge_search_query: String,
     pub is_fetching_ge: Arc<Mutex<bool>>,
 
+    // CachyOS Proton Downloader State
+    pub available_cachyos_versions: Arc<Mutex<Vec<GithubRelease>>>,
+    pub cachyos_search_query: String,
+    pub is_fetching_cachyos: Arc<Mutex<bool>>,
+
     pub is_downloading: Arc<Mutex<bool>>,
     pub download_status: Arc<Mutex<String>>,
     pub download_progress: Arc<Mutex<f32>>,
@@ -86,6 +93,13 @@ pub struct MyApp {
     // Flags
     pub should_refresh_proton: bool,
     pub missing_deps: Arc<Mutex<Vec<String>>>,
+
+    // Steam Detection
+    pub steam_detected: bool,
+    pub steam_path: Option<String>,
+
+    // Settings page state
+    pub migration_path_input: String,
 }
 
 impl Default for MyApp {
@@ -102,6 +116,11 @@ impl Default for MyApp {
 
         // Load Configuration
         let config = AppConfig::load();
+        let cache_config = CacheConfig::load();
+
+        // Detect Steam at startup (with logging)
+        let steam_path = detect_steam_path_checked();
+        let steam_detected = steam_path.is_some();
 
         // Check Dependencies (uses check_command_available which also checks ~/NaK/bin)
         // Note: cabextract will be auto-downloaded if missing, so we check it later
@@ -113,7 +132,7 @@ impl Default for MyApp {
         let missing_deps_arc = Arc::new(Mutex::new(missing));
 
         let app = Self {
-            current_page: Page::ModManagers,
+            current_page: Page::GettingStarted,
             installed_instances: Vec::new(),
             show_prefix_manager: true,
             show_mo2_manager: true,
@@ -137,6 +156,7 @@ impl Default for MyApp {
             winetricks_path: winetricks_path_arc.clone(),
 
             config,
+            cache_config,
 
             proton_versions: protons,
 
@@ -144,12 +164,21 @@ impl Default for MyApp {
             ge_search_query: String::new(),
             is_fetching_ge: Arc::new(Mutex::new(true)),
 
+            available_cachyos_versions: Arc::new(Mutex::new(Vec::new())),
+            cachyos_search_query: String::new(),
+            is_fetching_cachyos: Arc::new(Mutex::new(true)),
+
             is_downloading: Arc::new(Mutex::new(false)),
             download_status: Arc::new(Mutex::new(String::new())),
             download_progress: Arc::new(Mutex::new(0.0)),
 
             should_refresh_proton: false,
             missing_deps: missing_deps_arc.clone(),
+
+            steam_detected,
+            steam_path,
+
+            migration_path_input: String::new(),
         };
 
         // Auto-fetch on startup (GE Proton)
@@ -166,6 +195,22 @@ impl Default for MyApp {
                 }
             }
             *is_fetching.lock().unwrap() = false;
+        });
+
+        // Auto-fetch on startup (CachyOS Proton)
+        let is_fetching_cachyos = app.is_fetching_cachyos.clone();
+        let cachyos_versions = app.available_cachyos_versions.clone();
+
+        thread::spawn(move || {
+            match fetch_cachyos_releases() {
+                Ok(releases) => {
+                    *cachyos_versions.lock().unwrap() = releases;
+                }
+                Err(e) => {
+                    eprintln!("Failed to fetch CachyOS releases: {}", e);
+                }
+            }
+            *is_fetching_cachyos.lock().unwrap() = false;
         });
 
         // Ensure Winetricks and cabextract are downloaded

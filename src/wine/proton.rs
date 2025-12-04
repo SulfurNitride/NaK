@@ -23,6 +23,7 @@ pub struct ProtonInfo {
 pub struct ProtonFinder {
     pub steam_root: PathBuf,
     pub nak_proton_ge_root: PathBuf,
+    pub nak_proton_cachyos_root: PathBuf,
 }
 
 impl ProtonFinder {
@@ -31,6 +32,7 @@ impl ProtonFinder {
         Self {
             steam_root: PathBuf::from(format!("{}/.steam/steam", home)),
             nak_proton_ge_root: PathBuf::from(format!("{}/NaK/ProtonGE", home)),
+            nak_proton_cachyos_root: PathBuf::from(format!("{}/NaK/ProtonCachyOS", home)),
         }
     }
 
@@ -42,6 +44,9 @@ impl ProtonFinder {
 
         // 2. Find NaK Proton-GE Versions
         protons.extend(self.find_ge_protons());
+
+        // 3. Find NaK Proton-CachyOS Versions
+        protons.extend(self.find_cachyos_protons());
 
         protons
     }
@@ -104,6 +109,33 @@ impl ProtonFinder {
         }
         found
     }
+
+    fn find_cachyos_protons(&self) -> Vec<ProtonInfo> {
+        let mut found = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(&self.nak_proton_cachyos_root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() { continue; }
+
+                let name = entry.file_name().to_string_lossy().to_string();
+
+                // Skip the 'active' symlink
+                if name == "active" { continue; }
+
+                // Must look like "proton-cachyos..."
+                if name.starts_with("proton-cachyos") {
+                     found.push(ProtonInfo {
+                        name: name.clone(),
+                        path,
+                        version: name.clone(),
+                        is_experimental: false,
+                    });
+                }
+            }
+        }
+        found
+    }
 }
 
 impl ProtonInfo {
@@ -122,20 +154,36 @@ impl ProtonInfo {
     }
 
     pub fn supports_dotnet48(&self) -> bool {
-        // GE-Proton 10-18+ supports dotnet48 natively
-        if !self.name.starts_with("GE-Proton") {
-            return false;
+        // Most modern Proton versions support dotnet48 via winetricks
+        // GE-Proton 8+ and Valve Proton 7+ should work fine
+
+        if self.name.starts_with("GE-Proton") {
+            let (major, _) = self.parse_version();
+            return major >= 8;
         }
 
-        let (major, minor) = self.parse_version();
+        // Valve Proton versions (e.g., "Proton 9.0 (Beta)", "Proton - Experimental")
+        if self.name.starts_with("Proton") {
+            // Experimental always supports it
+            if self.is_experimental || self.name.contains("Experimental") {
+                return true;
+            }
 
-        if major > 10 {
-            true
-        } else if major == 10 && minor >= 18 {
-            true
-        } else {
-            false
+            // Parse version like "Proton 9.0 (Beta)" or "Proton 8.0"
+            let version_str = self.name
+                .replace("Proton ", "")
+                .replace(" (Beta)", "")
+                .replace("-", ".");
+
+            if let Some(major_str) = version_str.split('.').next() {
+                if let Ok(major) = major_str.parse::<u32>() {
+                    return major >= 7;
+                }
+            }
         }
+
+        // Default to true - let winetricks try anyway
+        true
     }
 }
 
@@ -231,6 +279,88 @@ where F: Fn(u64, u64) + Send + 'static
 pub fn delete_ge_proton(version_name: &str) -> Result<(), Box<dyn Error>> {
     let home = std::env::var("HOME")?;
     let install_path = PathBuf::from(format!("{}/NaK/ProtonGE/{}", home, version_name));
+
+    if install_path.exists() {
+        fs::remove_dir_all(install_path)?;
+    }
+    Ok(())
+}
+
+// ============================================================================
+// CachyOS Proton Download/Delete
+// ============================================================================
+
+/// Fetches the latest releases from CachyOS Proton GitHub
+pub fn fetch_cachyos_releases() -> Result<Vec<GithubRelease>, Box<dyn Error>> {
+    let releases: Vec<GithubRelease> = ureq::get("https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=50")
+        .set("User-Agent", "NaK-Rust-Agent")
+        .call()?
+        .into_json()?;
+    Ok(releases)
+}
+
+/// Downloads and extracts a CachyOS Proton release with progress tracking
+/// Note: CachyOS uses .tar.xz format
+pub fn download_cachyos_proton<F>(asset_url: String, file_name: String, progress_callback: F) -> Result<(), Box<dyn Error>>
+where F: Fn(u64, u64) + Send + 'static
+{
+    use xz2::read::XzDecoder;
+
+    let home = std::env::var("HOME")?;
+    let install_root = PathBuf::from(format!("{}/NaK/ProtonCachyOS", home));
+    let temp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+
+    fs::create_dir_all(&install_root)?;
+    fs::create_dir_all(&temp_dir)?;
+
+    let temp_file_path = temp_dir.join(&file_name);
+
+    // 1. Download
+    let response = ureq::get(&asset_url)
+        .set("User-Agent", "NaK-Rust-Agent")
+        .call()?;
+
+    let total_size = response.header("Content-Length")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let mut file = fs::File::create(&temp_file_path)?;
+
+    let mut buffer = [0; 8192];
+    let mut downloaded: u64 = 0;
+    let mut reader = response.into_reader();
+
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..bytes_read])?;
+        downloaded += bytes_read as u64;
+
+        if total_size > 0 {
+            progress_callback(downloaded, total_size);
+        }
+    }
+
+    // 2. Extract (.tar.xz)
+    let tar_xz = fs::File::open(&temp_file_path)?;
+    let tar = XzDecoder::new(tar_xz);
+    let mut archive = Archive::new(tar);
+
+    // Extract to ~/NaK/ProtonCachyOS/
+    archive.unpack(&install_root)?;
+
+    // 3. Cleanup
+    fs::remove_file(temp_file_path)?;
+
+    Ok(())
+}
+
+/// Deletes a CachyOS Proton version
+pub fn delete_cachyos_proton(version_name: &str) -> Result<(), Box<dyn Error>> {
+    let home = std::env::var("HOME")?;
+    let install_path = PathBuf::from(format!("{}/NaK/ProtonCachyOS/{}", home, version_name));
 
     if install_path.exists() {
         fs::remove_dir_all(install_path)?;

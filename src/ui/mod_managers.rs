@@ -5,7 +5,7 @@ use std::thread;
 use std::sync::atomic::Ordering;
 
 use crate::app::{MyApp, ModManagerInstance};
-use crate::installers::{install_mo2, install_vortex};
+use crate::installers::{install_mo2, install_vortex, setup_existing_mo2, setup_existing_vortex};
 use crate::nxm::NxmHandler;
 use crate::logging::log_action;
 
@@ -144,9 +144,12 @@ pub fn render_mod_managers(app: &mut MyApp, ui: &mut egui::Ui) {
             });
 
             if let Some(name) = prefix_to_delete {
+                log_action(&format!("Delete prefix clicked: {}", name));
                 if let Err(e) = app.prefix_manager.delete_prefix(&name) {
+                    crate::logging::log_error(&format!("Failed to delete prefix '{}': {}", name, e));
                     eprintln!("Failed to delete prefix: {}", e);
                 } else {
+                    crate::logging::log_info(&format!("Prefix '{}' deleted successfully", name));
                     app.detected_prefixes = app.prefix_manager.scan_prefixes();
                 }
             }
@@ -268,7 +271,64 @@ fn render_mo2_section(app: &mut MyApp, ui: &mut egui::Ui) {
                     }
                 }
 
-                if ui.add_enabled(!is_busy, egui::Button::new("📂 Setup Existing MO2")).clicked() { }
+                if ui.add_enabled(!is_busy, egui::Button::new("📂 Setup Existing MO2")).clicked() {
+                    // Pick existing MO2 folder
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        // Check if ModOrganizer.exe exists
+                        if path.join("ModOrganizer.exe").exists() {
+                            log_action(&format!("Setup Existing MO2 clicked - Path: {}", path.display()));
+
+                            let status_arc = app.install_status.clone();
+                            let busy_arc = app.is_installing_manager.clone();
+                            let logs_arc = app.logs.clone();
+                            let progress_arc = app.install_progress.clone();
+                            let cancel_arc = app.cancel_install.clone();
+                            let wt_path = app.winetricks_path.lock().unwrap().clone().unwrap();
+
+                            let selected_name = app.config.selected_proton.as_ref().unwrap().clone();
+                            let proton = app.proton_versions.iter().find(|p| p.name == selected_name).cloned();
+
+                            // Use folder name as instance name
+                            let instance_name = path.file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "MO2".to_string());
+
+                            if let Some(proton_info) = proton {
+                                *busy_arc.lock().unwrap() = true;
+                                *status_arc.lock().unwrap() = "Setting up existing MO2...".to_string();
+                                *progress_arc.lock().unwrap() = 0.0;
+                                cancel_arc.store(false, Ordering::Relaxed);
+
+                                thread::spawn(move || {
+                                    let cb_status = status_arc.clone();
+                                    let cb_logs = logs_arc.clone();
+                                    let cb_prog = progress_arc.clone();
+
+                                    let status_callback = move |msg: String| {
+                                        *cb_status.lock().unwrap() = msg;
+                                    };
+
+                                    let log_callback = move |msg: String| {
+                                        cb_logs.lock().unwrap().push(msg);
+                                    };
+
+                                    let prog_callback = move |p: f32| {
+                                        *cb_prog.lock().unwrap() = p;
+                                    };
+
+                                    if let Err(e) = setup_existing_mo2(&instance_name, path, &proton_info, wt_path, status_callback, log_callback, prog_callback, cancel_arc) {
+                                        *status_arc.lock().unwrap() = format!("Error: {}", e);
+                                    }
+                                    *busy_arc.lock().unwrap() = false;
+                                });
+                            } else {
+                                *status_arc.lock().unwrap() = "Selected Proton version not found!".to_string();
+                            }
+                        } else {
+                            *app.install_status.lock().unwrap() = "ModOrganizer.exe not found in selected folder".to_string();
+                        }
+                    }
+                }
             });
             ui.add_space(10.0);
 
@@ -373,7 +433,72 @@ fn render_vortex_section(app: &mut MyApp, ui: &mut egui::Ui) {
                     }
                 }
 
-                if ui.button("📂 Setup Existing Vortex").clicked() { }
+                if ui.button("📂 Setup Existing Vortex").clicked() {
+                    // Pick existing Vortex folder
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        // Check if Vortex.exe exists (directly or in subdir)
+                        let has_vortex = path.join("Vortex.exe").exists() || path.join("Vortex").join("Vortex.exe").exists();
+                        if has_vortex {
+                            log_action(&format!("Setup Existing Vortex clicked - Path: {}", path.display()));
+
+                            let status_arc = app.install_status.clone();
+                            let busy_arc = app.is_installing_manager.clone();
+                            let logs_arc = app.logs.clone();
+                            let progress_arc = app.install_progress.clone();
+                            let cancel_arc = app.cancel_install.clone();
+                            let wt_path = app.winetricks_path.lock().unwrap().clone().unwrap();
+
+                            let selected_name = app.config.selected_proton.as_ref().unwrap().clone();
+                            let proton = app.proton_versions.iter().find(|p| p.name == selected_name).cloned();
+
+                            // Use folder name as instance name
+                            let instance_name = path.file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "Vortex".to_string());
+
+                            if let Some(proton_info) = proton {
+                                *busy_arc.lock().unwrap() = true;
+                                *status_arc.lock().unwrap() = "Setting up existing Vortex...".to_string();
+                                *progress_arc.lock().unwrap() = 0.0;
+                                cancel_arc.store(false, Ordering::Relaxed);
+
+                                thread::spawn(move || {
+                                    let cb_status = status_arc.clone();
+                                    let cb_logs = logs_arc.clone();
+                                    let cb_prog = progress_arc.clone();
+
+                                    struct BusyGuard(std::sync::Arc<std::sync::Mutex<bool>>);
+                                    impl Drop for BusyGuard {
+                                        fn drop(&mut self) {
+                                            *self.0.lock().unwrap() = false;
+                                        }
+                                    }
+                                    let _guard = BusyGuard(busy_arc.clone());
+
+                                    let status_callback = move |msg: String| {
+                                        *cb_status.lock().unwrap() = msg;
+                                    };
+
+                                    let log_callback = move |msg: String| {
+                                        cb_logs.lock().unwrap().push(msg);
+                                    };
+
+                                    let prog_callback = move |p: f32| {
+                                        *cb_prog.lock().unwrap() = p;
+                                    };
+
+                                    if let Err(e) = setup_existing_vortex(&instance_name, path, &proton_info, wt_path, status_callback, log_callback, prog_callback, cancel_arc) {
+                                        *status_arc.lock().unwrap() = format!("Error: {}", e);
+                                    }
+                                });
+                            } else {
+                                *status_arc.lock().unwrap() = "Selected Proton version not found!".to_string();
+                            }
+                        } else {
+                            *app.install_status.lock().unwrap() = "Vortex.exe not found in selected folder".to_string();
+                        }
+                    }
+                }
             });
             ui.add_space(10.0);
 

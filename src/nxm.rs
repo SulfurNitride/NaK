@@ -11,7 +11,26 @@ impl NxmHandler {
         let home = std::env::var("HOME")?;
         let nak_dir = PathBuf::from(format!("{}/NaK", home));
         let script_path = nak_dir.join("nxm_handler.sh");
-        let desktop_path = PathBuf::from(format!("{}/.local/share/applications/nak-nxm-handler.desktop", home));
+        let applications_dir = PathBuf::from(format!("{}/.local/share/applications", home));
+        let desktop_path = applications_dir.join("nak-nxm-handler.desktop");
+
+        // Ensure directories exist
+        fs::create_dir_all(&nak_dir)?;
+        fs::create_dir_all(&applications_dir)?;
+
+        // Clean up old NXM handler variations
+        let old_handlers = [
+            "nxm-handler.desktop",
+            "nak_nxm_handler.desktop",
+            "NaK-nxm-handler.desktop",
+            "nak-nxm.desktop",
+        ];
+        for old in &old_handlers {
+            let old_path = applications_dir.join(old);
+            if old_path.exists() {
+                let _ = fs::remove_file(&old_path);
+            }
+        }
 
         // 1. Create the Handler Script
         // This script finds the 'active_nxm_game' symlink and passes the argument to it.

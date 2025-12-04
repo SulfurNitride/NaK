@@ -4,7 +4,39 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+use crate::logging::{log_info, log_warning};
+
 /// Detect the Steam installation path
+/// Checks common locations for both native and Flatpak Steam installs
+/// Returns None if Steam is not found
+pub fn detect_steam_path_checked() -> Option<String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+
+    // Check native Steam locations in order of preference
+    let native_paths = [
+        format!("{}/.steam/steam", home),
+        format!("{}/.local/share/Steam", home),
+    ];
+
+    for path in &native_paths {
+        if Path::new(path).exists() {
+            log_info(&format!("Steam detected at: {}", path));
+            return Some(path.clone());
+        }
+    }
+
+    // Check Flatpak Steam location
+    let flatpak_path = format!("{}/.var/app/com.valvesoftware.Steam/.steam/steam", home);
+    if Path::new(&flatpak_path).exists() {
+        log_info(&format!("Steam detected (Flatpak) at: {}", flatpak_path));
+        return Some(flatpak_path);
+    }
+
+    log_warning("Steam installation not detected! NaK requires Steam to be installed.");
+    None
+}
+
+/// Detect the Steam installation path (legacy, always returns a path)
 /// Checks common locations for both native and Flatpak Steam installs
 pub fn detect_steam_path() -> String {
     let home = std::env::var("HOME").unwrap_or_default();
