@@ -66,6 +66,7 @@ pub fn install_vortex(
         for a in &release.assets {
             log_callback(format!(" - {}", a.name));
         }
+        log_error("No valid Vortex installer found (expected Vortex-setup-*.exe)");
         return Err("No valid Vortex installer found (expected Vortex-setup-*.exe)".into());
     }
     let asset = asset.unwrap();
@@ -116,12 +117,14 @@ pub fn install_vortex(
         None => {
             // Timeout - kill the process
             let _ = child.kill();
+            log_error("Vortex installer timed out after 5 minutes");
             return Err("Vortex installer timed out after 5 minutes".into());
         }
     };
 
     if !status.success() {
         log_callback(format!("Installer exit code: {:?}", status.code()));
+        log_error(&format!("Vortex installer failed with exit code: {:?}", status.code()));
         return Err("Vortex installer failed".into());
     }
 
@@ -219,6 +222,7 @@ pub fn install_vortex(
         if sub.exists() {
             vortex_exe = sub;
         } else {
+            log_error("Vortex.exe not found after installation");
             return Err("Vortex.exe not found after installation".into());
         }
     }

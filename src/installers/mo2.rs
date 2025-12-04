@@ -183,6 +183,7 @@ pub fn install_mo2(
 
     let mo2_exe = install_dir.join("ModOrganizer.exe");
     if !mo2_exe.exists() {
+        log_error("ModOrganizer.exe not found after extraction");
         return Err("ModOrganizer.exe not found after extraction".into());
     }
 

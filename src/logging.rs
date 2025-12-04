@@ -5,12 +5,11 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{Write, BufRead, BufReader};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::process::Command;
 use chrono::Local;
 
-static INIT: Once = Once::new();
-static mut LOGGER: Option<Arc<Mutex<NakLogger>>> = None;
+static LOGGER: OnceLock<Arc<Mutex<NakLogger>>> = OnceLock::new();
 
 // ============================================================================
 // System Information Detection
@@ -233,8 +232,6 @@ impl LogLevel {
 
 pub struct NakLogger {
     log_file: Option<File>,
-    log_path: PathBuf,
-    entries: Vec<String>,
 }
 
 impl NakLogger {
@@ -253,11 +250,7 @@ impl NakLogger {
             .open(&log_path)
             .ok();
 
-        let mut logger = Self {
-            log_file,
-            log_path,
-            entries: Vec::new(),
-        };
+        let mut logger = Self { log_file };
 
         // Write system info header
         let sys_info = SystemInfo::detect();
@@ -276,23 +269,12 @@ impl NakLogger {
 
         // Also print to console
         println!("{}", msg);
-
-        // Store in memory for UI display
-        self.entries.push(msg.to_string());
     }
 
     pub fn log(&mut self, level: LogLevel, message: &str) {
         let timestamp = Local::now().format("%H:%M:%S");
         let formatted = format!("[{}] {} {}", timestamp, level.prefix(), message);
         self.write_raw(&formatted);
-    }
-
-    pub fn get_entries(&self) -> Vec<String> {
-        self.entries.clone()
-    }
-
-    pub fn get_log_path(&self) -> &PathBuf {
-        &self.log_path
     }
 }
 
@@ -302,18 +284,12 @@ impl NakLogger {
 
 /// Initialize the global logger (call once at startup)
 pub fn init_logger() {
-    unsafe {
-        INIT.call_once(|| {
-            LOGGER = Some(Arc::new(Mutex::new(NakLogger::new())));
-        });
-    }
+    LOGGER.get_or_init(|| Arc::new(Mutex::new(NakLogger::new())));
 }
 
 /// Get the global logger instance
-pub fn logger() -> Arc<Mutex<NakLogger>> {
-    unsafe {
-        LOGGER.clone().expect("Logger not initialized! Call init_logger() first.")
-    }
+fn logger() -> Arc<Mutex<NakLogger>> {
+    LOGGER.get_or_init(|| Arc::new(Mutex::new(NakLogger::new()))).clone()
 }
 
 // ============================================================================
@@ -353,23 +329,5 @@ pub fn log_warning(message: &str) {
 pub fn log_error(message: &str) {
     if let Ok(mut log) = logger().lock() {
         log.log(LogLevel::Error, message);
-    }
-}
-
-/// Get all log entries for UI display
-pub fn get_log_entries() -> Vec<String> {
-    if let Ok(log) = logger().lock() {
-        log.get_entries()
-    } else {
-        Vec::new()
-    }
-}
-
-/// Get the current log file path
-pub fn get_log_path() -> Option<PathBuf> {
-    if let Ok(log) = logger().lock() {
-        Some(log.get_log_path().clone())
-    } else {
-        None
     }
 }

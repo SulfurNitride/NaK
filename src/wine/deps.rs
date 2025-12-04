@@ -12,6 +12,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use super::ProtonInfo;
+use crate::logging::{log_info, log_warning, log_error};
 
 // ============================================================================
 // NaK Bin Directory (for bundled tools like cabextract)
@@ -59,7 +60,7 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
     }
 
     // Download cabextract zip
-    println!("System cabextract not found, downloading...");
+    log_warning("System cabextract not found, downloading...");
     fs::create_dir_all(&bin_dir)?;
 
     let response = ureq::get(CABEXTRACT_URL)
@@ -99,9 +100,10 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
         let mut perms = fs::metadata(&cabextract_path)?.permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&cabextract_path, perms)?;
-        println!("cabextract downloaded to {:?}", cabextract_path);
+        log_info(&format!("cabextract downloaded to {:?}", cabextract_path));
         Ok(cabextract_path)
     } else {
+        log_error("Failed to extract cabextract from zip");
         Err("Failed to extract cabextract from zip".into())
     }
 }
