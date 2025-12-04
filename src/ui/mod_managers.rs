@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 use crate::app::{MyApp, ModManagerInstance};
 use crate::installers::{install_mo2, install_vortex};
 use crate::nxm::NxmHandler;
+use crate::logging::log_action;
 
 pub fn render_mod_managers(app: &mut MyApp, ui: &mut egui::Ui) {
     ui.heading("Mod Managers & Prefixes");
@@ -220,6 +221,7 @@ fn render_mo2_section(app: &mut MyApp, ui: &mut egui::Ui) {
                 if ui.add_enabled(can_install, egui::Button::new("⬇ Install New MO2"))
                     .on_disabled_hover_text(if !name_valid { "Enter an instance name" } else if !path_valid { "Select an install path" } else if !proton_selected { "Select a Proton version" } else { "Waiting for dependencies..." })
                     .clicked() {
+                    log_action(&format!("Install MO2 clicked - Name: {}, Path: {}", app.install_name_input, app.install_path_input));
                     // Setup Variables
                     let status_arc = app.install_status.clone();
                     let busy_arc = app.is_installing_manager.clone();
@@ -316,6 +318,7 @@ fn render_vortex_section(app: &mut MyApp, ui: &mut egui::Ui) {
                 if ui.add_enabled(can_install, egui::Button::new("⬇ Install New Vortex"))
                     .on_disabled_hover_text(if !name_valid { "Enter an instance name" } else if !path_valid { "Select an install path" } else if !proton_selected { "Select a Proton version" } else { "Waiting for dependencies..." })
                     .clicked() {
+                    log_action(&format!("Install Vortex clicked - Name: {}, Path: {}", app.vortex_install_name, app.vortex_install_path));
                     // Setup Variables
                     let status_arc = app.install_status.clone();
                     let busy_arc = app.is_installing_manager.clone();

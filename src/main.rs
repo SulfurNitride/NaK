@@ -12,11 +12,15 @@ mod scripts;
 mod nxm;
 mod app;
 mod ui;
+mod logging;
 
 use app::MyApp;
+use logging::{init_logger, log_info};
 
 fn main() -> eframe::Result<()> {
-    env_logger::init();
+    // Initialize NaK logging system (writes to ~/NaK/logs/)
+    init_logger();
+    log_info("NaK starting up...");
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

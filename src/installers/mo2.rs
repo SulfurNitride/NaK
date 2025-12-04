@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::wine::{ProtonInfo, DependencyManager, PrefixManager};
 use crate::utils::{detect_steam_path, download_file};
 use crate::scripts::ScriptGenerator;
+use crate::logging::{log_install, log_download, log_error};
 use super::{fetch_latest_mo2_release, apply_wine_registry_settings, STANDARD_DEPS, DOTNET9_SDK_URL};
 
 pub fn install_mo2(
@@ -31,6 +32,9 @@ pub fn install_mo2(
     let prefix_root = PathBuf::from(format!("{}/NaK/Prefixes/{}/pfx", home, unique_name));
     let install_dir = target_install_path;
 
+    log_install(&format!("Starting MO2 installation: {} -> {:?}", install_name, install_dir));
+    log_install(&format!("Using Proton: {}", proton.name));
+
     if cancel_flag.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
 
     // 1. Create Directories
@@ -38,6 +42,7 @@ pub fn install_mo2(
     progress_callback(0.05);
     fs::create_dir_all(&prefix_root)?;
     fs::create_dir_all(&install_dir)?;
+    log_install(&format!("Created prefix at: {:?}", prefix_root));
 
     if cancel_flag.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
 
@@ -56,8 +61,10 @@ pub fn install_mo2(
 
     status_callback(format!("Downloading {}...", asset.name));
     progress_callback(0.10);
+    log_download(&format!("Downloading MO2: {}", asset.name));
     let archive_path = PathBuf::from(format!("{}/NaK/tmp/{}", home, asset.name));
     download_file(&asset.browser_download_url, &archive_path)?;
+    log_download(&format!("MO2 downloaded to: {:?}", archive_path));
 
     if cancel_flag.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
 
@@ -226,5 +233,6 @@ pub fn install_mo2(
 
     progress_callback(1.0);
     status_callback("MO2 Installed Successfully!".to_string());
+    log_install(&format!("MO2 installation complete: {}", install_name));
     Ok(())
 }
