@@ -1,0 +1,283 @@
+//! Mod manager installation logic
+
+mod mo2;
+mod vortex;
+
+pub use mo2::install_mo2;
+pub use vortex::install_vortex;
+
+use std::path::Path;
+use std::error::Error;
+use std::fs;
+
+use crate::wine::{ProtonInfo, GithubRelease};
+
+// ============================================================================
+// Shared Wine Registry Settings
+// ============================================================================
+
+/// Wine registry settings from src/utils/wine_settings.reg (exact match)
+pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dwrite.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dwrite"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"winmm.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"winmm"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"version.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"version"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"ArchiveXL.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"ArchiveXL"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"Codeware.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"Codeware"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"TweakXL.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"TweakXL"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"input_loader.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"input_loader"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"RED4ext.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"RED4ext"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"mod_settings.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"mod_settings"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"scc_lib.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"scc_lib"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dxgi.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dxgi"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dbghelp.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dbghelp"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"d3d12.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"d3d12"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"wininet.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"wininet"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"winhttp.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"winhttp"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dinput.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dinput8"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"dinput8.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"mscoree"="native"
+
+[HKEY_CURRENT_USER\Software\Wine]
+"ShowDotFiles"="Y"
+
+[HKEY_CURRENT_USER\Control Panel\Desktop]
+"FontSmoothing"="2"
+"FontSmoothingGamma"=dword:00000578
+"FontSmoothingOrientation"=dword:00000001
+"FontSmoothingType"=dword:00000002
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\Pandora Behaviour Engine+.exe\X11 Driver]
+"Decorated"="N"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\Vortex.exe\X11 Driver]
+"Decorated"="N"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\SSEEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\SSEEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\FO4Edit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\FO4Edit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\TES4Edit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\TES4Edit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\xEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\SF1Edit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\FNVEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\FNVEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\xFOEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\xFOEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\xSFEEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\xSFEEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\xTESEdit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\xTESEdit64.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\FO3Edit.exe]
+"Version"="winxp"
+
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\FO3Edit64.exe]
+"Version"="winxp"
+"#;
+
+// ============================================================================
+// Shared Functions
+// ============================================================================
+
+/// Apply Wine registry settings to a prefix
+pub fn apply_wine_registry_settings(
+    prefix_path: &Path,
+    proton: &ProtonInfo,
+    log_callback: &impl Fn(String)
+) -> Result<(), Box<dyn Error>> {
+    use std::io::Write;
+
+    // Create temp file for registry
+    let home = std::env::var("HOME")?;
+    let tmp_dir = std::path::PathBuf::from(format!("{}/NaK/tmp", home));
+    fs::create_dir_all(&tmp_dir)?;
+    let reg_file = tmp_dir.join("wine_settings.reg");
+
+    let mut file = fs::File::create(&reg_file)?;
+    file.write_all(WINE_SETTINGS_REG.as_bytes())?;
+
+    // Get wine binary path
+    let wine_bin = proton.path.join("files/bin/wine");
+    if !wine_bin.exists() {
+        log_callback(format!("Warning: Wine binary not found at {:?}", wine_bin));
+        return Ok(());
+    }
+
+    log_callback("Running wine regedit...".to_string());
+
+    // Run wine regedit
+    let status = std::process::Command::new(&wine_bin)
+        .arg("regedit")
+        .arg(&reg_file)
+        .env("WINEPREFIX", prefix_path)
+        .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            log_callback("Registry settings applied successfully".to_string());
+        }
+        Ok(s) => {
+            log_callback(format!("Warning: regedit exited with code {:?}", s.code()));
+        }
+        Err(e) => {
+            log_callback(format!("Warning: Failed to run regedit: {}", e));
+        }
+    }
+
+    // Cleanup temp file
+    let _ = fs::remove_file(&reg_file);
+
+    Ok(())
+}
+
+/// Fetch the latest MO2 release from GitHub
+pub fn fetch_latest_mo2_release() -> Result<GithubRelease, Box<dyn Error>> {
+    let url = "https://api.github.com/repos/ModOrganizer2/modorganizer/releases/latest";
+    let res = ureq::get(url).set("User-Agent", "NaK-Rust").call()?.into_json()?;
+    Ok(res)
+}
+
+/// Fetch the latest Vortex release from GitHub
+pub fn fetch_latest_vortex_release() -> Result<GithubRelease, Box<dyn Error>> {
+    let url = "https://api.github.com/repos/Nexus-Mods/Vortex/releases/latest";
+    let res = ureq::get(url).set("User-Agent", "NaK-Rust").call()?.into_json()?;
+    Ok(res)
+}
+
+/// Standard dependencies for mod managers
+pub const STANDARD_DEPS: &[&str] = &[
+    "xact",
+    "xact_x64",
+    "vcrun2022",
+    "dotnet6",
+    "dotnet7",
+    "dotnet8",
+    "dotnet9",
+    "dotnetdesktop6",
+    "d3dcompiler_47",
+    "d3dx11_43",
+    "d3dcompiler_43",
+    "d3dx9_43",
+    "d3dx9",
+    "vkd3d",
+];
+
+/// .NET 9 SDK URL
+pub const DOTNET9_SDK_URL: &str = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.203/dotnet-sdk-9.0.203-win-x64.exe";

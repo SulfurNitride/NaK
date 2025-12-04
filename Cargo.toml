@@ -1,0 +1,34 @@
+[package]
+name = "nak_rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.29.1" # Wrapper for egui
+egui = "0.29.1"
+egui_extras = { version = "0.29.1", features = ["image"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+walkdir = "2"
+env_logger = "0.11"
+log = "0.4"
+ureq = { version = "2.10", features = ["json"] } # Tiny HTTP client (removes tokio)
+wait-timeout = "0.2"  # For process timeout support
+flate2 = "1.0"
+tar = "0.4"
+rfd = "0.16"
+
+
+
+[profile.release]
+
+opt-level = "z"     # Optimize for size
+
+lto = true          # Enable Link Time Optimization (removes unused code)
+
+codegen-units = 1   # Slower compile, smaller binary
+
+panic = "abort"     # Remove panic unwinding logic
+
+strip = true        # Automatically strip symbols

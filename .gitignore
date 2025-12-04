@@ -1,0 +1,21 @@
+# Build artifacts
+/target
+debug/
+release/
+
+# Cargo lock (optional - remove this line if you want to lock dependencies)
+# Cargo.lock
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
