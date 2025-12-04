@@ -117,17 +117,17 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
 // Winetricks Download
 // ============================================================================
 
-/// Ensures winetricks is downloaded and available
+/// Ensures winetricks is downloaded and available (stored in ~/NaK/bin)
 pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
     let home = std::env::var("HOME")?;
     let nak_base = PathBuf::from(format!("{}/NaK", home));
 
     // Resolve symlink for NaK directory if it exists
     let nak_real = fs::canonicalize(&nak_base).unwrap_or(nak_base);
-    let cache_dir = nak_real.join("cache");
-    let winetricks_path = cache_dir.join("winetricks");
+    let bin_dir = nak_real.join("bin");
+    let winetricks_path = bin_dir.join("winetricks");
 
-    fs::create_dir_all(&cache_dir)?;
+    fs::create_dir_all(&bin_dir)?;
 
     // Check if it exists (we could add version checking later)
     if !winetricks_path.exists() {
@@ -153,13 +153,11 @@ pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
 // Dependency Manager
 // ============================================================================
 
-pub struct DependencyManager {
-    winetricks_path: PathBuf,
-}
+pub struct DependencyManager;
 
 impl DependencyManager {
-    pub fn new(winetricks_path: PathBuf) -> Self {
-        Self { winetricks_path }
+    pub fn new(_winetricks_path: PathBuf) -> Self {
+        Self
     }
 
     pub fn install_dependencies(
@@ -171,9 +169,9 @@ impl DependencyManager {
         cancel_flag: Arc<AtomicBool>
     ) -> Result<(), Box<dyn Error>> {
 
-        // Resolve winetricks path (handle symlinks)
-        let winetricks_real = fs::canonicalize(&self.winetricks_path)
-            .unwrap_or_else(|_| self.winetricks_path.clone());
+        // Get winetricks from NaK bin directory (handles symlinks properly)
+        let nak_bin = get_nak_bin_path();
+        let winetricks_real = nak_bin.join("winetricks");
 
         if !winetricks_real.exists() {
             return Err(format!("Winetricks not found at {:?}", winetricks_real).into());
@@ -185,10 +183,10 @@ impl DependencyManager {
         let wine_bin = proton_real.join("files/bin/wine");
         let wineserver = proton_real.join("files/bin/wineserver");
 
-        // Include NaK bin directory for bundled tools (cabextract, etc.)
+        // Include NaK bin directory for bundled tools (cabextract, winetricks, etc.)
         let path_env = format!("{}:{}:{}",
             proton_real.join("files/bin").to_string_lossy(),
-            get_nak_bin_path().to_string_lossy(),
+            nak_bin.to_string_lossy(),
             std::env::var("PATH").unwrap_or_default()
         );
 
@@ -290,9 +288,9 @@ impl DependencyManager {
         status_callback: impl Fn(String) + Clone + Send + 'static
     ) -> Result<(), Box<dyn Error>> {
 
-        // Resolve winetricks path (handle symlinks)
-        let winetricks_real = fs::canonicalize(&self.winetricks_path)
-            .unwrap_or_else(|_| self.winetricks_path.clone());
+        // Get winetricks from NaK bin directory (handles symlinks properly)
+        let nak_bin = get_nak_bin_path();
+        let winetricks_real = nak_bin.join("winetricks");
 
         if !winetricks_real.exists() {
             return Err(format!("Winetricks not found at {:?}", winetricks_real).into());
@@ -303,10 +301,10 @@ impl DependencyManager {
             .unwrap_or_else(|_| proton.path.clone());
         let wine_bin = proton_real.join("files/bin/wine");
         let wineserver = proton_real.join("files/bin/wineserver");
-        // Include NaK bin directory for bundled tools (cabextract, etc.)
+        // Include NaK bin directory for bundled tools (cabextract, winetricks, etc.)
         let path_env = format!("{}:{}:{}",
             proton_real.join("files/bin").to_string_lossy(),
-            get_nak_bin_path().to_string_lossy(),
+            nak_bin.to_string_lossy(),
             std::env::var("PATH").unwrap_or_default());
 
         if !wine_bin.exists() {
@@ -314,8 +312,6 @@ impl DependencyManager {
         }
 
         status_callback(format!("Running winetricks verb: {}", verb));
-        status_callback(format!("[DEBUG] Winetricks: {:?}", winetricks_real));
-        status_callback(format!("[DEBUG] Wine: {:?}", wine_bin));
 
         let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
