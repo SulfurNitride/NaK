@@ -160,20 +160,25 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.strong(&release.tag_name);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Check if installed - CachyOS extracts to a folder based on the tarball name
-                let is_installed = installed_names.iter().any(|n| n.contains("proton-cachyos") && release.tag_name.contains(&n.replace("proton-cachyos-", "").split('-').next().unwrap_or("")));
+                // Check if installed - extract the date part (e.g., "20251126" from "cachyos-10.0-20251126-slr")
+                // and check if any installed proton contains that date
+                let date_part = release.tag_name
+                    .split('-')
+                    .find(|s| s.len() == 8 && s.chars().all(|c| c.is_ascii_digit()))
+                    .unwrap_or("");
 
-                if is_installed {
+                let matching_installed = installed_names.iter()
+                    .find(|n| n.contains("proton-cachyos") && n.contains(date_part) && !date_part.is_empty());
+
+                if let Some(installed_name) = matching_installed {
                     ui.horizontal(|ui| {
                         ui.add_enabled(false, egui::Button::new("Installed"));
-                        // Find the installed name to delete
-                        if let Some(installed_name) = installed_names.iter().find(|n| n.contains("proton-cachyos")) {
-                            if ui.button("Uninstall").clicked() {
-                                if let Err(e) = delete_cachyos_proton(installed_name) {
-                                    eprintln!("Failed to delete: {}", e);
-                                }
-                                app.should_refresh_proton = true;
+                        let name_to_delete = installed_name.clone();
+                        if ui.button("Uninstall").clicked() {
+                            if let Err(e) = delete_cachyos_proton(&name_to_delete) {
+                                eprintln!("Failed to delete: {}", e);
                             }
+                            app.should_refresh_proton = true;
                         }
                     });
                 } else {

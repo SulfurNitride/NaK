@@ -148,26 +148,17 @@ impl ProtonFinder {
     }
 }
 
-/// Sets the 'active' symlink for the selected proton
+/// Sets the 'active' symlink for the selected proton (single symlink at ~/NaK/active)
 pub fn set_active_proton(proton: &ProtonInfo) -> Result<(), Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
-
-    // Determine which folder the proton is in (GE or CachyOS)
-    let active_link = if proton.name.starts_with("GE-Proton") {
-        PathBuf::from(format!("{}/NaK/ProtonGE/active", home))
-    } else if proton.name.starts_with("proton-cachyos") {
-        PathBuf::from(format!("{}/NaK/ProtonCachyOS/active", home))
-    } else {
-        // Steam protons don't need an active symlink
-        return Ok(());
-    };
+    let active_link = PathBuf::from(format!("{}/NaK/active", home));
 
     // Remove existing symlink if present
     if active_link.exists() || fs::symlink_metadata(&active_link).is_ok() {
         let _ = fs::remove_file(&active_link);
     }
 
-    // Create new symlink
+    // Create new symlink pointing to the selected proton
     std::os::unix::fs::symlink(&proton.path, &active_link)?;
 
     Ok(())
