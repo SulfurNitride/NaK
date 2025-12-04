@@ -23,8 +23,8 @@ jobs:
 
       - name: Download and extract cabextract source
         run: |
-          # Use GitHub release as cabextract.org.uk can be unreliable
-          wget https://github.com/kyz/libmspack/releases/download/v1.11/cabextract-1.11.tar.gz
+          # Retry up to 3 times with longer timeout
+          wget --tries=3 --timeout=60 https://www.cabextract.org.uk/cabextract-1.11.tar.gz
           tar xzf cabextract-1.11.tar.gz
 
       - name: Build static cabextract
