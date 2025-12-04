@@ -30,6 +30,8 @@ jobs:
       - name: Build static cabextract
         run: |
           cd cabextract-1.11
+          # Remove bundled getopt.h that conflicts with musl's version
+          rm -f getopt.h
           # Configure with static linking
           LDFLAGS="-static" ./configure
           make
