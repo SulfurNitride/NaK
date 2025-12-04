@@ -4,7 +4,7 @@ use eframe::egui;
 use std::thread;
 
 use crate::app::MyApp;
-use crate::wine::{GithubRelease, download_ge_proton, delete_ge_proton, download_cachyos_proton, delete_cachyos_proton};
+use crate::wine::{GithubRelease, download_ge_proton, delete_ge_proton, download_cachyos_proton, delete_cachyos_proton, set_active_proton};
 use super::UiExt;
 
 pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
@@ -22,10 +22,17 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
                 }
             });
 
-        // Save if changed
+        // Save if changed and update active symlink
         if app.config.selected_proton != selected {
-            app.config.selected_proton = selected;
+            app.config.selected_proton = selected.clone();
             app.config.save();
+
+            // Update the 'active' symlink for the selected proton
+            if let Some(name) = &selected {
+                if let Some(proton) = app.proton_versions.iter().find(|p| &p.name == name) {
+                    let _ = set_active_proton(proton);
+                }
+            }
         }
     });
 
