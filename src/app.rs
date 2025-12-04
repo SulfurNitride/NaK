@@ -85,7 +85,7 @@ pub struct MyApp {
 
     // Flags
     pub should_refresh_proton: bool,
-    pub missing_deps: Vec<String>,
+    pub missing_deps: Arc<Mutex<Vec<String>>>,
 }
 
 impl Default for MyApp {
@@ -104,11 +104,13 @@ impl Default for MyApp {
         let config = AppConfig::load();
 
         // Check Dependencies (uses check_command_available which also checks ~/NaK/bin)
+        // Note: cabextract will be auto-downloaded if missing, so we check it later
         let mut missing = Vec::new();
 
-        if !check_command_available("cabextract") { missing.push("cabextract".to_string()); }
         if !check_command_available("unzip") && !check_command_available("7z") { missing.push("unzip or 7z".to_string()); }
         if !check_command_available("curl") && !check_command_available("wget") { missing.push("curl or wget".to_string()); }
+
+        let missing_deps_arc = Arc::new(Mutex::new(missing));
 
         let app = Self {
             current_page: Page::ModManagers,
@@ -147,7 +149,7 @@ impl Default for MyApp {
             download_progress: Arc::new(Mutex::new(0.0)),
 
             should_refresh_proton: false,
-            missing_deps: missing,
+            missing_deps: missing_deps_arc.clone(),
         };
 
         // Auto-fetch on startup (GE Proton)
@@ -168,11 +170,16 @@ impl Default for MyApp {
 
         // Ensure Winetricks and cabextract are downloaded
         let wt_path = winetricks_path_arc.clone();
+        let missing_deps_for_thread = missing_deps_arc.clone();
         thread::spawn(move || {
             // Ensure cabextract (for SteamOS/immutable systems)
             match ensure_cabextract() {
                 Ok(path) => println!("cabextract available at: {:?}", path),
-                Err(e) => eprintln!("Failed to ensure cabextract: {}", e),
+                Err(e) => {
+                    eprintln!("Failed to ensure cabextract: {}", e);
+                    // Add to missing deps if download failed
+                    missing_deps_for_thread.lock().unwrap().push("cabextract".to_string());
+                }
             }
 
             // Ensure winetricks

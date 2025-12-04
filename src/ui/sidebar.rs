@@ -7,14 +7,16 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
     ui.heading("NaK");
     ui.add_space(10.0);
 
-    if !app.missing_deps.is_empty() {
+    let missing = app.missing_deps.lock().unwrap();
+    if !missing.is_empty() {
         ui.colored_label(egui::Color32::RED, "⚠ Missing Deps:");
-        for dep in &app.missing_deps {
+        for dep in missing.iter() {
             ui.colored_label(egui::Color32::RED, format!("• {}", dep));
         }
         ui.small("Please install via OS package manager.");
         ui.separator();
     }
+    drop(missing); // Release lock early
 
     let navigation_buttons = [
         (Page::GettingStarted, "Getting Started"),
