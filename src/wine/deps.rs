@@ -21,7 +21,9 @@ use crate::logging::{log_info, log_warning, log_error};
 /// Get the NaK bin directory path (~//NaK/bin)
 pub fn get_nak_bin_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(format!("{}/NaK/bin", home))
+    let nak_path = PathBuf::from(format!("{}/NaK/bin", home));
+    // Resolve symlinks if the path exists
+    fs::canonicalize(&nak_path).unwrap_or(nak_path)
 }
 
 /// Check if a command exists (either in system PATH or NaK bin)
@@ -51,8 +53,11 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
         return Ok(PathBuf::from("cabextract"));
     }
 
-    // Check if we already downloaded it
-    let bin_dir = get_nak_bin_path();
+    // Check if we already downloaded it - resolve NaK symlink first
+    let home = std::env::var("HOME").unwrap_or_default();
+    let nak_base = PathBuf::from(format!("{}/NaK", home));
+    let nak_real = fs::canonicalize(&nak_base).unwrap_or(nak_base);
+    let bin_dir = nak_real.join("bin");
     let cabextract_path = bin_dir.join("cabextract");
 
     if cabextract_path.exists() {
@@ -115,7 +120,11 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
 /// Ensures winetricks is downloaded and available
 pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
     let home = std::env::var("HOME")?;
-    let cache_dir = PathBuf::from(format!("{}/NaK/cache", home));
+    let nak_base = PathBuf::from(format!("{}/NaK", home));
+
+    // Resolve symlink for NaK directory if it exists
+    let nak_real = fs::canonicalize(&nak_base).unwrap_or(nak_base);
+    let cache_dir = nak_real.join("cache");
     let winetricks_path = cache_dir.join("winetricks");
 
     fs::create_dir_all(&cache_dir)?;
