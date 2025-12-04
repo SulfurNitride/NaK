@@ -171,13 +171,23 @@ impl DependencyManager {
         cancel_flag: Arc<AtomicBool>
     ) -> Result<(), Box<dyn Error>> {
 
-        // Prepare environment
-        let wine_bin = proton.path.join("files/bin/wine");
-        let wineserver = proton.path.join("files/bin/wineserver");
+        // Resolve winetricks path (handle symlinks)
+        let winetricks_real = fs::canonicalize(&self.winetricks_path)
+            .unwrap_or_else(|_| self.winetricks_path.clone());
+
+        if !winetricks_real.exists() {
+            return Err(format!("Winetricks not found at {:?}", winetricks_real).into());
+        }
+
+        // Prepare environment - canonicalize proton path too
+        let proton_real = fs::canonicalize(&proton.path)
+            .unwrap_or_else(|_| proton.path.clone());
+        let wine_bin = proton_real.join("files/bin/wine");
+        let wineserver = proton_real.join("files/bin/wineserver");
 
         // Include NaK bin directory for bundled tools (cabextract, etc.)
         let path_env = format!("{}:{}:{}",
-            proton.path.join("files/bin").to_string_lossy(),
+            proton_real.join("files/bin").to_string_lossy(),
             get_nak_bin_path().to_string_lossy(),
             std::env::var("PATH").unwrap_or_default()
         );
@@ -188,17 +198,24 @@ impl DependencyManager {
 
         status_callback(format!("Installing dependencies: {}", dependencies.join(", ")));
 
-        let mut cmd = Command::new(&self.winetricks_path);
+        let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
            .args(dependencies)
            .env("WINEPREFIX", prefix_path)
            .env("WINE", &wine_bin)
            .env("WINESERVER", &wineserver)
-           .env("PATH", path_env)
+           .env("PATH", &path_env)
            .stdout(Stdio::piped())
            .stderr(Stdio::piped());
 
-        let mut child = cmd.spawn()?;
+        status_callback(format!("[DEBUG] Winetricks: {:?}", winetricks_real));
+        status_callback(format!("[DEBUG] Wine: {:?}", wine_bin));
+        status_callback(format!("[DEBUG] Prefix: {:?}", prefix_path));
+
+        let mut child = cmd.spawn().map_err(|e| {
+            format!("Failed to spawn winetricks: {} | winetricks={:?} wine={:?} prefix={:?}",
+                e, winetricks_real, wine_bin, prefix_path)
+        })?;
 
         // Stream Stdout
         let stdout = child.stdout.take().unwrap();
@@ -273,12 +290,22 @@ impl DependencyManager {
         status_callback: impl Fn(String) + Clone + Send + 'static
     ) -> Result<(), Box<dyn Error>> {
 
-        // Prepare environment
-        let wine_bin = proton.path.join("files/bin/wine");
-        let wineserver = proton.path.join("files/bin/wineserver");
+        // Resolve winetricks path (handle symlinks)
+        let winetricks_real = fs::canonicalize(&self.winetricks_path)
+            .unwrap_or_else(|_| self.winetricks_path.clone());
+
+        if !winetricks_real.exists() {
+            return Err(format!("Winetricks not found at {:?}", winetricks_real).into());
+        }
+
+        // Prepare environment - canonicalize proton path too
+        let proton_real = fs::canonicalize(&proton.path)
+            .unwrap_or_else(|_| proton.path.clone());
+        let wine_bin = proton_real.join("files/bin/wine");
+        let wineserver = proton_real.join("files/bin/wineserver");
         // Include NaK bin directory for bundled tools (cabextract, etc.)
         let path_env = format!("{}:{}:{}",
-            proton.path.join("files/bin").to_string_lossy(),
+            proton_real.join("files/bin").to_string_lossy(),
             get_nak_bin_path().to_string_lossy(),
             std::env::var("PATH").unwrap_or_default());
 
@@ -287,18 +314,23 @@ impl DependencyManager {
         }
 
         status_callback(format!("Running winetricks verb: {}", verb));
+        status_callback(format!("[DEBUG] Winetricks: {:?}", winetricks_real));
+        status_callback(format!("[DEBUG] Wine: {:?}", wine_bin));
 
-        let mut cmd = Command::new(&self.winetricks_path);
+        let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
            .arg(verb)
            .env("WINEPREFIX", prefix_path)
            .env("WINE", &wine_bin)
            .env("WINESERVER", &wineserver)
-           .env("PATH", path_env)
+           .env("PATH", &path_env)
            .stdout(Stdio::piped())
            .stderr(Stdio::piped());
 
-        let mut child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(|e| {
+            format!("Failed to spawn winetricks: {} | winetricks={:?} wine={:?}",
+                e, winetricks_real, wine_bin)
+        })?;
 
         // Stream Stdout (Simplified for single command)
         let stdout = child.stdout.take().unwrap();
