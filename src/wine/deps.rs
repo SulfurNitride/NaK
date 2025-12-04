@@ -24,18 +24,33 @@ pub fn get_nak_real_path() -> PathBuf {
     let nak_base = PathBuf::from(format!("{}/NaK", home));
 
     // Try to read symlink directly first
-    if let Ok(target) = fs::read_link(&nak_base) {
-        // If it's a relative symlink, resolve it relative to parent
-        if target.is_relative() {
-            if let Some(parent) = nak_base.parent() {
-                return parent.join(&target);
+    match fs::read_link(&nak_base) {
+        Ok(target) => {
+            eprintln!("[NaK DEBUG] read_link success: {:?} -> {:?}", nak_base, target);
+            // If it's a relative symlink, resolve it relative to parent
+            if target.is_relative() {
+                if let Some(parent) = nak_base.parent() {
+                    return parent.join(&target);
+                }
             }
+            return target;
         }
-        return target;
+        Err(e) => {
+            eprintln!("[NaK DEBUG] read_link failed for {:?}: {}", nak_base, e);
+        }
     }
 
     // Fallback to canonicalize
-    fs::canonicalize(&nak_base).unwrap_or(nak_base)
+    match fs::canonicalize(&nak_base) {
+        Ok(real) => {
+            eprintln!("[NaK DEBUG] canonicalize success: {:?} -> {:?}", nak_base, real);
+            real
+        }
+        Err(e) => {
+            eprintln!("[NaK DEBUG] canonicalize failed for {:?}: {}", nak_base, e);
+            nak_base
+        }
+    }
 }
 
 /// Get the NaK bin directory path (~//NaK/bin)
