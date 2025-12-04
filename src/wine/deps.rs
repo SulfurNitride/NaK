@@ -18,12 +18,46 @@ use crate::logging::{log_info, log_warning, log_error};
 // NaK Bin Directory (for bundled tools like cabextract)
 // ============================================================================
 
+/// Get the resolved NaK base directory (handles symlinks)
+pub fn get_nak_real_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let nak_base = PathBuf::from(format!("{}/NaK", home));
+
+    // Try to read symlink directly first
+    if let Ok(target) = fs::read_link(&nak_base) {
+        // If it's a relative symlink, resolve it relative to parent
+        if target.is_relative() {
+            if let Some(parent) = nak_base.parent() {
+                return parent.join(&target);
+            }
+        }
+        return target;
+    }
+
+    // Fallback to canonicalize
+    fs::canonicalize(&nak_base).unwrap_or(nak_base)
+}
+
 /// Get the NaK bin directory path (~//NaK/bin)
 pub fn get_nak_bin_path() -> PathBuf {
+    get_nak_real_path().join("bin")
+}
+
+/// Resolve a path that might be under ~/NaK through the symlink
+pub fn resolve_nak_path(path: &Path) -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
-    let nak_path = PathBuf::from(format!("{}/NaK/bin", home));
-    // Resolve symlinks if the path exists
-    fs::canonicalize(&nak_path).unwrap_or(nak_path)
+    let nak_prefix = format!("{}/NaK/", home);
+
+    // If path starts with ~/NaK/, resolve it through the symlink
+    if let Some(path_str) = path.to_str() {
+        if path_str.starts_with(&nak_prefix) {
+            let relative = &path_str[nak_prefix.len()..];
+            return get_nak_real_path().join(relative);
+        }
+    }
+
+    // Otherwise try canonicalize or return as-is
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Check if a command exists (either in system PATH or NaK bin)
@@ -177,11 +211,13 @@ impl DependencyManager {
             return Err(format!("Winetricks not found at {:?}", winetricks_real).into());
         }
 
-        // Prepare environment - canonicalize proton path too
-        let proton_real = fs::canonicalize(&proton.path)
-            .unwrap_or_else(|_| proton.path.clone());
+        // Prepare environment - resolve proton path through NaK symlink
+        let proton_real = resolve_nak_path(&proton.path);
         let wine_bin = proton_real.join("files/bin/wine");
         let wineserver = proton_real.join("files/bin/wineserver");
+
+        // Also resolve prefix path through NaK symlink
+        let prefix_real = resolve_nak_path(prefix_path);
 
         // Include NaK bin directory for bundled tools (cabextract, winetricks, etc.)
         let path_env = format!("{}:{}:{}",
@@ -195,24 +231,23 @@ impl DependencyManager {
         }
 
         status_callback(format!("Installing dependencies: {}", dependencies.join(", ")));
+        status_callback(format!("[DEBUG] Winetricks: {:?}", winetricks_real));
+        status_callback(format!("[DEBUG] Wine: {:?}", wine_bin));
+        status_callback(format!("[DEBUG] Prefix: {:?}", prefix_real));
 
         let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
            .args(dependencies)
-           .env("WINEPREFIX", prefix_path)
+           .env("WINEPREFIX", &prefix_real)
            .env("WINE", &wine_bin)
            .env("WINESERVER", &wineserver)
            .env("PATH", &path_env)
            .stdout(Stdio::piped())
            .stderr(Stdio::piped());
 
-        status_callback(format!("[DEBUG] Winetricks: {:?}", winetricks_real));
-        status_callback(format!("[DEBUG] Wine: {:?}", wine_bin));
-        status_callback(format!("[DEBUG] Prefix: {:?}", prefix_path));
-
         let mut child = cmd.spawn().map_err(|e| {
             format!("Failed to spawn winetricks: {} | winetricks={:?} wine={:?} prefix={:?}",
-                e, winetricks_real, wine_bin, prefix_path)
+                e, winetricks_real, wine_bin, prefix_real)
         })?;
 
         // Stream Stdout
@@ -296,11 +331,14 @@ impl DependencyManager {
             return Err(format!("Winetricks not found at {:?}", winetricks_real).into());
         }
 
-        // Prepare environment - canonicalize proton path too
-        let proton_real = fs::canonicalize(&proton.path)
-            .unwrap_or_else(|_| proton.path.clone());
+        // Prepare environment - resolve proton path through NaK symlink
+        let proton_real = resolve_nak_path(&proton.path);
         let wine_bin = proton_real.join("files/bin/wine");
         let wineserver = proton_real.join("files/bin/wineserver");
+
+        // Also resolve prefix path through NaK symlink
+        let prefix_real = resolve_nak_path(prefix_path);
+
         // Include NaK bin directory for bundled tools (cabextract, winetricks, etc.)
         let path_env = format!("{}:{}:{}",
             proton_real.join("files/bin").to_string_lossy(),
@@ -316,7 +354,7 @@ impl DependencyManager {
         let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
            .arg(verb)
-           .env("WINEPREFIX", prefix_path)
+           .env("WINEPREFIX", &prefix_real)
            .env("WINE", &wine_bin)
            .env("WINESERVER", &wineserver)
            .env("PATH", &path_env)
