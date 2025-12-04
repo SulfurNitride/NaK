@@ -39,9 +39,8 @@ pub fn check_command_available(cmd: &str) -> bool {
 // Cabextract Download (for SteamOS/immutable systems)
 // ============================================================================
 
-/// URL for static cabextract binary
-/// Built via GitHub Actions and uploaded to releases
-const CABEXTRACT_URL: &str = "https://github.com/SulfurNitride/NaK/releases/download/tools/cabextract-linux-x86_64";
+/// URL for static cabextract binary (zip file)
+const CABEXTRACT_URL: &str = "https://github.com/SulfurNitride/NaK/releases/download/Cabextract/cabextract-linux-x86_64.zip";
 
 /// Ensures cabextract is available (either system or downloaded)
 pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
@@ -59,24 +58,52 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
         return Ok(cabextract_path);
     }
 
-    // Download cabextract
+    // Download cabextract zip
     println!("System cabextract not found, downloading...");
     fs::create_dir_all(&bin_dir)?;
 
     let response = ureq::get(CABEXTRACT_URL)
         .call()
-        .map_err(|e| format!("Failed to download cabextract: {}. Please install cabextract manually or update CABEXTRACT_URL.", e))?;
+        .map_err(|e| format!("Failed to download cabextract: {}. Please install cabextract manually.", e))?;
 
-    let mut file = fs::File::create(&cabextract_path)?;
-    std::io::copy(&mut response.into_reader(), &mut file)?;
+    // Download to temp zip file
+    let zip_path = bin_dir.join("cabextract.zip");
+    let mut zip_file = fs::File::create(&zip_path)?;
+    std::io::copy(&mut response.into_reader(), &mut zip_file)?;
+
+    // Extract using unzip command (available on most systems including SteamOS)
+    let status = Command::new("unzip")
+        .arg("-o")
+        .arg(&zip_path)
+        .arg("-d")
+        .arg(&bin_dir)
+        .status()?;
+
+    if !status.success() {
+        // Fallback: try with busybox unzip or python
+        let _ = Command::new("python3")
+            .arg("-c")
+            .arg(format!(
+                "import zipfile; zipfile.ZipFile('{}').extractall('{}')",
+                zip_path.display(),
+                bin_dir.display()
+            ))
+            .status();
+    }
+
+    // Clean up zip file
+    let _ = fs::remove_file(&zip_path);
 
     // Make executable
-    let mut perms = fs::metadata(&cabextract_path)?.permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&cabextract_path, perms)?;
-
-    println!("cabextract downloaded to {:?}", cabextract_path);
-    Ok(cabextract_path)
+    if cabextract_path.exists() {
+        let mut perms = fs::metadata(&cabextract_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&cabextract_path, perms)?;
+        println!("cabextract downloaded to {:?}", cabextract_path);
+        Ok(cabextract_path)
+    } else {
+        Err("Failed to extract cabextract from zip".into())
+    }
 }
 
 // ============================================================================

@@ -391,14 +391,12 @@ fn render_instance_card(ui: &mut egui::Ui, instance: &ModManagerInstance) {
         .inner_margin(10.0)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                // Icon
-                if instance.manager_type == "MO2" {
-                    ui.add(egui::Image::new(egui::include_image!("../../../nak-flet/assets/icons/mo2.png"))
-                        .fit_to_exact_size(egui::vec2(32.0, 32.0)));
-                } else {
-                    ui.add(egui::Image::new(egui::include_image!("../../../nak-flet/assets/icons/vortex-official.png"))
-                        .fit_to_exact_size(egui::vec2(32.0, 32.0)));
-                }
+                // Icon label
+                let icon_text = if instance.manager_type == "MO2" { "MO2" } else { "VTX" };
+                ui.add(egui::Label::new(egui::RichText::new(icon_text)
+                    .size(20.0)
+                    .strong()
+                    .color(egui::Color32::from_rgb(100, 149, 237))));
                 ui.add_space(10.0);
 
                 // Info
