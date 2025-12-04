@@ -198,6 +198,7 @@ pub fn install_mo2(
     let reg_script = ScriptGenerator::generate_fix_game_registry_script(
         &prefix_root,
         &proton.path,
+        install_name,
         script_dir
     )?;
 
