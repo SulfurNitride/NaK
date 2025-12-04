@@ -86,7 +86,10 @@ impl ProtonFinder {
     fn find_ge_protons(&self) -> Vec<ProtonInfo> {
         let mut found = Vec::new();
 
-        if let Ok(entries) = fs::read_dir(&self.nak_proton_ge_root) {
+        // Canonicalize the root path to resolve symlinks
+        let ge_root = fs::canonicalize(&self.nak_proton_ge_root).unwrap_or(self.nak_proton_ge_root.clone());
+
+        if let Ok(entries) = fs::read_dir(&ge_root) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() { continue; }
@@ -98,9 +101,11 @@ impl ProtonFinder {
 
                 // Must look like "GE-Proton..."
                 if name.starts_with("GE-Proton") {
-                     found.push(ProtonInfo {
+                    // Canonicalize the full path to resolve any symlinks
+                    let real_path = fs::canonicalize(&path).unwrap_or(path);
+                    found.push(ProtonInfo {
                         name: name.clone(),
-                        path,
+                        path: real_path,
                         version: name.clone(),
                         is_experimental: false,
                     });
@@ -113,7 +118,10 @@ impl ProtonFinder {
     fn find_cachyos_protons(&self) -> Vec<ProtonInfo> {
         let mut found = Vec::new();
 
-        if let Ok(entries) = fs::read_dir(&self.nak_proton_cachyos_root) {
+        // Canonicalize the root path to resolve symlinks
+        let cachyos_root = fs::canonicalize(&self.nak_proton_cachyos_root).unwrap_or(self.nak_proton_cachyos_root.clone());
+
+        if let Ok(entries) = fs::read_dir(&cachyos_root) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() { continue; }
@@ -125,9 +133,11 @@ impl ProtonFinder {
 
                 // Must look like "proton-cachyos..."
                 if name.starts_with("proton-cachyos") {
-                     found.push(ProtonInfo {
+                    // Canonicalize the full path to resolve any symlinks
+                    let real_path = fs::canonicalize(&path).unwrap_or(path);
+                    found.push(ProtonInfo {
                         name: name.clone(),
-                        path,
+                        path: real_path,
                         version: name.clone(),
                         is_experimental: false,
                     });
