@@ -1,7 +1,7 @@
 //! Wine prefix management
 
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -36,17 +36,18 @@ impl PrefixManager {
         if let Ok(entries) = fs::read_dir(&self.prefixes_root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_dir() { continue; }
+                if !path.is_dir() {
+                    continue;
+                }
 
                 let name = entry.file_name().to_string_lossy().to_string();
 
                 // Check for orphan status
                 let link = path.join("manager_link");
                 let mut is_orphaned = false;
-                if link.is_symlink() {
-                    if !link.exists() { // link.exists() follows the link; false if broken
-                        is_orphaned = true;
-                    }
+                if link.is_symlink() && !link.exists() {
+                    // link.exists() follows the link; false if broken
+                    is_orphaned = true;
                 }
 
                 prefixes.push(NakPrefix {

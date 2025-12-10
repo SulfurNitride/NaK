@@ -1,11 +1,11 @@
 //! Proton detection and GE-Proton management
 
-use std::path::PathBuf;
+use flate2::read::GzDecoder;
+use serde::Deserialize;
+use std::error::Error;
 use std::fs;
 use std::io::{Read, Write};
-use std::error::Error;
-use serde::Deserialize;
-use flate2::read::GzDecoder;
+use std::path::PathBuf;
 use tar::Archive;
 
 // ============================================================================
@@ -58,7 +58,9 @@ impl ProtonFinder {
         if let Ok(entries) = fs::read_dir(common_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_dir() { continue; }
+                if !path.is_dir() {
+                    continue;
+                }
 
                 let name = entry.file_name().to_string_lossy().to_string();
 
@@ -87,17 +89,22 @@ impl ProtonFinder {
         let mut found = Vec::new();
 
         // Canonicalize the root path to resolve symlinks
-        let ge_root = fs::canonicalize(&self.nak_proton_ge_root).unwrap_or(self.nak_proton_ge_root.clone());
+        let ge_root =
+            fs::canonicalize(&self.nak_proton_ge_root).unwrap_or(self.nak_proton_ge_root.clone());
 
         if let Ok(entries) = fs::read_dir(&ge_root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_dir() { continue; }
+                if !path.is_dir() {
+                    continue;
+                }
 
                 let name = entry.file_name().to_string_lossy().to_string();
 
                 // Skip the 'active' symlink
-                if name == "active" { continue; }
+                if name == "active" {
+                    continue;
+                }
 
                 // Must look like "GE-Proton..."
                 if name.starts_with("GE-Proton") {
@@ -119,17 +126,22 @@ impl ProtonFinder {
         let mut found = Vec::new();
 
         // Canonicalize the root path to resolve symlinks
-        let cachyos_root = fs::canonicalize(&self.nak_proton_cachyos_root).unwrap_or(self.nak_proton_cachyos_root.clone());
+        let cachyos_root = fs::canonicalize(&self.nak_proton_cachyos_root)
+            .unwrap_or(self.nak_proton_cachyos_root.clone());
 
         if let Ok(entries) = fs::read_dir(&cachyos_root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_dir() { continue; }
+                if !path.is_dir() {
+                    continue;
+                }
 
                 let name = entry.file_name().to_string_lossy().to_string();
 
                 // Skip the 'active' symlink
-                if name == "active" { continue; }
+                if name == "active" {
+                    continue;
+                }
 
                 // Must look like "proton-cachyos..."
                 if name.starts_with("proton-cachyos") {
@@ -168,12 +180,14 @@ impl ProtonInfo {
     pub fn parse_version(&self) -> (u32, u32) {
         // Extract version from "GE-Proton9-20" -> 9, 20
         let parts: Vec<&str> = self.name.split("Proton").collect();
-        if parts.len() < 2 { return (0, 0); }
+        if parts.len() < 2 {
+            return (0, 0);
+        }
 
         let ver_str = parts[1]; // "9-20"
         let nums: Vec<&str> = ver_str.split('-').collect();
 
-        let major = nums.get(0).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let major = nums.first().and_then(|s| s.parse().ok()).unwrap_or(0);
         let minor = nums.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
 
         (major, minor)
@@ -196,7 +210,8 @@ impl ProtonInfo {
             }
 
             // Parse version like "Proton 9.0 (Beta)" or "Proton 8.0"
-            let version_str = self.name
+            let version_str = self
+                .name
                 .replace("Proton ", "")
                 .replace(" (Beta)", "")
                 .replace("-", ".");
@@ -239,16 +254,23 @@ pub struct GithubAsset {
 
 /// Fetches the latest 100 releases from GitHub
 pub fn fetch_ge_releases() -> Result<Vec<GithubRelease>, Box<dyn Error>> {
-    let releases: Vec<GithubRelease> = ureq::get("https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=100")
-        .set("User-Agent", "NaK-Rust-Agent")
-        .call()?
-        .into_json()?;
+    let releases: Vec<GithubRelease> = ureq::get(
+        "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=100",
+    )
+    .set("User-Agent", "NaK-Rust-Agent")
+    .call()?
+    .into_json()?;
     Ok(releases)
 }
 
 /// Downloads and extracts a GE-Proton release with progress tracking
-pub fn download_ge_proton<F>(asset_url: String, file_name: String, progress_callback: F) -> Result<(), Box<dyn Error>>
-where F: Fn(u64, u64) + Send + 'static
+pub fn download_ge_proton<F>(
+    asset_url: String,
+    file_name: String,
+    progress_callback: F,
+) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(u64, u64) + Send + 'static,
 {
     let home = std::env::var("HOME")?;
     let install_root = PathBuf::from(format!("{}/NaK/ProtonGE", home));
@@ -264,7 +286,8 @@ where F: Fn(u64, u64) + Send + 'static
         .set("User-Agent", "NaK-Rust-Agent")
         .call()?;
 
-    let total_size = response.header("Content-Length")
+    let total_size = response
+        .header("Content-Length")
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
@@ -318,17 +341,23 @@ pub fn delete_ge_proton(version_name: &str) -> Result<(), Box<dyn Error>> {
 
 /// Fetches the latest releases from CachyOS Proton GitHub
 pub fn fetch_cachyos_releases() -> Result<Vec<GithubRelease>, Box<dyn Error>> {
-    let releases: Vec<GithubRelease> = ureq::get("https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=50")
-        .set("User-Agent", "NaK-Rust-Agent")
-        .call()?
-        .into_json()?;
+    let releases: Vec<GithubRelease> =
+        ureq::get("https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=50")
+            .set("User-Agent", "NaK-Rust-Agent")
+            .call()?
+            .into_json()?;
     Ok(releases)
 }
 
 /// Downloads and extracts a CachyOS Proton release with progress tracking
 /// Note: CachyOS uses .tar.xz format
-pub fn download_cachyos_proton<F>(asset_url: String, file_name: String, progress_callback: F) -> Result<(), Box<dyn Error>>
-where F: Fn(u64, u64) + Send + 'static
+pub fn download_cachyos_proton<F>(
+    asset_url: String,
+    file_name: String,
+    progress_callback: F,
+) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(u64, u64) + Send + 'static,
 {
     use xz2::read::XzDecoder;
 
@@ -346,7 +375,8 @@ where F: Fn(u64, u64) + Send + 'static
         .set("User-Agent", "NaK-Rust-Agent")
         .call()?;
 
-    let total_size = response.header("Content-Length")
+    let total_size = response
+        .header("Content-Length")
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 

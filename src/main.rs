@@ -4,15 +4,15 @@
 
 use eframe::egui;
 
-mod utils;
-mod config;
-mod wine;
-mod installers;
-mod scripts;
-mod nxm;
 mod app;
-mod ui;
+mod config;
+mod installers;
 mod logging;
+mod nxm;
+mod scripts;
+mod ui;
+mod utils;
+mod wine;
 
 use app::MyApp;
 use logging::{init_logger, log_info};

@@ -1,7 +1,7 @@
 //! Sidebar navigation
 
-use eframe::egui;
 use crate::app::{MyApp, Page};
+use eframe::egui;
 
 pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, is_enabled: bool) {
     ui.heading("NaK");
@@ -15,8 +15,14 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
             .inner_margin(8.0)
             .show(ui, |ui| {
                 ui.colored_label(egui::Color32::RED, "⚠ STEAM NOT DETECTED");
-                ui.colored_label(egui::Color32::from_rgb(255, 150, 150), "NaK requires Steam to be installed.");
-                ui.colored_label(egui::Color32::from_rgb(255, 150, 150), "Please install Steam first.");
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 150, 150),
+                    "NaK requires Steam to be installed.",
+                );
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 150, 150),
+                    "Please install Steam first.",
+                );
             });
         ui.add_space(5.0);
         ui.separator();
@@ -48,7 +54,13 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
         let is_selected = app.current_page == page;
         let is_enabled_page = page != Page::Marketplace; // Disable Marketplace
 
-        if ui.add_enabled(!is_selected && is_enabled_page && is_enabled, egui::Button::new(label).min_size(egui::vec2(150.0, 30.0))).clicked() {
+        if ui
+            .add_enabled(
+                !is_selected && is_enabled_page && is_enabled,
+                egui::Button::new(label).min_size(egui::vec2(150.0, 30.0)),
+            )
+            .clicked()
+        {
             app.current_page = page;
         }
         ui.add_space(5.0);

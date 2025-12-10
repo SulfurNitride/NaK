@@ -3,9 +3,12 @@
 use eframe::egui;
 use std::thread;
 
-use crate::app::MyApp;
-use crate::wine::{GithubRelease, download_ge_proton, delete_ge_proton, download_cachyos_proton, delete_cachyos_proton, set_active_proton};
 use super::UiExt;
+use crate::app::MyApp;
+use crate::wine::{
+    delete_cachyos_proton, delete_ge_proton, download_cachyos_proton, download_ge_proton,
+    set_active_proton, GithubRelease,
+};
 
 pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
     ui.heading("Proton Picker");
@@ -58,31 +61,37 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
     let is_downloading_any = *app.is_downloading.lock().unwrap();
 
     if is_downloading_any {
-         ui.add_space(5.0);
-         ui.add(egui::ProgressBar::new(progress).text(&status).animate(true));
+        ui.add_space(5.0);
+        ui.add(egui::ProgressBar::new(progress).text(&status).animate(true));
     } else if !status.is_empty() {
-         ui.add_space(5.0);
-         ui.colored_label(egui::Color32::LIGHT_BLUE, format!("ℹ {}", status));
+        ui.add_space(5.0);
+        ui.colored_label(egui::Color32::LIGHT_BLUE, format!("ℹ {}", status));
     }
 
     ui.add_space(10.0);
 
     let filtered_releases: Vec<GithubRelease> = {
         let releases = app.available_ge_versions.lock().unwrap();
-        releases.iter()
-            .filter(|r| app.ge_search_query.is_empty() || r.tag_name.to_lowercase().contains(&app.ge_search_query.to_lowercase()))
+        releases
+            .iter()
+            .filter(|r| {
+                app.ge_search_query.is_empty()
+                    || r.tag_name
+                        .to_lowercase()
+                        .contains(&app.ge_search_query.to_lowercase())
+            })
             .take(5)
             .cloned()
             .collect()
     };
 
     if filtered_releases.is_empty() {
-         let releases_empty = app.available_ge_versions.lock().unwrap().is_empty();
-         if !releases_empty {
-             ui.label("No matching versions found.");
-         } else if !*app.is_fetching_ge.lock().unwrap() {
-             ui.label("No versions available (Check internet connection).");
-         }
+        let releases_empty = app.available_ge_versions.lock().unwrap().is_empty();
+        if !releases_empty {
+            ui.label("No matching versions found.");
+        } else if !*app.is_fetching_ge.lock().unwrap() {
+            ui.label("No versions available (Check internet connection).");
+        }
     }
 
     // Create a set of installed version names for fast lookup
@@ -102,10 +111,11 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
                             app.should_refresh_proton = true;
                         }
                     });
-                } else {
-                    if ui.add_enabled(!is_downloading_any, egui::Button::new("Download")).clicked() {
-                        download_ge_proton_ui(app, &release);
-                    }
+                } else if ui
+                    .add_enabled(!is_downloading_any, egui::Button::new("Download"))
+                    .clicked()
+                {
+                    download_ge_proton_ui(app, &release);
                 }
             });
         });
@@ -136,12 +146,18 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
     // Filter CachyOS releases - only show ones with v2 assets
     let filtered_cachyos: Vec<GithubRelease> = {
         let releases = app.available_cachyos_versions.lock().unwrap();
-        releases.iter()
+        releases
+            .iter()
             .filter(|r| {
                 // Must have a v2 tar.xz asset
                 r.assets.iter().any(|a| a.name.contains("_v2.tar.xz"))
             })
-            .filter(|r| app.cachyos_search_query.is_empty() || r.tag_name.to_lowercase().contains(&app.cachyos_search_query.to_lowercase()))
+            .filter(|r| {
+                app.cachyos_search_query.is_empty()
+                    || r.tag_name
+                        .to_lowercase()
+                        .contains(&app.cachyos_search_query.to_lowercase())
+            })
             .take(5)
             .cloned()
             .collect()
@@ -162,13 +178,15 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Check if installed - extract the date part (e.g., "20251126" from "cachyos-10.0-20251126-slr")
                 // and check if any installed proton contains that date
-                let date_part = release.tag_name
+                let date_part = release
+                    .tag_name
                     .split('-')
                     .find(|s| s.len() == 8 && s.chars().all(|c| c.is_ascii_digit()))
                     .unwrap_or("");
 
-                let matching_installed = installed_names.iter()
-                    .find(|n| n.contains("proton-cachyos") && n.contains(date_part) && !date_part.is_empty());
+                let matching_installed = installed_names.iter().find(|n| {
+                    n.contains("proton-cachyos") && n.contains(date_part) && !date_part.is_empty()
+                });
 
                 if let Some(installed_name) = matching_installed {
                     ui.horizontal(|ui| {
@@ -181,10 +199,11 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
                             app.should_refresh_proton = true;
                         }
                     });
-                } else {
-                    if ui.add_enabled(!is_downloading_any, egui::Button::new("Download")).clicked() {
-                        download_cachyos_proton_ui(app, &release);
-                    }
+                } else if ui
+                    .add_enabled(!is_downloading_any, egui::Button::new("Download"))
+                    .clicked()
+                {
+                    download_cachyos_proton_ui(app, &release);
                 }
             });
         });
@@ -198,7 +217,10 @@ fn download_cachyos_proton_ui(app: &MyApp, release: &GithubRelease) {
     let progress_val = app.download_progress.clone();
 
     // Find the v2.tar.xz asset
-    let asset = release.assets.iter().find(|a| a.name.contains("_v2.tar.xz"));
+    let asset = release
+        .assets
+        .iter()
+        .find(|a| a.name.contains("_v2.tar.xz"));
     if asset.is_none() {
         *status_msg.lock().unwrap() = "Error: No v2.tar.xz asset found".to_string();
         return;
@@ -208,7 +230,9 @@ fn download_cachyos_proton_ui(app: &MyApp, release: &GithubRelease) {
     let download_url = asset.browser_download_url.clone();
 
     let mut dl_guard = is_downloading.lock().unwrap();
-    if *dl_guard { return; }
+    if *dl_guard {
+        return;
+    }
     *dl_guard = true;
     drop(dl_guard);
 
@@ -230,12 +254,12 @@ fn download_cachyos_proton_ui(app: &MyApp, release: &GithubRelease) {
 
         match download_cachyos_proton(download_url, file_name, callback) {
             Ok(_) => {
-                 // SIGNAL REFRESH via special string suffix
-                 *status_msg.lock().unwrap() = "Download complete! REFRESH".to_string();
-                 *progress_val.lock().unwrap() = 1.0;
+                // SIGNAL REFRESH via special string suffix
+                *status_msg.lock().unwrap() = "Download complete! REFRESH".to_string();
+                *progress_val.lock().unwrap() = 1.0;
             }
             Err(e) => {
-                 *status_msg.lock().unwrap() = format!("Error: {}", e);
+                *status_msg.lock().unwrap() = format!("Error: {}", e);
             }
         }
         *is_downloading.lock().unwrap() = false;
@@ -258,7 +282,9 @@ fn download_ge_proton_ui(app: &MyApp, release: &GithubRelease) {
     let download_url = asset.browser_download_url.clone();
 
     let mut dl_guard = is_downloading.lock().unwrap();
-    if *dl_guard { return; }
+    if *dl_guard {
+        return;
+    }
     *dl_guard = true;
     drop(dl_guard);
 
@@ -280,12 +306,12 @@ fn download_ge_proton_ui(app: &MyApp, release: &GithubRelease) {
 
         match download_ge_proton(download_url, file_name, callback) {
             Ok(_) => {
-                 // SIGNAL REFRESH via special string suffix
-                 *status_msg.lock().unwrap() = "Download complete! REFRESH".to_string();
-                 *progress_val.lock().unwrap() = 1.0;
+                // SIGNAL REFRESH via special string suffix
+                *status_msg.lock().unwrap() = "Download complete! REFRESH".to_string();
+                *progress_val.lock().unwrap() = 1.0;
             }
             Err(e) => {
-                 *status_msg.lock().unwrap() = format!("Error: {}", e);
+                *status_msg.lock().unwrap() = format!("Error: {}", e);
             }
         }
         *is_downloading.lock().unwrap() = false;

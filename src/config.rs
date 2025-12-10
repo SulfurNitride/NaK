@@ -172,7 +172,9 @@ impl StorageManager {
     /// Get the real storage location (resolves symlinks)
     pub fn get_real_location(&self) -> PathBuf {
         if self.default_nak_path.exists() {
-            self.default_nak_path.canonicalize().unwrap_or_else(|_| self.default_nak_path.clone())
+            self.default_nak_path
+                .canonicalize()
+                .unwrap_or_else(|_| self.default_nak_path.clone())
         } else {
             self.default_nak_path.clone()
         }
@@ -183,13 +185,22 @@ impl StorageManager {
         let real_path = self.get_real_location();
         let exists = self.default_nak_path.exists();
 
-        let (free_space_gb, used_space_gb) = if exists {
-            let free = Self::get_free_space(&real_path);
-            let used = Self::get_directory_size(&real_path);
-            (free, used)
-        } else {
-            (0.0, 0.0)
-        };
+        let (free_space_gb, used_space_gb, cache_size_gb, proton_size_gb, prefixes_size_gb, other_size_gb) =
+            if exists {
+                let free = Self::get_free_space(&real_path);
+                let used = Self::get_directory_size(&real_path);
+
+                let cache_size = Self::get_directory_size(&real_path.join("cache"));
+                let proton_size = Self::get_directory_size(&real_path.join("ProtonGE"));
+                let prefixes_size = Self::get_directory_size(&real_path.join("Prefixes"));
+                
+                let known_sum = cache_size + proton_size + prefixes_size;
+                let other_size = (used - known_sum).max(0.0);
+
+                (free, used, cache_size, proton_size, prefixes_size, other_size)
+            } else {
+                (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+            };
 
         StorageInfo {
             is_symlink: self.is_symlink(),
@@ -198,6 +209,10 @@ impl StorageManager {
             exists,
             free_space_gb,
             used_space_gb,
+            cache_size_gb,
+            proton_size_gb,
+            prefixes_size_gb,
+            other_size_gb,
         }
     }
 
@@ -205,11 +220,7 @@ impl StorageManager {
     fn get_free_space(path: &Path) -> f64 {
         use std::process::Command;
 
-        if let Ok(output) = Command::new("df")
-            .arg("-B1")
-            .arg(path)
-            .output()
-        {
+        if let Ok(output) = Command::new("df").arg("-B1").arg(path).output() {
             if output.status.success() {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 // Parse df output (second line, 4th column is available bytes)
@@ -230,18 +241,34 @@ impl StorageManager {
     fn get_directory_size(path: &Path) -> f64 {
         use std::process::Command;
 
-        if let Ok(output) = Command::new("du")
-            .arg("-sb")
-            .arg(path)
-            .output()
-        {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                if let Some(size_str) = output_str.split_whitespace().next() {
-                    if let Ok(bytes) = size_str.parse::<u64>() {
-                        return bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        if !path.exists() {
+            return 0.0;
+        }
+
+        match Command::new("du").arg("-sb").arg(path).output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    if let Some(size_str) = output_str.split_whitespace().next() {
+                        if let Ok(bytes) = size_str.parse::<u64>() {
+                            return bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+                        }
                     }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    crate::logging::log_error(&format!(
+                        "Failed to calculate size for {}: {}",
+                        path.display(),
+                        stderr.trim()
+                    ));
                 }
+            }
+            Err(e) => {
+                crate::logging::log_error(&format!(
+                    "Failed to execute du for {}: {}",
+                    path.display(),
+                    e
+                ));
             }
         }
         0.0
@@ -253,7 +280,10 @@ impl StorageManager {
             return Err(format!("Location does not exist: {}", location.display()));
         }
         if !location.is_dir() {
-            return Err(format!("Location is not a directory: {}", location.display()));
+            return Err(format!(
+                "Location is not a directory: {}",
+                location.display()
+            ));
         }
 
         // Check write permission by trying to create a test file
@@ -266,14 +296,21 @@ impl StorageManager {
         // Check space
         let free_gb = Self::get_free_space(location);
         if free_gb < 5.0 {
-            return Err(format!("Insufficient space: {:.2}GB available (minimum 5GB recommended)", free_gb));
+            return Err(format!(
+                "Insufficient space: {:.2}GB available (minimum 5GB recommended)",
+                free_gb
+            ));
         }
 
         Ok(())
     }
 
     /// Setup symlink from ~/NaK to a new location
-    pub fn setup_symlink(&self, new_location: &Path, move_existing: bool) -> Result<String, String> {
+    pub fn setup_symlink(
+        &self,
+        new_location: &Path,
+        move_existing: bool,
+    ) -> Result<String, String> {
         // Validate new location
         self.validate_location(new_location)?;
 
@@ -289,7 +326,10 @@ impl StorageManager {
                 // It's a real directory
                 if move_existing {
                     if target_nak.exists() {
-                        return Err(format!("Target location already has a NaK folder: {}", target_nak.display()));
+                        return Err(format!(
+                            "Target location already has a NaK folder: {}",
+                            target_nak.display()
+                        ));
                     }
                     // Move existing data
                     fs::rename(&self.default_nak_path, &target_nak)
@@ -299,7 +339,9 @@ impl StorageManager {
                     let mut backup_path = self.default_nak_path.with_file_name("NaK.backup");
                     let mut counter = 1;
                     while backup_path.exists() {
-                        backup_path = self.default_nak_path.with_file_name(format!("NaK.backup.{}", counter));
+                        backup_path = self
+                            .default_nak_path
+                            .with_file_name(format!("NaK.backup.{}", counter));
                         counter += 1;
                     }
                     fs::rename(&self.default_nak_path, &backup_path)
@@ -318,7 +360,10 @@ impl StorageManager {
         std::os::unix::fs::symlink(&target_nak, &self.default_nak_path)
             .map_err(|e| format!("Failed to create symlink: {}", e))?;
 
-        Ok(format!("Successfully set up NaK storage at {}", target_nak.display()))
+        Ok(format!(
+            "Successfully set up NaK storage at {}",
+            target_nak.display()
+        ))
     }
 
     /// Remove symlink and restore to default location
@@ -337,10 +382,16 @@ impl StorageManager {
         if backup_path.exists() {
             fs::rename(&backup_path, &self.default_nak_path)
                 .map_err(|e| format!("Failed to restore backup: {}", e))?;
-            return Ok(format!("Symlink removed and backup restored. Data still at {}", real_location.display()));
+            return Ok(format!(
+                "Symlink removed and backup restored. Data still at {}",
+                real_location.display()
+            ));
         }
 
-        Ok(format!("Symlink removed. Data still at {}", real_location.display()))
+        Ok(format!(
+            "Symlink removed. Data still at {}",
+            real_location.display()
+        ))
     }
 
     /// Detect existing installations in NaK folder
@@ -365,7 +416,9 @@ impl StorageManager {
             if let Ok(entries) = fs::read_dir(&prefixes_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if !path.is_dir() { continue; }
+                    if !path.is_dir() {
+                        continue;
+                    }
 
                     let name = entry.file_name().to_string_lossy().to_string();
 
@@ -402,6 +455,10 @@ pub struct StorageInfo {
     pub exists: bool,
     pub free_space_gb: f64,
     pub used_space_gb: f64,
+    pub cache_size_gb: f64,
+    pub proton_size_gb: f64,
+    pub prefixes_size_gb: f64,
+    pub other_size_gb: f64,
 }
 
 #[derive(Clone, Default)]

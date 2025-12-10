@@ -6,12 +6,62 @@ mod vortex;
 pub use mo2::{install_mo2, setup_existing_mo2};
 pub use vortex::{install_vortex, setup_existing_vortex};
 
-use std::path::Path;
 use std::error::Error;
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use crate::wine::{ProtonInfo, GithubRelease};
 use crate::logging::{log_install, log_warning};
+use crate::wine::{GithubRelease, ProtonInfo};
+
+// ============================================================================
+// Shared Types
+// ============================================================================
+
+/// Context for background installation tasks
+#[derive(Clone)]
+pub struct TaskContext {
+    pub status_callback: Arc<dyn Fn(String) + Send + Sync>,
+    pub log_callback: Arc<dyn Fn(String) + Send + Sync>,
+    pub progress_callback: Arc<dyn Fn(f32) + Send + Sync>,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub winetricks_path: PathBuf,
+}
+
+impl TaskContext {
+    pub fn new(
+        status: impl Fn(String) + Send + Sync + 'static,
+        log: impl Fn(String) + Send + Sync + 'static,
+        progress: impl Fn(f32) + Send + Sync + 'static,
+        cancel: Arc<AtomicBool>,
+        winetricks: PathBuf,
+    ) -> Self {
+        Self {
+            status_callback: Arc::new(status),
+            log_callback: Arc::new(log),
+            progress_callback: Arc::new(progress),
+            cancel_flag: cancel,
+            winetricks_path: winetricks,
+        }
+    }
+
+    pub fn set_status(&self, msg: String) {
+        (self.status_callback)(msg);
+    }
+
+    pub fn log(&self, msg: String) {
+        (self.log_callback)(msg);
+    }
+
+    pub fn set_progress(&self, p: f32) {
+        (self.progress_callback)(p);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_flag.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
 
 // ============================================================================
 // Shared Wine Registry Settings
@@ -200,7 +250,7 @@ pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
 pub fn apply_wine_registry_settings(
     prefix_path: &Path,
     proton: &ProtonInfo,
-    log_callback: &impl Fn(String)
+    log_callback: &impl Fn(String),
 ) -> Result<(), Box<dyn Error>> {
     use std::io::Write;
 
@@ -228,7 +278,10 @@ pub fn apply_wine_registry_settings(
     let wineboot_status = std::process::Command::new(&wineboot_bin)
         .arg("-u")
         .env("WINEPREFIX", prefix_path)
-        .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
+        .env(
+            "LD_LIBRARY_PATH",
+            "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
+        )
         .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d")
         .status();
 
@@ -255,7 +308,10 @@ pub fn apply_wine_registry_settings(
         .arg("regedit")
         .arg(&reg_file)
         .env("WINEPREFIX", prefix_path)
-        .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
+        .env(
+            "LD_LIBRARY_PATH",
+            "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
+        )
         .status();
 
     match status {
@@ -282,14 +338,20 @@ pub fn apply_wine_registry_settings(
 /// Fetch the latest MO2 release from GitHub
 pub fn fetch_latest_mo2_release() -> Result<GithubRelease, Box<dyn Error>> {
     let url = "https://api.github.com/repos/ModOrganizer2/modorganizer/releases/latest";
-    let res = ureq::get(url).set("User-Agent", "NaK-Rust").call()?.into_json()?;
+    let res = ureq::get(url)
+        .set("User-Agent", "NaK-Rust")
+        .call()?
+        .into_json()?;
     Ok(res)
 }
 
 /// Fetch the latest Vortex release from GitHub
 pub fn fetch_latest_vortex_release() -> Result<GithubRelease, Box<dyn Error>> {
     let url = "https://api.github.com/repos/Nexus-Mods/Vortex/releases/latest";
-    let res = ureq::get(url).set("User-Agent", "NaK-Rust").call()?.into_json()?;
+    let res = ureq::get(url)
+        .set("User-Agent", "NaK-Rust")
+        .call()?
+        .into_json()?;
     Ok(res)
 }
 
@@ -312,4 +374,5 @@ pub const STANDARD_DEPS: &[&str] = &[
 ];
 
 /// .NET 9 SDK URL
-pub const DOTNET9_SDK_URL: &str = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.203/dotnet-sdk-9.0.203-win-x64.exe";
+pub const DOTNET9_SDK_URL: &str =
+    "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.203/dotnet-sdk-9.0.203-win-x64.exe";

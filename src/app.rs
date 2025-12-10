@@ -1,15 +1,18 @@
 //! Application state and initialization
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::wine::{ProtonInfo, ProtonFinder, NakPrefix, PrefixManager, GithubRelease};
-use crate::wine::{fetch_ge_releases, fetch_cachyos_releases, ensure_winetricks, ensure_cabextract, check_command_available};
 use crate::config::{AppConfig, CacheConfig};
 use crate::nxm::NxmHandler;
 use crate::utils::detect_steam_path_checked;
+use crate::wine::{
+    check_command_available, ensure_cabextract, ensure_winetricks, fetch_cachyos_releases,
+    fetch_ge_releases,
+};
+use crate::wine::{GithubRelease, NakPrefix, PrefixManager, ProtonFinder, ProtonInfo};
 
 // ============================================================================
 // Types
@@ -24,13 +27,47 @@ pub enum Page {
     Settings,
 }
 
-pub struct ModManagerInstance {
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum ModManagerView {
+    Dashboard,
+    PrefixManager,
+    Mo2Manager,
+    VortexManager,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum WizardStep {
+    Selection,
+    NameInput,
+    PathInput,
+    Finished,
+}
+
+#[derive(Clone, Debug)]
+pub struct InstallWizard {
+    pub step: WizardStep,
+    pub manager_type: String, // "MO2" or "Vortex"
+    pub install_type: String, // "New" or "Existing"
     pub name: String,
-    pub game: String,
-    pub manager_type: String,
-    pub status: String,
-    #[allow(dead_code)]
     pub path: String,
+    pub validation_error: Option<String>,
+    pub force_install: bool,
+    pub last_install_error: Option<String>,
+}
+
+impl Default for InstallWizard {
+    fn default() -> Self {
+        Self {
+            step: WizardStep::Selection,
+            manager_type: String::new(),
+            install_type: String::new(),
+            name: String::new(),
+            path: String::new(),
+            validation_error: None,
+            force_install: false,
+            last_install_error: None,
+        }
+    }
 }
 
 // ============================================================================
@@ -40,9 +77,9 @@ pub struct ModManagerInstance {
 pub struct MyApp {
     // Navigation
     pub current_page: Page,
+    pub mod_manager_view: ModManagerView,
 
     // Page State: Mod Managers
-    pub installed_instances: Vec<ModManagerInstance>,
     #[allow(dead_code)]
     pub show_prefix_manager: bool,
     #[allow(dead_code)]
@@ -50,13 +87,12 @@ pub struct MyApp {
     #[allow(dead_code)]
     pub show_vortex_manager: bool,
 
+    // Installation Wizard State
+    pub install_wizard: InstallWizard,
+
     pub is_installing_manager: Arc<Mutex<bool>>,
     pub install_status: Arc<Mutex<String>>,
-    pub install_name_input: String,
-    pub install_path_input: String,
-
-    pub vortex_install_name: String,
-    pub vortex_install_path: String,
+    // Removed old scattered input fields in favor of InstallWizard
 
     pub logs: Arc<Mutex<Vec<String>>>,
     pub install_progress: Arc<Mutex<f32>>,
@@ -126,25 +162,26 @@ impl Default for MyApp {
         // Note: cabextract will be auto-downloaded if missing, so we check it later
         let mut missing = Vec::new();
 
-        if !check_command_available("unzip") && !check_command_available("7z") { missing.push("unzip or 7z".to_string()); }
-        if !check_command_available("curl") && !check_command_available("wget") { missing.push("curl or wget".to_string()); }
+        if !check_command_available("unzip") && !check_command_available("7z") {
+            missing.push("unzip or 7z".to_string());
+        }
+        if !check_command_available("curl") && !check_command_available("wget") {
+            missing.push("curl or wget".to_string());
+        }
 
         let missing_deps_arc = Arc::new(Mutex::new(missing));
 
         let app = Self {
             current_page: Page::GettingStarted,
-            installed_instances: Vec::new(),
+            mod_manager_view: ModManagerView::Dashboard,
             show_prefix_manager: true,
             show_mo2_manager: true,
             show_vortex_manager: true,
 
+            install_wizard: InstallWizard::default(),
+
             is_installing_manager: Arc::new(Mutex::new(false)),
             install_status: Arc::new(Mutex::new(String::new())),
-            install_name_input: String::new(),
-            install_path_input: String::new(),
-
-            vortex_install_name: String::new(),
-            vortex_install_path: String::new(),
 
             logs: Arc::new(Mutex::new(Vec::new())),
             install_progress: Arc::new(Mutex::new(0.0)),
@@ -223,7 +260,10 @@ impl Default for MyApp {
                 Err(e) => {
                     eprintln!("Failed to ensure cabextract: {}", e);
                     // Add to missing deps if download failed
-                    missing_deps_for_thread.lock().unwrap().push("cabextract".to_string());
+                    missing_deps_for_thread
+                        .lock()
+                        .unwrap()
+                        .push("cabextract".to_string());
                 }
             }
 
@@ -263,9 +303,9 @@ impl MyApp {
                 changed = true;
             }
         } else if let Some(first) = self.proton_versions.first() {
-             // If nothing was selected but we have versions, select the first one
-             self.config.selected_proton = Some(first.name.clone());
-             changed = true;
+            // If nothing was selected but we have versions, select the first one
+            self.config.selected_proton = Some(first.name.clone());
+            changed = true;
         }
 
         if changed {

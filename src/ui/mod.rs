@@ -1,14 +1,14 @@
 //! UI components and rendering
 
-mod sidebar;
 mod mod_managers;
-mod proton_tools;
 mod pages;
+mod proton_tools;
+mod sidebar;
 
-pub use sidebar::render_sidebar;
 pub use mod_managers::render_mod_managers;
-pub use proton_tools::render_proton_tools;
 pub use pages::{render_getting_started, render_marketplace, render_settings};
+pub use proton_tools::render_proton_tools;
+pub use sidebar::render_sidebar;
 
 use eframe::egui;
 use std::sync::atomic::Ordering;
@@ -93,16 +93,14 @@ impl eframe::App for MyApp {
             match self.current_page {
                 crate::app::Page::ModManagers => {
                     render_mod_managers(self, ui);
-                },
+                }
                 _ => {
-                    ui.add_enabled_ui(!is_busy, |ui| {
-                        match self.current_page {
-                            crate::app::Page::GettingStarted => render_getting_started(self, ui),
-                            crate::app::Page::Marketplace => render_marketplace(self, ui),
-                            crate::app::Page::ProtonTools => render_proton_tools(self, ui),
-                            crate::app::Page::Settings => render_settings(self, ui),
-                            _ => {}
-                        }
+                    ui.add_enabled_ui(!is_busy, |ui| match self.current_page {
+                        crate::app::Page::GettingStarted => render_getting_started(self, ui),
+                        crate::app::Page::Marketplace => render_marketplace(self, ui),
+                        crate::app::Page::ProtonTools => render_proton_tools(self, ui),
+                        crate::app::Page::Settings => render_settings(self, ui),
+                        _ => {}
                     });
                 }
             }

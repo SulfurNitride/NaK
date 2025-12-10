@@ -1,9 +1,9 @@
 //! Simple pages: Getting Started, Marketplace, Settings
 
-use eframe::egui;
 use crate::app::{MyApp, Page};
 use crate::config::StorageManager;
 use crate::logging::log_action;
+use eframe::egui;
 
 pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
     egui::ScrollArea::vertical().show(ui, |ui| {
@@ -11,21 +11,36 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
         // Header
         // ============================================================
         ui.heading(egui::RichText::new("Welcome to NaK!").size(24.0).strong());
-        ui.label(egui::RichText::new("Linux Modding Helper").size(14.0).color(egui::Color32::GRAY));
+        ui.label(
+            egui::RichText::new("Linux Modding Helper")
+                .size(14.0)
+                .color(egui::Color32::GRAY),
+        );
 
         ui.separator();
         ui.add_space(10.0);
 
         ui.label("NaK makes it easy to run Windows modding tools on Linux using Proton.");
-        ui.label(egui::RichText::new("Get started by following these three simple steps:").color(egui::Color32::LIGHT_GRAY));
+        ui.label(
+            egui::RichText::new("Get started by following these three simple steps:")
+                .color(egui::Color32::LIGHT_GRAY),
+        );
 
         ui.add_space(15.0);
 
         // ============================================================
         // Step 1: Pick a Proton Version
         // ============================================================
-        ui.label(egui::RichText::new("1. Pick a Proton Version").size(16.0).strong());
-        ui.label(egui::RichText::new("   NaK needs Proton to run Windows modding tools").size(12.0).color(egui::Color32::LIGHT_GRAY));
+        ui.label(
+            egui::RichText::new("1. Pick a Proton Version")
+                .size(16.0)
+                .strong(),
+        );
+        ui.label(
+            egui::RichText::new("   NaK needs Proton to run Windows modding tools")
+                .size(12.0)
+                .color(egui::Color32::LIGHT_GRAY),
+        );
         ui.add_space(5.0);
         ui.label("   - Recommended: Download Proton-GE (best compatibility)");
         ui.label("   - Alternative: Use system Proton if you prefer");
@@ -40,28 +55,18 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.add_space(10.0);
 
         // ============================================================
-        // Step 2: Always Use Portable Mode for MO2
-        // ============================================================
-        ui.label(egui::RichText::new("2. Always Use Portable Mode for MO2").size(16.0).strong());
-        ui.label(egui::RichText::new("   This is CRITICAL for proper operation on Linux").size(12.0).strong().color(egui::Color32::from_rgb(255, 200, 100)));
-        ui.add_space(5.0);
-        ui.label(egui::RichText::new("   When MO2 asks during installation:").strong());
-        ui.label(egui::RichText::new("   [YES] SELECT: Portable").strong().color(egui::Color32::LIGHT_GREEN));
-        ui.label(egui::RichText::new("   [NO]  NEVER SELECT: Global").strong().color(egui::Color32::from_rgb(255, 100, 100)));
-        ui.add_space(5.0);
-        ui.label("   - Portable mode keeps all files in one place");
-        ui.label("   - Makes backups and management much easier");
-        ui.label("   - Avoids Wine registry issues");
-
-        ui.add_space(20.0);
-        ui.separator();
-        ui.add_space(10.0);
-
-        // ============================================================
         // Step 3: Check FAQ & Known Issues
         // ============================================================
-        ui.label(egui::RichText::new("3. Check FAQ & Known Issues").size(16.0).strong());
-        ui.label(egui::RichText::new("   Solutions to common problems and setup tips").size(12.0).color(egui::Color32::LIGHT_GRAY));
+        ui.label(
+            egui::RichText::new("2. Check FAQ & Known Issues")
+                .size(16.0)
+                .strong(),
+        );
+        ui.label(
+            egui::RichText::new("   Solutions to common problems and setup tips")
+                .size(12.0)
+                .color(egui::Color32::LIGHT_GRAY),
+        );
         ui.add_space(5.0);
         ui.label("   - Comprehensive FAQ with troubleshooting guides");
         ui.label("   - Known issues and their solutions");
@@ -132,10 +137,10 @@ pub fn render_marketplace(_app: &MyApp, ui: &mut egui::Ui) {
                             ui.strong(format!("Plugin {}", i));
                             ui.small("Description of plugin...");
                             ui.add_space(5.0);
-                            if ui.button("Install").clicked() { }
+                            if ui.button("Install").clicked() {}
                         });
                     });
-                 ui.add_space(10.0);
+                ui.add_space(10.0);
             }
         });
     });
@@ -159,7 +164,10 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 if cache_info.exists {
                     ui.horizontal(|ui| {
                         ui.label("Cache Size:");
-                        ui.strong(format!("{:.2} MB ({} files)", cache_info.size_mb, cache_info.file_count));
+                        ui.strong(format!(
+                            "{:.2} MB ({} files)",
+                            cache_info.size_mb, cache_info.file_count
+                        ));
                     });
                 } else {
                     ui.label("Cache: Not created yet");
@@ -183,7 +191,10 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 ui.add_enabled_ui(cache_enabled, |ui| {
                     ui.indent("cache_options", |ui| {
                         let mut cache_deps = app.cache_config.cache_dependencies;
-                        if ui.checkbox(&mut cache_deps, "Cache Dependencies (~1.7GB)").changed() {
+                        if ui
+                            .checkbox(&mut cache_deps, "Cache Dependencies (~1.7GB)")
+                            .changed()
+                        {
                             app.cache_config.cache_dependencies = cache_deps;
                             app.cache_config.save();
                         }
@@ -195,7 +206,10 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                         }
 
                         let mut cache_vortex = app.cache_config.cache_vortex;
-                        if ui.checkbox(&mut cache_vortex, "Cache Vortex Downloads").changed() {
+                        if ui
+                            .checkbox(&mut cache_vortex, "Cache Vortex Downloads")
+                            .changed()
+                        {
                             app.cache_config.cache_vortex = cache_vortex;
                             app.cache_config.save();
                         }
@@ -239,15 +253,43 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                         ui.label("Real Location:");
                         ui.monospace(&storage_info.real_path);
                     });
-                    ui.colored_label(egui::Color32::LIGHT_BLUE, "↳ Using symlink to custom location");
+                    ui.colored_label(
+                        egui::Color32::LIGHT_BLUE,
+                        "↳ Using symlink to custom location",
+                    );
                 }
 
                 if storage_info.exists {
                     ui.horizontal(|ui| {
-                        ui.label("Used:");
+                        ui.label("Total Used:");
                         ui.strong(format!("{:.2} GB", storage_info.used_space_gb));
                         ui.label(" | Free:");
                         ui.strong(format!("{:.2} GB", storage_info.free_space_gb));
+                    });
+                    
+                    ui.add_space(5.0);
+                    ui.indent("storage_breakdown", |ui| {
+                        ui.label(egui::RichText::new("Breakdown:").strong());
+                        ui.horizontal(|ui| {
+                            ui.label("• Prefixes:");
+                            ui.strong(format!("{:.2} GB", storage_info.prefixes_size_gb));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("• Proton Versions:");
+                            ui.strong(format!("{:.2} GB", storage_info.proton_size_gb));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("• Cache:");
+                            ui.strong(format!("{:.2} GB", storage_info.cache_size_gb));
+                        });
+                        
+                        if storage_info.other_size_gb > 0.01 {
+                            ui.horizontal(|ui| {
+                                ui.label("• Other:");
+                                ui.strong(format!("{:.2} GB", storage_info.other_size_gb))
+                                  .on_hover_text("Includes logs, config files, and binaries in ~/NaK");
+                            });
+                        }
                     });
                 }
 
@@ -256,7 +298,8 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 // Detect installations
                 let installations = storage_mgr.detect_installations();
                 if installations.total_count > 0 {
-                    ui.label(format!("Detected: {} prefixes ({} MO2, {} Vortex)",
+                    ui.label(format!(
+                        "Detected: {} prefixes ({} MO2, {} Vortex)",
                         installations.total_count,
                         installations.mo2_count,
                         installations.vortex_count
@@ -274,9 +317,11 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 // Migration controls - text input + button (works on all WMs including DWM)
                 ui.label("Move NaK to a different location:");
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut app.migration_path_input)
-                        .hint_text("/path/to/new/location")
-                        .desired_width(300.0));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut app.migration_path_input)
+                            .hint_text("/path/to/new/location")
+                            .desired_width(300.0),
+                    );
 
                     if ui.button("📂 Browse").clicked() {
                         log_action("Browse for migration path clicked");
@@ -289,7 +334,10 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
 
                 ui.horizontal(|ui| {
                     let can_move = !app.migration_path_input.trim().is_empty();
-                    if ui.add_enabled(can_move, egui::Button::new("📦 Move NaK Here")).clicked() {
+                    if ui
+                        .add_enabled(can_move, egui::Button::new("📦 Move NaK Here"))
+                        .clicked()
+                    {
                         log_action(&format!("Move NaK to: {}", app.migration_path_input));
                         let path = std::path::PathBuf::from(app.migration_path_input.trim());
                         match storage_mgr.setup_symlink(&path, true) {
@@ -303,16 +351,16 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                         }
                     }
 
-                    if storage_info.is_symlink {
-                        if ui.button("↩ Restore to Default Location").clicked() {
-                            log_action("Restore NaK location clicked");
-                            match storage_mgr.remove_symlink() {
-                                Ok(msg) => {
-                                    crate::logging::log_info(&msg);
-                                }
-                                Err(e) => {
-                                    crate::logging::log_error(&format!("Restore failed: {}", e));
-                                }
+                    if storage_info.is_symlink
+                        && ui.button("↩ Restore to Default Location").clicked()
+                    {
+                        log_action("Restore NaK location clicked");
+                        match storage_mgr.remove_symlink() {
+                            Ok(msg) => {
+                                crate::logging::log_info(&msg);
+                            }
+                            Err(e) => {
+                                crate::logging::log_error(&format!("Restore failed: {}", e));
                             }
                         }
                     }

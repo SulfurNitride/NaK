@@ -1,18 +1,18 @@
 //! Dependency management via Winetricks
 
-use std::process::{Command, Stdio};
-use std::path::{Path, PathBuf};
 use std::error::Error;
+use std::fs;
 use std::io::BufRead;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
 
 use super::ProtonInfo;
-use crate::logging::{log_info, log_warning, log_error};
+use crate::logging::{log_error, log_info, log_warning};
 
 // ============================================================================
 // NaK Bin Directory (for bundled tools like cabextract)
@@ -63,7 +63,12 @@ pub fn resolve_nak_path(path: &Path) -> PathBuf {
 /// Check if a command exists (either in system PATH or NaK bin)
 pub fn check_command_available(cmd: &str) -> bool {
     // Check system PATH first
-    if Command::new("which").arg(cmd).output().map(|o| o.status.success()).unwrap_or(false) {
+    if Command::new("which")
+        .arg(cmd)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
         return true;
     }
 
@@ -77,12 +82,18 @@ pub fn check_command_available(cmd: &str) -> bool {
 // ============================================================================
 
 /// URL for static cabextract binary (zip file)
-const CABEXTRACT_URL: &str = "https://github.com/SulfurNitride/NaK/releases/download/Cabextract/cabextract-linux-x86_64.zip";
+const CABEXTRACT_URL: &str =
+    "https://github.com/SulfurNitride/NaK/releases/download/Cabextract/cabextract-linux-x86_64.zip";
 
 /// Ensures cabextract is available (either system or downloaded)
 pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
     // First check if system has cabextract
-    if Command::new("which").arg("cabextract").output().map(|o| o.status.success()).unwrap_or(false) {
+    if Command::new("which")
+        .arg("cabextract")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
         // Return a marker that system cabextract is available
         return Ok(PathBuf::from("cabextract"));
     }
@@ -102,9 +113,12 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
     log_warning("System cabextract not found, downloading...");
     fs::create_dir_all(&bin_dir)?;
 
-    let response = ureq::get(CABEXTRACT_URL)
-        .call()
-        .map_err(|e| format!("Failed to download cabextract: {}. Please install cabextract manually.", e))?;
+    let response = ureq::get(CABEXTRACT_URL).call().map_err(|e| {
+        format!(
+            "Failed to download cabextract: {}. Please install cabextract manually.",
+            e
+        )
+    })?;
 
     // Download to temp zip file
     let zip_path = bin_dir.join("cabextract.zip");
@@ -166,8 +180,10 @@ pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
     // Check if it exists (we could add version checking later)
     if !winetricks_path.exists() {
         println!("Downloading winetricks...");
-        let response = ureq::get("https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks")
-            .call()?;
+        let response = ureq::get(
+            "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks",
+        )
+        .call()?;
 
         let mut file = fs::File::create(&winetricks_path)?;
         std::io::copy(&mut response.into_reader(), &mut file)?;
@@ -200,9 +216,8 @@ impl DependencyManager {
         proton: &ProtonInfo,
         dependencies: &[&str],
         status_callback: impl Fn(String) + Clone + Send + 'static,
-        cancel_flag: Arc<AtomicBool>
+        cancel_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error>> {
-
         // Get winetricks from NaK bin directory (handles symlinks properly)
         let nak_bin = get_nak_bin_path();
         let winetricks_real = nak_bin.join("winetricks");
@@ -220,7 +235,8 @@ impl DependencyManager {
         let prefix_real = resolve_nak_path(prefix_path);
 
         // Include NaK bin directory for bundled tools (cabextract, winetricks, etc.)
-        let path_env = format!("{}:{}:{}",
+        let path_env = format!(
+            "{}:{}:{}",
             proton_real.join("files/bin").to_string_lossy(),
             nak_bin.to_string_lossy(),
             std::env::var("PATH").unwrap_or_default()
@@ -230,21 +246,26 @@ impl DependencyManager {
             return Err(format!("Wine binary not found at {:?}", wine_bin).into());
         }
 
-        status_callback(format!("Installing dependencies: {}", dependencies.join(", ")));
+        status_callback(format!(
+            "Installing dependencies: {}",
+            dependencies.join(", ")
+        ));
 
         let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
-           .args(dependencies)
-           .env("WINEPREFIX", &prefix_real)
-           .env("WINE", &wine_bin)
-           .env("WINESERVER", &wineserver)
-           .env("PATH", &path_env)
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
+            .args(dependencies)
+            .env("WINEPREFIX", &prefix_real)
+            .env("WINE", &wine_bin)
+            .env("WINESERVER", &wineserver)
+            .env("PATH", &path_env)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         let mut child = cmd.spawn().map_err(|e| {
-            format!("Failed to spawn winetricks: {} | winetricks={:?} wine={:?} prefix={:?}",
-                e, winetricks_real, wine_bin, prefix_real)
+            format!(
+                "Failed to spawn winetricks: {} | winetricks={:?} wine={:?} prefix={:?}",
+                e, winetricks_real, wine_bin, prefix_real
+            )
         })?;
 
         // Stream Stdout
@@ -252,15 +273,21 @@ impl DependencyManager {
         let cb_out = status_callback.clone();
         thread::spawn(move || {
             let reader = std::io::BufReader::new(stdout);
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 // Hard block Wine internal logs
                 if line.contains(":err:") || line.contains(":fixme:") || line.contains(":warn:") {
                     continue;
                 }
 
                 let l = line.to_lowercase();
-                if l.contains("executing") || l.contains("installing") || l.contains("downloading")
-                   || l.contains("completed") || l.contains("success") || l.contains("fail") || l.contains("error") {
+                if l.contains("executing")
+                    || l.contains("installing")
+                    || l.contains("downloading")
+                    || l.contains("completed")
+                    || l.contains("success")
+                    || l.contains("fail")
+                    || l.contains("error")
+                {
                     cb_out(format!("[WINETRICKS] {}", line));
                 }
             }
@@ -271,15 +298,21 @@ impl DependencyManager {
         let cb_err = status_callback.clone();
         thread::spawn(move || {
             let reader = std::io::BufReader::new(stderr);
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 // Hard block Wine internal logs
                 if line.contains(":err:") || line.contains(":fixme:") || line.contains(":warn:") {
                     continue;
                 }
 
                 let l = line.to_lowercase();
-                if l.contains("executing") || l.contains("installing") || l.contains("downloading")
-                   || l.contains("completed") || l.contains("success") || l.contains("fail") || l.contains("error") {
+                if l.contains("executing")
+                    || l.contains("installing")
+                    || l.contains("downloading")
+                    || l.contains("completed")
+                    || l.contains("success")
+                    || l.contains("fail")
+                    || l.contains("error")
+                {
                     cb_err(format!("[WINETRICKS] {}", line));
                 }
             }
@@ -317,9 +350,8 @@ impl DependencyManager {
         prefix_path: &Path,
         proton: &ProtonInfo,
         verb: &str,
-        status_callback: impl Fn(String) + Clone + Send + 'static
+        status_callback: impl Fn(String) + Clone + Send + 'static,
     ) -> Result<(), Box<dyn Error>> {
-
         // Get winetricks from NaK bin directory (handles symlinks properly)
         let nak_bin = get_nak_bin_path();
         let winetricks_real = nak_bin.join("winetricks");
@@ -337,10 +369,12 @@ impl DependencyManager {
         let prefix_real = resolve_nak_path(prefix_path);
 
         // Include NaK bin directory for bundled tools (cabextract, winetricks, etc.)
-        let path_env = format!("{}:{}:{}",
+        let path_env = format!(
+            "{}:{}:{}",
             proton_real.join("files/bin").to_string_lossy(),
             nak_bin.to_string_lossy(),
-            std::env::var("PATH").unwrap_or_default());
+            std::env::var("PATH").unwrap_or_default()
+        );
 
         if !wine_bin.exists() {
             return Err(format!("Wine binary not found at {:?}", wine_bin).into());
@@ -350,17 +384,19 @@ impl DependencyManager {
 
         let mut cmd = Command::new(&winetricks_real);
         cmd.arg("--unattended")
-           .arg(verb)
-           .env("WINEPREFIX", &prefix_real)
-           .env("WINE", &wine_bin)
-           .env("WINESERVER", &wineserver)
-           .env("PATH", &path_env)
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
+            .arg(verb)
+            .env("WINEPREFIX", &prefix_real)
+            .env("WINE", &wine_bin)
+            .env("WINESERVER", &wineserver)
+            .env("PATH", &path_env)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         let mut child = cmd.spawn().map_err(|e| {
-            format!("Failed to spawn winetricks: {} | winetricks={:?} wine={:?}",
-                e, winetricks_real, wine_bin)
+            format!(
+                "Failed to spawn winetricks: {} | winetricks={:?} wine={:?}",
+                e, winetricks_real, wine_bin
+            )
         })?;
 
         // Stream Stdout (Simplified for single command)
@@ -368,7 +404,7 @@ impl DependencyManager {
         let cb_out = status_callback.clone();
         thread::spawn(move || {
             let reader = std::io::BufReader::new(stdout);
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 cb_out(format!("[STDOUT] {}", line));
             }
         });

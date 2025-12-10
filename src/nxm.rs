@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::error::Error;
+use std::path::{Path, PathBuf};
 
 pub struct NxmHandler;
 
@@ -35,7 +35,8 @@ impl NxmHandler {
         // 1. Create the Handler Script
         // This script finds the 'active_nxm_game' symlink and passes the argument to it.
         // We assume 'active_nxm_game' points to the installation directory (where 'Launch MO2' is).
-        let script_content = format!(r#"#!/bin/bash
+        let script_content = format!(
+            r#"#!/bin/bash
 # NaK Global NXM Handler
 # Forwards nxm:// links to the active Mod Organizer 2 instance
 
@@ -57,7 +58,9 @@ fi
 
 # Run MO2 with the NXM link
 "$LAUNCHER" "$1"
-"#, home);
+"#,
+            home
+        );
 
         let mut file = fs::File::create(&script_path)?;
         file.write_all(script_content.as_bytes())?;
@@ -66,7 +69,8 @@ fi
         fs::set_permissions(&script_path, perms)?;
 
         // 2. Create Desktop Entry
-        let desktop_content = format!(r#"[Desktop Entry]
+        let desktop_content = format!(
+            r#"[Desktop Entry]
 Type=Application
 Name=NaK NXM Handler
 Comment=Handle Nexus Mods links via NaK
@@ -75,7 +79,9 @@ Icon=utilities-terminal
 Terminal=false
 Categories=Game;Utility;
 MimeType=x-scheme-handler/nxm;
-"#, script_path.to_string_lossy());
+"#,
+            script_path.to_string_lossy()
+        );
 
         let mut dfile = fs::File::create(&desktop_path)?;
         dfile.write_all(desktop_content.as_bytes())?;
