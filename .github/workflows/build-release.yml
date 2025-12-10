@@ -42,17 +42,11 @@ jobs:
       - name: Strip binary
         run: strip target/release/nak_rust
 
-      - name: Create archive
-        run: |
-          cd target/release
-          tar czvf nak_rust-linux-x86_64.tar.gz nak_rust
-          ls -la
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nak_rust-linux-x86_64
-          path: target/release/nak_rust-linux-x86_64.tar.gz
+          name: nak_rust-linux-x86_64-binary # Changed name to reflect binary
+          path: target/release/nak_rust # Upload binary directly
 
   release:
     needs: build-linux
@@ -63,12 +57,12 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: nak_rust-linux-x86_64
+          name: nak_rust-linux-x86_64-binary # Changed name to reflect binary
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: nak_rust-linux-x86_64.tar.gz
+          files: nak_rust # Directly attach the binary
           draft: false
           prerelease: false
           generate_release_notes: true
