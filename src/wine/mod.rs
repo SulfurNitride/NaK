@@ -3,6 +3,7 @@
 mod deps;
 mod prefixes;
 mod proton;
+pub mod runtime;
 
 pub use deps::{check_command_available, ensure_cabextract, ensure_winetricks, DependencyManager};
 pub use prefixes::{NakPrefix, PrefixManager};

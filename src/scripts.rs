@@ -7,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use crate::utils::detect_steam_path;
+use crate::wine::runtime;
 
 pub struct ScriptGenerator;
 
@@ -20,55 +21,56 @@ impl ScriptGenerator {
     ) -> Result<std::path::PathBuf, Box<dyn Error>> {
         let steam_path = detect_steam_path();
         let compat_data = prefix_path.parent().unwrap_or(prefix_path);
+        let runtime_entry = runtime::get_entry_point();
 
-        let script_content = format!(
-            r#"#!/bin/bash
+        let script_content = if let Some(entry_point) = runtime_entry {
+            format!(
+                r#"#!/bin/bash
 # NaK Generated Launch Script for MO2
-# Matches Python logic for Steam/Proton environment
+# Running inside Steam Linux Runtime (Sniper) Container
 
-PROTON_GE="{proton}"
-PREFIX="{prefix}"
-COMPAT_DATA="{compat_data}"
-MO2_EXE="{exe}"
-STEAM_PATH="{steam_path}"
+PROTON_GE='{proton}'
+PREFIX='{prefix}'
+MO2_EXE='{exe}'
+ENTRY_POINT='{entry}'
+STEAM_PATH='{steam_path}'
+COMPAT_DATA='{compat_data}'
 
-# Check if Proton-GE exists
-if [ ! -f "$PROTON_GE/proton" ]; then
-    echo "ERROR: Proton-GE not found at $PROTON_GE"
+# Check environment
+if [ ! -f "$ENTRY_POINT" ]; then
+    echo "ERROR: Steam Runtime entry point not found at $ENTRY_POINT"
     exit 1
 fi
 
-# Check if Steam is running (required for DRM)
-if ! pgrep -x "steam" > /dev/null && ! pgrep -x "steamwebhelper" > /dev/null; then
-    echo "WARNING: Steam is not running! Starting Steam..."
-    nohup steam -silent > /dev/null 2>&1 &
-    sleep 5
-fi
-
-# Set environment variables for Proton
+# Set environment variables for the Container
 export WINEPREFIX="$PREFIX"
 export STEAM_COMPAT_DATA_PATH="$COMPAT_DATA"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
-export PATH="$PROTON_GE/files/bin:$PATH"
+export PROTON_DIST_PATH="$PROTON_GE"
+
+# Set GAMEID for protonfixes
+export GAMEID="non-steam-game"
 
 # DotNet Fixes
 export DOTNET_ROOT=""
 export DOTNET_MULTILEVEL_LOOKUP=0
-
-# Fix for MO2 VFS
 export MO2_VFS_LOG_LEVEL=0
 
-echo "Launching Mod Organizer 2..."
-"$PROTON_GE/proton" run "$MO2_EXE" "$@"
+echo "Launching Mod Organizer 2 (Containerized)..."
+"$ENTRY_POINT" --verb=waitforexitandrun -- "$PROTON_GE/proton" run "$MO2_EXE" "$@"
 "#,
-            prefix = prefix_path.to_string_lossy(),
-            proton = proton_ge_path.to_string_lossy(),
-            compat_data = compat_data.to_string_lossy(),
-            steam_path = steam_path,
-            exe = mo2_exe.to_string_lossy()
-        );
+                prefix = prefix_path.to_string_lossy(),
+                proton = proton_ge_path.to_string_lossy(),
+                compat_data = compat_data.to_string_lossy(),
+                steam_path = steam_path,
+                exe = mo2_exe.to_string_lossy(),
+                entry = entry_point.to_string_lossy()
+            )
+        } else {
+            return Err("Steam Linux Runtime (Sniper) not found! Please download it in NaK Settings (Proton Picker).".into());
+        };
 
-        let script_path = script_output_dir.join(".start.sh");
+        let script_path = script_output_dir.join("start.sh");
         let mut file = fs::File::create(&script_path)?;
         file.write_all(script_content.as_bytes())?;
 
@@ -89,52 +91,55 @@ echo "Launching Mod Organizer 2..."
     ) -> Result<std::path::PathBuf, Box<dyn Error>> {
         let steam_path = detect_steam_path();
         let compat_data = prefix_path.parent().unwrap_or(prefix_path);
+        let runtime_entry = runtime::get_entry_point();
 
-        let script_content = format!(
-            r#"#!/bin/bash
+        let script_content = if let Some(entry_point) = runtime_entry {
+            format!(
+                r#"#!/bin/bash
 # NaK Generated Launch Script for Vortex
-# Matches Python logic for Steam/Proton environment
+# Running inside Steam Linux Runtime (Sniper) Container
 
-PROTON_GE="{proton}"
-PREFIX="{prefix}"
-COMPAT_DATA="{compat_data}"
-VORTEX_EXE="{exe}"
-STEAM_PATH="{steam_path}"
+PROTON_GE='{proton}'
+PREFIX='{prefix}'
+VORTEX_EXE='{exe}'
+ENTRY_POINT='{entry}'
+STEAM_PATH='{steam_path}'
+COMPAT_DATA='{compat_data}'
 
-# Check if Proton-GE exists
-if [ ! -f "$PROTON_GE/proton" ]; then
-    echo "ERROR: Proton-GE not found at $PROTON_GE"
+# Check environment
+if [ ! -f "$ENTRY_POINT" ]; then
+    echo "ERROR: Steam Runtime entry point not found at $ENTRY_POINT"
     exit 1
 fi
 
-# Check if Steam is running (required for DRM)
-if ! pgrep -x "steam" > /dev/null && ! pgrep -x "steamwebhelper" > /dev/null; then
-    echo "WARNING: Steam is not running! Starting Steam..."
-    nohup steam -silent > /dev/null 2>&1 &
-    sleep 5
-fi
-
-# Set environment variables for Proton
+# Set environment variables for the Container
 export WINEPREFIX="$PREFIX"
 export STEAM_COMPAT_DATA_PATH="$COMPAT_DATA"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
-export PATH="$PROTON_GE/files/bin:$PATH"
+export PROTON_DIST_PATH="$PROTON_GE"
+
+# Set GAMEID for protonfixes
+export GAMEID="non-steam-game"
 
 # DotNet Fixes
 export DOTNET_ROOT=""
 export DOTNET_MULTILEVEL_LOOKUP=0
 
-echo "Launching Vortex..."
-"$PROTON_GE/proton" run "$VORTEX_EXE" "$@"
+echo "Launching Vortex (Containerized)..."
+"$ENTRY_POINT" --verb=waitforexitandrun -- "$PROTON_GE/proton" run "$VORTEX_EXE" "$@"
 "#,
-            prefix = prefix_path.to_string_lossy(),
-            proton = proton_ge_path.to_string_lossy(),
-            compat_data = compat_data.to_string_lossy(),
-            steam_path = steam_path,
-            exe = vortex_exe.to_string_lossy()
-        );
+                prefix = prefix_path.to_string_lossy(),
+                proton = proton_ge_path.to_string_lossy(),
+                compat_data = compat_data.to_string_lossy(),
+                steam_path = steam_path,
+                exe = vortex_exe.to_string_lossy(),
+                entry = entry_point.to_string_lossy()
+            )
+        } else {
+            return Err("Steam Linux Runtime (Sniper) not found! Please download it in NaK Settings (Proton Picker).".into());
+        };
 
-        let script_path = script_output_dir.join(".start.sh");
+        let script_path = script_output_dir.join("start.sh");
         let mut file = fs::File::create(&script_path)?;
         file.write_all(script_content.as_bytes())?;
 
@@ -154,8 +159,8 @@ echo "Launching Vortex..."
         let script_content = format!(
             r#"#!/bin/bash
 # NaK Kill Prefix Script
-PREFIX="{prefix}"
-PROTON_GE="{proton}"
+PREFIX='{prefix}'
+PROTON_GE='{proton}'
 WINESERVER="$PROTON_GE/files/bin/wineserver"
 
 echo "Killing Wine processes for prefix: $PREFIX"
@@ -191,18 +196,27 @@ echo "Done."
         instance_name: &str,
         script_output_dir: &Path,
     ) -> Result<std::path::PathBuf, Box<dyn Error>> {
+        let steam_path = detect_steam_path();
+        let compat_data = prefix_path.parent().unwrap_or(prefix_path);
+        let runtime_entry = runtime::get_entry_point();
+
+        // Check if we have the runtime, use it if possible, else error
+        let entry_point = if let Some(ep) = runtime_entry {
+            ep
+        } else {
+             return Err("Steam Linux Runtime (Sniper) not found.".into());
+        };
+
         let script_content = format!(
             r#"#!/bin/bash
 # NaK Game Registry Fixer
 # Instance: {instance_name}
-# Generated by NaK Linux Modding Helper
-#
-# This script fixes the game installation path in the Windows registry
-# so that mods and tools can find your game correctly.
 
-PREFIX="{prefix}"
-PROTON_GE="{proton}"
-REG="$PROTON_GE/files/bin/wine64 reg"
+PREFIX='{prefix}'
+PROTON_GE='{proton}'
+COMPAT_DATA='{compat_data}'
+STEAM_PATH='{steam_path}'
+ENTRY_POINT='{entry}'
 
 echo "=================================================="
 echo "NaK Game Registry Fixer"
@@ -210,27 +224,37 @@ echo "Instance: {instance_name}"
 echo "=================================================="
 echo ""
 
-# Check if reg.exe exists
-if [ ! -f "$PROTON_GE/files/bin/wine64" ]; then
-    echo "ERROR: wine64 not found at $PROTON_GE/files/bin/wine64"
-    echo "Please ensure Proton-GE is properly installed."
+# Check environment
+if [ ! -f "$ENTRY_POINT" ]; then
+    echo "ERROR: Steam Runtime entry point not found at $ENTRY_POINT"
     exit 1
 fi
+
+# Set environment variables for the Container
+export WINEPREFIX="$PREFIX"
+export STEAM_COMPAT_DATA_PATH="$COMPAT_DATA"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
+export PROTON_DIST_PATH="$PROTON_GE"
+export GAMEID="non-steam-game"
+
+# DotNet Fixes
+export DOTNET_ROOT=""
+export DOTNET_MULTILEVEL_LOOKUP=0
 
 # Game registry configurations
 # Format: "Game Name|Registry Path|Value Name"
 declare -a GAMES=(
-    "Enderal|Software\\SureAI\\Enderal|Install_Path"
-    "Fallout 3|Software\\Bethesda Softworks\\Fallout3|Installed Path"
-    "Fallout 4|Software\\Bethesda Softworks\\Fallout4|Installed Path"
-    "Fallout 4 VR|Software\\Bethesda Softworks\\Fallout 4 VR|Installed Path"
-    "Fallout New Vegas|Software\\Bethesda Softworks\\FalloutNV|Installed Path"
-    "Morrowind|Software\\Bethesda Softworks\\Morrowind|Installed Path"
-    "Oblivion|Software\\Bethesda Softworks\\Oblivion|Installed Path"
-    "Skyrim|Software\\Bethesda Softworks\\Skyrim|Installed Path"
-    "Skyrim Special Edition|Software\\Bethesda Softworks\\Skyrim Special Edition|Installed Path"
-    "Skyrim VR|Software\\Bethesda Softworks\\Skyrim VR|Installed Path"
-    "Starfield|Software\\Bethesda Softworks\\Starfield|Installed Path"
+    "Enderal|Software\SureAI\Enderal|Install_Path"
+    "Fallout 3|Software\Bethesda Softworks\Fallout3|Installed Path"
+    "Fallout 4|Software\Bethesda Softworks\Fallout4|Installed Path"
+    "Fallout 4 VR|Software\Bethesda Softworks\Fallout 4 VR|Installed Path"
+    "Fallout New Vegas|Software\Bethesda Softworks\FalloutNV|Installed Path"
+    "Morrowind|Software\Bethesda Softworks\Morrowind|Installed Path"
+    "Oblivion|Software\Bethesda Softworks\Oblivion|Installed Path"
+    "Skyrim|Software\Bethesda Softworks\Skyrim|Installed Path"
+    "Skyrim Special Edition|Software\Bethesda Softworks\Skyrim Special Edition|Installed Path"
+    "Skyrim VR|Software\Bethesda Softworks\Skyrim VR|Installed Path"
+    "Starfield|Software\Bethesda Softworks\Starfield|Installed Path"
 )
 
 echo "Which Bethesda game are you modding?"
@@ -267,7 +291,6 @@ while true; do
 
     # Validate path exists
     if [ -d "$GAME_PATH_LINUX" ]; then
-        # Path is valid, continue
         break
     else
         echo ""
@@ -282,8 +305,8 @@ while true; do
 done
 
 # Convert Linux path to Wine path (Z:\...)
-# Replace forward slashes with backslashes and add Z: prefix
-WINE_PATH="Z:${{GAME_PATH_LINUX//\//\\\\}}"
+# Replace / with \
+WINE_PATH="Z:${{GAME_PATH_LINUX//\//\\}}"
 
 echo ""
 echo "=================================================="
@@ -292,7 +315,7 @@ echo "=================================================="
 echo "Game: $GAME_NAME"
 echo "Linux Path: $GAME_PATH_LINUX"
 echo "Wine Path: $WINE_PATH"
-echo "Registry Key: HKLM\\$REG_PATH"
+echo "Registry Key: HKLM\\${{REG_PATH}}"
 echo "Value Name: $VALUE_NAME"
 echo "=================================================="
 echo ""
@@ -303,20 +326,18 @@ if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
     exit 1
 fi
 
-# Set WINEPREFIX
-export WINEPREFIX="$PREFIX"
-
 echo ""
 echo "Applying registry fix..."
 echo ""
 
-# Function to set registry value
+# Function to set registry value using Container
 set_registry() {{
     local reg_key="$1"
     local reg_flag="$2"
 
     echo "Setting: $reg_key ($reg_flag)"
-    $REG add "HKLM\\$reg_key" /v "$VALUE_NAME" /d "$WINE_PATH" /f $reg_flag
+    # Run reg.exe inside the container
+    "$ENTRY_POINT" --verb=waitforexitandrun -- "$PROTON_GE/proton" run reg add "HKLM\\$reg_key" /v "$VALUE_NAME" /d "$WINE_PATH" /f $reg_flag
 
     if [ $? -eq 0 ]; then
         echo "  ✓ Success"
@@ -335,7 +356,8 @@ set_registry "$REG_PATH" "/reg:32"
 [ $? -eq 0 ] && ((success_count++))
 
 # 64-bit registry view (Wow6432Node)
-WOW64_PATH=$(echo "$REG_PATH" | sed 's|^Software\\|SOFTWARE\\Wow6432Node\\|')
+# Use ! as sed delimiter to handle backslashes safely
+WOW64_PATH=$(echo "$REG_PATH" | sed 's!^Software\\!SOFTWARE\\Wow6432Node\\!')
 set_registry "$WOW64_PATH" "/reg:64"
 [ $? -eq 0 ] && ((success_count++))
 
@@ -345,16 +367,10 @@ if [ $success_count -eq 2 ]; then
     echo "✓ Registry fix applied successfully!"
     echo ""
     echo "The game installation path has been set in the registry."
-    echo "Your mods and tools should now be able to find the game."
 elif [ $success_count -gt 0 ]; then
     echo "⚠ Registry fix partially applied ($success_count/2 succeeded)"
-    echo ""
-    echo "Some registry entries were set, but there were errors."
-    echo "Your setup may still work, but check for any issues."
 else
     echo "✗ Registry fix failed"
-    echo ""
-    echo "Could not set registry values. Check the error messages above."
 fi
 echo "=================================================="
 
@@ -364,13 +380,24 @@ read -p "Would you like to verify the registry values? (y/n): " verify_choice
 
 if [ "$verify_choice" == "y" ] || [ "$verify_choice" == "Y" ]; then
     echo ""
-    echo "Querying registry..."
+    echo "Verifying registry..."
     echo ""
-    echo "32-bit view:"
-    $REG query "HKLM\\$REG_PATH" /v "$VALUE_NAME" /reg:32
-    echo ""
-    echo "64-bit view (Wow6432Node):"
-    $REG query "HKLM\\$WOW64_PATH" /v "$VALUE_NAME" /reg:64
+    
+    # 32-bit check
+    "$ENTRY_POINT" --verb=waitforexitandrun -- "$PROTON_GE/proton" run reg query "HKLM\\${{REG_PATH}}" /v "$VALUE_NAME" /reg:32 > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "  ✓ 32-bit Key: FOUND"
+    else
+        echo "  ✗ 32-bit Key: NOT FOUND"
+    fi
+
+    # 64-bit check
+    "$ENTRY_POINT" --verb=waitforexitandrun -- "$PROTON_GE/proton" run reg query "HKLM\\${{WOW64_PATH}}" /v "$VALUE_NAME" /reg:64 > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "  ✓ 64-bit Key: FOUND"
+    else
+        echo "  ✗ 64-bit Key: NOT FOUND"
+    fi
 fi
 
 echo ""
@@ -378,7 +405,10 @@ echo "Done!"
 "#,
             prefix = prefix_path.to_string_lossy(),
             proton = proton_ge_path.to_string_lossy(),
-            instance_name = instance_name
+            compat_data = compat_data.to_string_lossy(),
+            steam_path = steam_path,
+            instance_name = instance_name,
+            entry = entry_point.to_string_lossy()
         );
 
         let script_path = script_output_dir.join("game_registry_fix.sh");

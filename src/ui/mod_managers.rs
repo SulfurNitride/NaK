@@ -10,6 +10,7 @@ use crate::installers::{
 };
 use crate::logging::log_action;
 use crate::nxm::NxmHandler;
+use crate::scripts::ScriptGenerator;
 
 pub fn render_mod_managers(app: &mut MyApp, ui: &mut egui::Ui) {
     let is_busy = *app.is_installing_manager.lock().unwrap();
@@ -134,6 +135,17 @@ fn render_prefix_manager(app: &mut MyApp, ui: &mut egui::Ui) {
                     }
 
                     render_nxm_toggle(app, ui, prefix);
+
+                    // Regenerate Script Button
+                    let prefix_base = prefix.path.parent().unwrap();
+                    let manager_link = prefix_base.join("manager_link");
+                    let is_managed = manager_link.exists() || std::fs::symlink_metadata(&manager_link).is_ok();
+
+                    if is_managed && ui.button("Regenerate Scripts").clicked() {
+                        // Resolve target to pass correct exe path
+                        let target = std::fs::read_link(&manager_link).unwrap_or(manager_link.clone());
+                        regenerate_script(app, prefix, &target);
+                    }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Delete").on_hover_text("Delete Prefix").clicked() {
@@ -530,5 +542,84 @@ fn render_nxm_toggle(app: &mut MyApp, ui: &mut egui::Ui, prefix: &crate::wine::N
                 app.config.save();
             }
         }
+    }
+}
+
+fn regenerate_script(app: &MyApp, prefix: &crate::wine::NakPrefix, exe_path: &std::path::Path) {
+    let selected_name = app.config.selected_proton.clone().unwrap_or_default();
+    let proton = app.proton_versions.iter().find(|p| p.name == selected_name);
+
+    if let Some(proton_info) = proton {
+        let mut final_exe_path = exe_path.to_path_buf();
+        
+        // If link points to a directory, look for known executables inside
+        if final_exe_path.is_dir() {
+            let try_mo2 = final_exe_path.join("ModOrganizer.exe");
+            let try_vortex = final_exe_path.join("Vortex.exe");
+            let try_vortex_sub = final_exe_path.join("Vortex").join("Vortex.exe"); // Standard Vortex path
+            
+            if try_mo2.exists() {
+                final_exe_path = try_mo2;
+            } else if try_vortex.exists() {
+                final_exe_path = try_vortex;
+            } else if try_vortex_sub.exists() {
+                final_exe_path = try_vortex_sub;
+            }
+        }
+
+        let exe_name = final_exe_path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+        let prefix_base = prefix.path.parent().unwrap(); // ~/NaK/Prefixes/Name
+
+        // We output the script to the prefix base folder (where .start.sh usually lives)
+        let output_dir = prefix_base;
+
+        // 1. Generate Launch Script
+        let result = if exe_name.contains("modorganizer") {
+             ScriptGenerator::generate_mo2_launch_script(&prefix.path, &final_exe_path, &proton_info.path, prefix_base, output_dir)
+        } else if exe_name.contains("vortex") {
+             ScriptGenerator::generate_vortex_launch_script(&prefix.path, &final_exe_path, &proton_info.path, prefix_base, output_dir)
+        } else {
+             Err("Unknown manager executable. Link must point to ModOrganizer.exe or Vortex.exe".into())
+        };
+
+        match result {
+             Ok(path) => {
+                 crate::logging::log_info(&format!("Regenerated start.sh for {} at {:?}", prefix.name, path));
+                 
+                 // 2. Generate Kill Script
+                 if let Err(e) = ScriptGenerator::generate_kill_prefix_script(&prefix.path, &proton_info.path, output_dir) {
+                     crate::logging::log_error(&format!("Failed to regenerate kill script: {}", e));
+                 } else {
+                     crate::logging::log_info("Regenerated kill script.");
+                 }
+
+                 // 3. Generate Registry Fix Script
+                 // Use prefix name as instance name (e.g. mo2_skyrim)
+                 if let Err(e) = ScriptGenerator::generate_fix_game_registry_script(&prefix.path, &proton_info.path, &prefix.name, output_dir) {
+                     crate::logging::log_error(&format!("Failed to regenerate registry script: {}", e));
+                 } else {
+                     crate::logging::log_info("Regenerated registry fix script.");
+                 }
+                 
+                 // Update "Launch [Manager]" symlink in the install directory
+                 // path is .../pfx/../start.sh usually
+                 if let Some(install_dir) = final_exe_path.parent() {
+                     let link_name = if exe_name.contains("modorganizer") { "Launch MO2" } else { "Launch Vortex" };
+                     let link_path = install_dir.join(link_name);
+                     
+                     if link_path.exists() || std::fs::symlink_metadata(&link_path).is_ok() {
+                         let _ = std::fs::remove_file(&link_path);
+                     }
+                     if let Err(e) = std::os::unix::fs::symlink(&path, &link_path) {
+                         crate::logging::log_error(&format!("Failed to update Launch symlink: {}", e));
+                     } else {
+                         crate::logging::log_info("Updated Launch symlink.");
+                     }
+                 }
+             }
+             Err(e) => crate::logging::log_error(&format!("Failed to regenerate script: {}", e)),
+        }
+    } else {
+         crate::logging::log_error("No Proton version selected! Please select one in Proton Picker.");
     }
 }

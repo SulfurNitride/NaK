@@ -152,89 +152,9 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         // ============================================================
-        // Cache Settings Section
+        // Storage & Cache Section
         // ============================================================
-        egui::CollapsingHeader::new("Cache Settings")
-            .default_open(true)
-            .show(ui, |ui| {
-                ui.add_space(5.0);
-
-                // Cache info display
-                let cache_info = app.cache_config.get_cache_info();
-                if cache_info.exists {
-                    ui.horizontal(|ui| {
-                        ui.label("Cache Size:");
-                        ui.strong(format!(
-                            "{:.2} MB ({} files)",
-                            cache_info.size_mb, cache_info.file_count
-                        ));
-                    });
-                } else {
-                    ui.label("Cache: Not created yet");
-                }
-
-                ui.horizontal(|ui| {
-                    ui.label("Location:");
-                    ui.monospace(&cache_info.location);
-                });
-
-                ui.add_space(10.0);
-
-                // Cache toggles
-                let mut cache_enabled = app.cache_config.cache_enabled;
-                if ui.checkbox(&mut cache_enabled, "Enable Caching").changed() {
-                    app.cache_config.cache_enabled = cache_enabled;
-                    app.cache_config.save();
-                    log_action(&format!("Cache enabled: {}", cache_enabled));
-                }
-
-                ui.add_enabled_ui(cache_enabled, |ui| {
-                    ui.indent("cache_options", |ui| {
-                        let mut cache_deps = app.cache_config.cache_dependencies;
-                        if ui
-                            .checkbox(&mut cache_deps, "Cache Dependencies (~1.7GB)")
-                            .changed()
-                        {
-                            app.cache_config.cache_dependencies = cache_deps;
-                            app.cache_config.save();
-                        }
-
-                        let mut cache_mo2 = app.cache_config.cache_mo2;
-                        if ui.checkbox(&mut cache_mo2, "Cache MO2 Downloads").changed() {
-                            app.cache_config.cache_mo2 = cache_mo2;
-                            app.cache_config.save();
-                        }
-
-                        let mut cache_vortex = app.cache_config.cache_vortex;
-                        if ui
-                            .checkbox(&mut cache_vortex, "Cache Vortex Downloads")
-                            .changed()
-                        {
-                            app.cache_config.cache_vortex = cache_vortex;
-                            app.cache_config.save();
-                        }
-                    });
-                });
-
-                ui.add_space(10.0);
-
-                // Clear cache button
-                if ui.button("🗑 Clear Cache").clicked() {
-                    log_action("Clear cache clicked");
-                    if let Err(e) = app.cache_config.clear_cache() {
-                        eprintln!("Failed to clear cache: {}", e);
-                    }
-                }
-            });
-
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(10.0);
-
-        // ============================================================
-        // Storage Location Section (NaK Migrator)
-        // ============================================================
-        egui::CollapsingHeader::new("Storage Location")
+        egui::CollapsingHeader::new("Storage & Cache")
             .default_open(true)
             .show(ui, |ui| {
                 ui.add_space(5.0);
@@ -242,7 +162,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 let storage_mgr = StorageManager::new();
                 let storage_info = storage_mgr.get_storage_info();
 
-                // Current location display
+                // --- Location Info ---
                 ui.horizontal(|ui| {
                     ui.label("NaK Path:");
                     ui.monospace(&storage_info.nak_path);
@@ -259,6 +179,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     );
                 }
 
+                // --- Usage Breakdown ---
                 if storage_info.exists {
                     ui.horizontal(|ui| {
                         ui.label("Total Used:");
@@ -269,7 +190,6 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     
                     ui.add_space(5.0);
                     ui.indent("storage_breakdown", |ui| {
-                        ui.label(egui::RichText::new("Breakdown:").strong());
                         ui.horizontal(|ui| {
                             ui.label("• Prefixes:");
                             ui.strong(format!("{:.2} GB", storage_info.prefixes_size_gb));
@@ -293,29 +213,58 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     });
                 }
 
+                ui.add_space(15.0);
+                ui.separator();
                 ui.add_space(10.0);
 
-                // Detect installations
-                let installations = storage_mgr.detect_installations();
-                if installations.total_count > 0 {
-                    ui.label(format!(
-                        "Detected: {} prefixes ({} MO2, {} Vortex)",
-                        installations.total_count,
-                        installations.mo2_count,
-                        installations.vortex_count
-                    ));
-                    if installations.has_proton_ge {
-                        ui.small("• Has Proton-GE installations");
-                    }
-                    if installations.has_cache {
-                        ui.small("• Has cached files");
+                // --- Cache Controls ---
+                ui.label(egui::RichText::new("Cache Configuration").strong());
+                
+                let mut cache_enabled = app.cache_config.cache_enabled;
+                if ui.checkbox(&mut cache_enabled, "Enable Caching").changed() {
+                    app.cache_config.cache_enabled = cache_enabled;
+                    app.cache_config.save();
+                    log_action(&format!("Cache enabled: {}", cache_enabled));
+                }
+
+                ui.add_enabled_ui(cache_enabled, |ui| {
+                    ui.indent("cache_options", |ui| {
+                        let mut cache_deps = app.cache_config.cache_dependencies;
+                        if ui.checkbox(&mut cache_deps, "Cache Dependencies (~1.7GB)").changed() {
+                            app.cache_config.cache_dependencies = cache_deps;
+                            app.cache_config.save();
+                        }
+
+                        let mut cache_mo2 = app.cache_config.cache_mo2;
+                        if ui.checkbox(&mut cache_mo2, "Cache MO2 Downloads").changed() {
+                            app.cache_config.cache_mo2 = cache_mo2;
+                            app.cache_config.save();
+                        }
+
+                        let mut cache_vortex = app.cache_config.cache_vortex;
+                        if ui.checkbox(&mut cache_vortex, "Cache Vortex Downloads").changed() {
+                            app.cache_config.cache_vortex = cache_vortex;
+                            app.cache_config.save();
+                        }
+                    });
+                });
+
+                ui.add_space(5.0);
+                if ui.button("🗑 Clear Cache").clicked() {
+                    log_action("Clear cache clicked");
+                    if let Err(e) = app.cache_config.clear_cache() {
+                        eprintln!("Failed to clear cache: {}", e);
                     }
                 }
 
+                ui.add_space(15.0);
+                ui.separator();
                 ui.add_space(10.0);
 
-                // Migration controls - text input + button (works on all WMs including DWM)
-                ui.label("Move NaK to a different location:");
+                // --- Migration Controls ---
+                ui.label(egui::RichText::new("Move Installation").strong());
+                ui.label("Move the entire NaK folder to a different drive (e.g., SSD).");
+                
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut app.migration_path_input)
@@ -325,7 +274,6 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
 
                     if ui.button("📂 Browse").clicked() {
                         log_action("Browse for migration path clicked");
-                        // Try file dialog (won't work on minimal WMs like DWM)
                         if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             app.migration_path_input = path.to_string_lossy().to_string();
                         }
@@ -334,10 +282,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
 
                 ui.horizontal(|ui| {
                     let can_move = !app.migration_path_input.trim().is_empty();
-                    if ui
-                        .add_enabled(can_move, egui::Button::new("📦 Move NaK Here"))
-                        .clicked()
-                    {
+                    if ui.add_enabled(can_move, egui::Button::new("📦 Move NaK Here")).clicked() {
                         log_action(&format!("Move NaK to: {}", app.migration_path_input));
                         let path = std::path::PathBuf::from(app.migration_path_input.trim());
                         match storage_mgr.setup_symlink(&path, true) {
@@ -351,24 +296,14 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                         }
                     }
 
-                    if storage_info.is_symlink
-                        && ui.button("↩ Restore to Default Location").clicked()
-                    {
+                    if storage_info.is_symlink && ui.button("↩ Restore to Default Location").clicked() {
                         log_action("Restore NaK location clicked");
                         match storage_mgr.remove_symlink() {
-                            Ok(msg) => {
-                                crate::logging::log_info(&msg);
-                            }
-                            Err(e) => {
-                                crate::logging::log_error(&format!("Restore failed: {}", e));
-                            }
+                            Ok(msg) => crate::logging::log_info(&msg),
+                            Err(e) => crate::logging::log_error(&format!("Restore failed: {}", e)),
                         }
                     }
                 });
-
-                ui.add_space(5.0);
-                ui.small("Enter a path or click Browse. Moving to SSD can improve performance.");
-                ui.small("Your prefixes and cached files will be preserved.");
             });
 
         ui.add_space(10.0);
@@ -382,7 +317,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
             .default_open(false)
             .show(ui, |ui| {
                 ui.label("NaK - Linux Modding Helper (Rust Edition)");
-                ui.label("Version: 4.1.0");
+                ui.label("Version: 4.1.1");
                 ui.add_space(5.0);
                 ui.hyperlink_to("GitHub Repository", "https://github.com/SulfurNitride/NaK");
                 ui.add_space(5.0);
@@ -390,17 +325,13 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 if ui.button("📂 Open NaK Folder").clicked() {
                     let home = std::env::var("HOME").unwrap_or_default();
                     let nak_path = format!("{}/NaK", home);
-                    let _ = std::process::Command::new("xdg-open")
-                        .arg(&nak_path)
-                        .spawn();
+                    let _ = std::process::Command::new("xdg-open").arg(&nak_path).spawn();
                 }
 
                 if ui.button("📂 Open Logs Folder").clicked() {
                     let home = std::env::var("HOME").unwrap_or_default();
                     let logs_path = format!("{}/NaK/logs", home);
-                    let _ = std::process::Command::new("xdg-open")
-                        .arg(&logs_path)
-                        .spawn();
+                    let _ = std::process::Command::new("xdg-open").arg(&logs_path).spawn();
                 }
             });
     });

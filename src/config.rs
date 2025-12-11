@@ -96,39 +96,6 @@ impl CacheConfig {
         }
     }
 
-    /// Get cache info (size, file count)
-    pub fn get_cache_info(&self) -> CacheInfo {
-        let cache_dir = PathBuf::from(&self.cache_location);
-
-        if !cache_dir.exists() {
-            return CacheInfo {
-                exists: false,
-                size_mb: 0.0,
-                file_count: 0,
-                location: self.cache_location.clone(),
-            };
-        }
-
-        let mut total_size: u64 = 0;
-        let mut file_count: u64 = 0;
-
-        for entry in walkdir::WalkDir::new(&cache_dir).into_iter().flatten() {
-            if entry.file_type().is_file() {
-                if let Ok(meta) = entry.metadata() {
-                    total_size += meta.len();
-                    file_count += 1;
-                }
-            }
-        }
-
-        CacheInfo {
-            exists: true,
-            size_mb: total_size as f64 / (1024.0 * 1024.0),
-            file_count,
-            location: self.cache_location.clone(),
-        }
-    }
-
     /// Clear the cache directory
     pub fn clear_cache(&self) -> Result<(), std::io::Error> {
         let cache_dir = PathBuf::from(&self.cache_location);
@@ -138,14 +105,6 @@ impl CacheConfig {
         }
         Ok(())
     }
-}
-
-#[derive(Clone)]
-pub struct CacheInfo {
-    pub exists: bool,
-    pub size_mb: f64,
-    pub file_count: u64,
-    pub location: String,
 }
 
 // ============================================================================
@@ -393,58 +352,6 @@ impl StorageManager {
             real_location.display()
         ))
     }
-
-    /// Detect existing installations in NaK folder
-    pub fn detect_installations(&self) -> InstallationInfo {
-        let mut info = InstallationInfo::default();
-
-        if !self.default_nak_path.exists() {
-            return info;
-        }
-
-        // Check for Proton-GE
-        let proton_ge_dir = self.default_nak_path.join("ProtonGE");
-        info.has_proton_ge = proton_ge_dir.exists();
-
-        // Check for cache
-        let cache_dir = self.default_nak_path.join("cache");
-        info.has_cache = cache_dir.exists();
-
-        // Scan prefixes
-        let prefixes_dir = self.default_nak_path.join("Prefixes");
-        if prefixes_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&prefixes_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_dir() {
-                        continue;
-                    }
-
-                    let name = entry.file_name().to_string_lossy().to_string();
-
-                    // Determine type from name
-                    let prefix_type = if name.starts_with("mo2_") {
-                        info.mo2_count += 1;
-                        "MO2"
-                    } else if name.starts_with("vortex_") {
-                        info.vortex_count += 1;
-                        "Vortex"
-                    } else {
-                        "Unknown"
-                    };
-
-                    info.prefixes.push(PrefixInfo {
-                        name,
-                        prefix_type: prefix_type.to_string(),
-                        path: path.to_string_lossy().to_string(),
-                    });
-                    info.total_count += 1;
-                }
-            }
-        }
-
-        info
-    }
 }
 
 #[derive(Clone, Default)]
@@ -459,22 +366,4 @@ pub struct StorageInfo {
     pub proton_size_gb: f64,
     pub prefixes_size_gb: f64,
     pub other_size_gb: f64,
-}
-
-#[derive(Clone, Default)]
-pub struct InstallationInfo {
-    pub prefixes: Vec<PrefixInfo>,
-    pub total_count: u32,
-    pub mo2_count: u32,
-    pub vortex_count: u32,
-    pub has_proton_ge: bool,
-    pub has_cache: bool,
-}
-
-#[derive(Clone)]
-#[allow(dead_code)]
-pub struct PrefixInfo {
-    pub name: String,
-    pub prefix_type: String,
-    pub path: String,
 }

@@ -7,7 +7,7 @@ use super::UiExt;
 use crate::app::MyApp;
 use crate::wine::{
     delete_cachyos_proton, delete_ge_proton, download_cachyos_proton, download_ge_proton,
-    set_active_proton, GithubRelease,
+    set_active_proton, runtime, GithubRelease,
 };
 
 pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
@@ -38,6 +38,38 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
             }
         }
     });
+
+    // =========================================================================
+    // Steam Runtime Section
+    // =========================================================================
+    ui.add_space(20.0);
+    ui.subheading("Steam Linux Runtime");
+    
+    let is_downloading_any = *app.is_downloading.lock().unwrap();
+    let runtime_path = runtime::find_steam_runtime_sniper();
+    
+    if let Some(path) = runtime_path {
+        ui.horizontal(|ui| {
+            ui.label("Status:");
+            ui.colored_label(egui::Color32::GREEN, "Installed");
+        });
+        ui.label(egui::RichText::new(path.to_string_lossy()).size(12.0).color(egui::Color32::from_gray(180)));
+    } else {
+        ui.horizontal(|ui| {
+            ui.label("Status:");
+            if is_downloading_any {
+                 ui.colored_label(egui::Color32::YELLOW, "Downloading...");
+            } else {
+                 ui.colored_label(egui::Color32::RED, "Missing");
+            }
+        });
+        ui.label("Required for stable containerized gaming. (Auto-downloads on startup)");
+        
+        ui.add_space(5.0);
+        if ui.add_enabled(!is_downloading_any, egui::Button::new("Manually Download (~500MB)")).clicked() {
+            download_runtime_ui(app);
+        }
+    }
 
     ui.add_space(20.0);
     ui.subheading("Download GE-Proton");
@@ -308,6 +340,48 @@ fn download_ge_proton_ui(app: &MyApp, release: &GithubRelease) {
             Ok(_) => {
                 // SIGNAL REFRESH via special string suffix
                 *status_msg.lock().unwrap() = "Download complete! REFRESH".to_string();
+                *progress_val.lock().unwrap() = 1.0;
+            }
+            Err(e) => {
+                *status_msg.lock().unwrap() = format!("Error: {}", e);
+            }
+        }
+        *is_downloading.lock().unwrap() = false;
+    });
+}
+
+fn download_runtime_ui(app: &MyApp) {
+    let is_downloading = app.is_downloading.clone();
+    let status_msg = app.download_status.clone();
+    let progress_val = app.download_progress.clone();
+
+    let mut dl_guard = is_downloading.lock().unwrap();
+    if *dl_guard { return; }
+    *dl_guard = true;
+    drop(dl_guard);
+
+    *progress_val.lock().unwrap() = 0.0;
+    *status_msg.lock().unwrap() = "Downloading Steam Runtime...".to_string();
+
+    thread::spawn(move || {
+        let cb_progress = progress_val.clone();
+        let cb_status = status_msg.clone();
+
+        // Inner clones for callback
+        let cb_progress_inner = cb_progress.clone();
+        let cb_status_inner = cb_status.clone();
+
+        let callback = move |current: u64, total: u64| {
+            if total > 0 {
+                let p = current as f32 / total as f32;
+                *cb_progress_inner.lock().unwrap() = p;
+                *cb_status_inner.lock().unwrap() = format!("Downloading Runtime: {:.1}%", p * 100.0);
+            }
+        };
+
+        match crate::wine::runtime::download_runtime(callback) {
+            Ok(_) => {
+                *status_msg.lock().unwrap() = "Runtime Installed! REFRESH".to_string();
                 *progress_val.lock().unwrap() = 1.0;
             }
             Err(e) => {

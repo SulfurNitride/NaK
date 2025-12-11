@@ -250,6 +250,45 @@ impl Default for MyApp {
             *is_fetching_cachyos.lock().unwrap() = false;
         });
 
+        // Auto-download Steam Runtime if missing
+        if !crate::wine::runtime::is_runtime_installed() {
+            let status = app.download_status.clone();
+            let progress = app.download_progress.clone();
+            let is_downloading = app.is_downloading.clone();
+            
+            *is_downloading.lock().unwrap() = true;
+            *status.lock().unwrap() = "Initializing Steam Runtime...".to_string();
+
+            thread::spawn(move || {
+                let cb_status = status.clone();
+                let cb_progress = progress.clone();
+                let cb_downloading = is_downloading.clone();
+
+                // Create inner clones for the callback
+                let cb_status_inner = cb_status.clone();
+                let cb_progress_inner = cb_progress.clone();
+
+                let callback = move |current: u64, total: u64| {
+                    if total > 0 {
+                        let p = current as f32 / total as f32;
+                        *cb_progress_inner.lock().unwrap() = p;
+                        *cb_status_inner.lock().unwrap() = format!("Downloading Runtime: {:.1}%", p * 100.0);
+                    }
+                };
+
+                match crate::wine::runtime::download_runtime(callback) {
+                    Ok(_) => {
+                        *cb_status.lock().unwrap() = "Runtime Ready!".to_string();
+                        *cb_progress.lock().unwrap() = 1.0;
+                    }
+                    Err(e) => {
+                        *cb_status.lock().unwrap() = format!("Error downloading runtime: {}", e);
+                    }
+                }
+                *cb_downloading.lock().unwrap() = false;
+            });
+        }
+
         // Ensure Winetricks and cabextract are downloaded
         let wt_path = winetricks_path_arc.clone();
         let missing_deps_for_thread = missing_deps_arc.clone();
