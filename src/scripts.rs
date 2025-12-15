@@ -12,6 +12,76 @@ use crate::wine::runtime;
 pub struct ScriptGenerator;
 
 impl ScriptGenerator {
+    /// Generate NXM handler launch script for MO2 (runs nxmhandler.exe)
+    pub fn generate_mo2_nxm_script(
+        prefix_path: &Path,
+        nxm_handler_exe: &Path,
+        proton_ge_path: &Path,
+        script_output_dir: &Path,
+    ) -> Result<std::path::PathBuf, Box<dyn Error>> {
+        let steam_path = detect_steam_path();
+        let compat_data = prefix_path.parent().unwrap_or(prefix_path);
+        let runtime_entry = runtime::get_entry_point();
+
+        let script_content = if let Some(entry_point) = runtime_entry {
+            format!(
+                r#"#!/bin/bash
+# NaK Generated NXM Handler Script for MO2
+# Running inside Steam Linux Runtime (Sniper) Container
+
+PROTON_GE='{proton}'
+PREFIX='{prefix}'
+NXM_HANDLER='{exe}'
+ENTRY_POINT='{entry}'
+STEAM_PATH='{steam_path}'
+COMPAT_DATA='{compat_data}'
+
+# Check environment
+if [ ! -f "$ENTRY_POINT" ]; then
+    echo "ERROR: Steam Runtime entry point not found at $ENTRY_POINT"
+    exit 1
+fi
+
+# Set environment variables for the Container
+export WINEPREFIX="$PREFIX"
+export STEAM_COMPAT_DATA_PATH="$COMPAT_DATA"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
+export PROTON_DIST_PATH="$PROTON_GE"
+
+# Set GAMEID for protonfixes
+export GAMEID="non-steam-game"
+
+# DotNet Fixes
+export DOTNET_ROOT=""
+export DOTNET_MULTILEVEL_LOOKUP=0
+export MO2_VFS_LOG_LEVEL=0
+
+echo "Handling NXM link via MO2 nxmhandler..."
+"$ENTRY_POINT" --verb=waitforexitandrun -- "$PROTON_GE/proton" run "$NXM_HANDLER" "$@"
+"#,
+                prefix = prefix_path.to_string_lossy(),
+                proton = proton_ge_path.to_string_lossy(),
+                compat_data = compat_data.to_string_lossy(),
+                steam_path = steam_path,
+                exe = nxm_handler_exe.to_string_lossy(),
+                entry = entry_point.to_string_lossy()
+            )
+        } else {
+            return Err("Steam Linux Runtime (Sniper) not found! Please download it in NaK Settings (Proton Picker).".into());
+        };
+
+        let script_path = script_output_dir.join("nxm_handler.sh");
+        let mut file = fs::File::create(&script_path)?;
+        file.write_all(script_content.as_bytes())?;
+
+        let mut perms = fs::metadata(&script_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms)?;
+
+        println!("Created NXM handler script at {:?}", script_path);
+        Ok(script_path)
+    }
+
     pub fn generate_mo2_launch_script(
         prefix_path: &Path,
         mo2_exe: &Path,

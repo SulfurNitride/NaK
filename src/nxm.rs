@@ -34,29 +34,51 @@ impl NxmHandler {
 
         // 1. Create the Handler Script
         // This script finds the 'active_nxm_game' symlink and passes the argument to it.
-        // We assume 'active_nxm_game' points to the installation directory (where 'Launch MO2' is).
+        // Supports both MO2 (via nxmhandler.exe) and Vortex mod managers.
         let script_content = format!(
             r#"#!/bin/bash
 # NaK Global NXM Handler
-# Forwards nxm:// links to the active Mod Organizer 2 instance
+# Forwards nxm:// links to the active mod manager instance (MO2 or Vortex)
 
 ACTIVE_LINK="{}/NaK/active_nxm_game"
 
 if [ ! -L "$ACTIVE_LINK" ]; then
-    zenity --error --text="No active MO2 instance selected in NaK!" --title="NaK Error"
+    zenity --error --text="No active mod manager instance selected in NaK!" --title="NaK Error"
     exit 1
 fi
 
 # Resolve the link to find the game directory
 GAME_DIR=$(readlink -f "$ACTIVE_LINK")
-LAUNCHER="$GAME_DIR/Launch MO2"
 
-if [ ! -f "$LAUNCHER" ]; then
-    zenity --error --text="Could not find 'Launch MO2' in active instance." --title="NaK Error"
+# Detect mod manager type by looking for the actual executables
+# Then find the appropriate launch script
+
+if [ -f "$GAME_DIR/nxmhandler.exe" ]; then
+    # MO2 installation detected
+    if [ -f "$GAME_DIR/Handle NXM" ]; then
+        # New setup with dedicated NXM handler script
+        LAUNCHER="$GAME_DIR/Handle NXM"
+    elif [ -f "$GAME_DIR/Launch MO2" ]; then
+        # Fallback for older installations - MO2 can handle NXM args
+        LAUNCHER="$GAME_DIR/Launch MO2"
+    else
+        zenity --error --text="Found nxmhandler.exe but no launch script in: $GAME_DIR" --title="NaK Error"
+        exit 1
+    fi
+elif [ -f "$GAME_DIR/Vortex.exe" ]; then
+    # Vortex installation detected
+    if [ -f "$GAME_DIR/Launch Vortex" ]; then
+        LAUNCHER="$GAME_DIR/Launch Vortex"
+    else
+        zenity --error --text="Found Vortex.exe but no launch script in: $GAME_DIR" --title="NaK Error"
+        exit 1
+    fi
+else
+    zenity --error --text="Could not find nxmhandler.exe (MO2) or Vortex.exe in: $GAME_DIR" --title="NaK Error"
     exit 1
 fi
 
-# Run MO2 with the NXM link
+# Run the mod manager with the NXM link
 "$LAUNCHER" "$1"
 "#,
             home

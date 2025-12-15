@@ -35,7 +35,7 @@ where
     let home = std::env::var("HOME")?;
     let install_root = PathBuf::from(format!("{}/NaK/Runtime", home));
     let temp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
-    
+
     fs::create_dir_all(&install_root)?;
     fs::create_dir_all(&temp_dir)?;
 
@@ -54,7 +54,7 @@ where
 
     let mut file = fs::File::create(&temp_file_path)?;
 
-    let mut buffer = [0; 8192];
+    let mut buffer = [0; 65536]; // 64KB buffer for faster downloads
     let mut downloaded: u64 = 0;
     let mut reader = response.into_reader();
 
@@ -72,10 +72,9 @@ where
     }
 
     // 2. Extract (.tar.xz)
-    // Note: The archive likely contains the folder "SteamLinuxRuntime_sniper" at root.
-    // If not, we might need to adjust. Valve usually packages it as "steam-runtime-sniper" or similar.
-    // We will extract to temp first to check structure.
-    
+    // Signal that we're extracting (progress will stay at 100%)
+    progress_callback(total_size, total_size);
+
     let tar_xz = fs::File::open(&temp_file_path)?;
     let tar = XzDecoder::new(tar_xz);
     let mut archive = Archive::new(tar);

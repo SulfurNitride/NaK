@@ -307,6 +307,18 @@ pub fn install_mo2(
     create_link(&kill_script, "Kill MO2 Prefix");
     create_link(&reg_script, "Fix Game Registry");
 
+    // Generate NXM handler script (for nxmhandler.exe)
+    let nxm_handler_exe = install_dir.join("nxmhandler.exe");
+    if nxm_handler_exe.exists() {
+        let nxm_script = ScriptGenerator::generate_mo2_nxm_script(
+            &prefix_root,
+            &nxm_handler_exe,
+            &proton.path,
+            script_dir,
+        )?;
+        create_link(&nxm_script, "Handle NXM");
+    }
+
     if let Some(prefix_base) = prefix_root.parent() {
         let backlink = prefix_base.join("manager_link");
         if backlink.exists() || fs::symlink_metadata(&backlink).is_ok() {
@@ -557,6 +569,18 @@ pub fn setup_existing_mo2(
     create_link(&script_path, "Launch MO2");
     create_link(&kill_script, "Kill MO2 Prefix");
     create_link(&reg_script, "Fix Game Registry");
+
+    // Generate NXM handler script (for nxmhandler.exe)
+    let nxm_handler_exe = existing_path.join("nxmhandler.exe");
+    if nxm_handler_exe.exists() {
+        let nxm_script = ScriptGenerator::generate_mo2_nxm_script(
+            &prefix_root,
+            &nxm_handler_exe,
+            &proton.path,
+            script_dir,
+        )?;
+        create_link(&nxm_script, "Handle NXM");
+    }
 
     if let Some(prefix_base) = prefix_root.parent() {
         let backlink = prefix_base.join("manager_link");

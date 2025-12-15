@@ -317,7 +317,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
             .default_open(false)
             .show(ui, |ui| {
                 ui.label("NaK - Linux Modding Helper (Rust Edition)");
-                ui.label("Version: 4.1.1");
+                ui.label(format!("Version: {}", env!("CARGO_PKG_VERSION")));
                 ui.add_space(5.0);
                 ui.hyperlink_to("GitHub Repository", "https://github.com/SulfurNitride/NaK");
                 ui.add_space(5.0);

@@ -91,8 +91,6 @@ fn render_prefix_manager(app: &mut MyApp, ui: &mut egui::Ui) {
 
     ui.add_space(10.0);
 
-    // Prefix List (Cards)
-    let mut prefix_to_delete = None;
     // Clone prefixes to safely iterate while mutating app later
     let prefixes = app.detected_prefixes.clone();
 
@@ -115,7 +113,7 @@ fn render_prefix_manager(app: &mut MyApp, ui: &mut egui::Ui) {
                         ui.colored_label(egui::Color32::RED, "Orphaned");
                     }
                 });
-                
+
                 // Path
                 ui.label(egui::RichText::new(prefix.path.to_string_lossy()).color(egui::Color32::from_gray(180)).size(12.0));
                 ui.add_space(5.0);
@@ -123,11 +121,11 @@ fn render_prefix_manager(app: &mut MyApp, ui: &mut egui::Ui) {
                 // Actions
                 ui.horizontal(|ui| {
                     let winetricks_ready = app.winetricks_path.lock().unwrap().is_some();
-                    
+
                     if ui.add_enabled(winetricks_ready, egui::Button::new("Winetricks")).clicked() {
                         launch_winetricks(app, prefix.path.clone());
                     }
-                    
+
                     if ui.button("Open Folder").clicked() {
                         let _ = std::process::Command::new("xdg-open")
                             .arg(&prefix.path)
@@ -149,22 +147,12 @@ fn render_prefix_manager(app: &mut MyApp, ui: &mut egui::Ui) {
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Delete").on_hover_text("Delete Prefix").clicked() {
-                            prefix_to_delete = Some(prefix.name.clone());
+                            app.pending_prefix_delete = Some(prefix.name.clone());
                         }
                     });
                 });
             });
         ui.add_space(8.0);
-    }
-
-    if let Some(name) = prefix_to_delete {
-        log_action(&format!("Delete prefix clicked: {}", name));
-        if let Err(e) = app.prefix_manager.delete_prefix(&name) {
-            crate::logging::log_error(&format!("Failed to delete prefix '{}': {}", name, e));
-        } else {
-            crate::logging::log_info(&format!("Prefix '{}' deleted successfully", name));
-            app.detected_prefixes = app.prefix_manager.scan_prefixes();
-        }
     }
 }
 
@@ -355,7 +343,7 @@ fn render_install_wizard(
                     ui.label(format!("Error: {}", error_msg));
                     ui.add_space(10.0);
                     ui.label(egui::RichText::new("Please check the logs for more details:").strong());
-                    ui.label(format!("~/{}/logs", env!("CARGO_PKG_NAME")));
+                    ui.label("~/NaK/logs");
                 } else {
                     ui.heading("Installation Successful!");
                     ui.add_space(10.0);

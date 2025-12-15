@@ -115,7 +115,14 @@ pub struct StorageManager {
     default_nak_path: PathBuf,
 }
 
+impl Default for StorageManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StorageManager {
+    #[must_use]
     pub fn new() -> Self {
         let home = std::env::var("HOME").unwrap_or_default();
         Self {

@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::config::{AppConfig, CacheConfig};
+use crate::games::{DetectedGame, GameFinder};
 use crate::nxm::NxmHandler;
 use crate::utils::detect_steam_path_checked;
 use crate::wine::{
@@ -22,6 +23,7 @@ use crate::wine::{GithubRelease, NakPrefix, PrefixManager, ProtonFinder, ProtonI
 pub enum Page {
     GettingStarted,
     ModManagers,
+    GameFixer,
     Marketplace,
     ProtonTools,
     Settings,
@@ -79,14 +81,6 @@ pub struct MyApp {
     pub current_page: Page,
     pub mod_manager_view: ModManagerView,
 
-    // Page State: Mod Managers
-    #[allow(dead_code)]
-    pub show_prefix_manager: bool,
-    #[allow(dead_code)]
-    pub show_mo2_manager: bool,
-    #[allow(dead_code)]
-    pub show_vortex_manager: bool,
-
     // Installation Wizard State
     pub install_wizard: InstallWizard,
 
@@ -112,14 +106,12 @@ pub struct MyApp {
     // Page State: Proton Tools
     pub proton_versions: Vec<ProtonInfo>,
 
-    // GE-Proton Downloader State
+    // Proton Downloader State (unified)
     pub available_ge_versions: Arc<Mutex<Vec<GithubRelease>>>,
-    pub ge_search_query: String,
-    pub is_fetching_ge: Arc<Mutex<bool>>,
-
-    // CachyOS Proton Downloader State
     pub available_cachyos_versions: Arc<Mutex<Vec<GithubRelease>>>,
-    pub cachyos_search_query: String,
+    pub proton_search_query: String,
+    pub proton_download_source: String, // "ge" or "cachyos"
+    pub is_fetching_ge: Arc<Mutex<bool>>,
     pub is_fetching_cachyos: Arc<Mutex<bool>>,
 
     pub is_downloading: Arc<Mutex<bool>>,
@@ -128,6 +120,7 @@ pub struct MyApp {
 
     // Flags
     pub should_refresh_proton: bool,
+    pub download_needs_refresh: Arc<AtomicBool>, // Signal from background downloads to refresh UI
     pub missing_deps: Arc<Mutex<Vec<String>>>,
 
     // Steam Detection
@@ -136,6 +129,17 @@ pub struct MyApp {
 
     // Settings page state
     pub migration_path_input: String,
+
+    // Confirmation dialog state
+    pub pending_prefix_delete: Option<String>,
+    pub pending_proton_delete: Option<(String, String)>, // (name, type: "ge" or "cachyos")
+
+    // Game Modding Helper state
+    pub detected_games: Vec<DetectedGame>,
+    pub game_search_query: String,
+    pub is_applying_game_fix: Arc<Mutex<bool>>,
+    pub game_fix_status: Arc<Mutex<String>>,
+    pub game_fix_logs: Arc<Mutex<Vec<String>>>,
 }
 
 impl Default for MyApp {
@@ -147,6 +151,10 @@ impl Default for MyApp {
         // Initialize Prefix Manager
         let prefix_mgr = PrefixManager::new();
         let prefixes = prefix_mgr.scan_prefixes();
+
+        // Initialize Game Finder
+        let game_finder = GameFinder::new();
+        let detected_games = game_finder.find_all_games();
 
         let winetricks_path_arc = Arc::new(Mutex::new(None));
 
@@ -174,9 +182,6 @@ impl Default for MyApp {
         let app = Self {
             current_page: Page::GettingStarted,
             mod_manager_view: ModManagerView::Dashboard,
-            show_prefix_manager: true,
-            show_mo2_manager: true,
-            show_vortex_manager: true,
 
             install_wizard: InstallWizard::default(),
 
@@ -198,11 +203,10 @@ impl Default for MyApp {
             proton_versions: protons,
 
             available_ge_versions: Arc::new(Mutex::new(Vec::new())),
-            ge_search_query: String::new(),
-            is_fetching_ge: Arc::new(Mutex::new(true)),
-
             available_cachyos_versions: Arc::new(Mutex::new(Vec::new())),
-            cachyos_search_query: String::new(),
+            proton_search_query: String::new(),
+            proton_download_source: "ge".to_string(),
+            is_fetching_ge: Arc::new(Mutex::new(true)),
             is_fetching_cachyos: Arc::new(Mutex::new(true)),
 
             is_downloading: Arc::new(Mutex::new(false)),
@@ -210,12 +214,22 @@ impl Default for MyApp {
             download_progress: Arc::new(Mutex::new(0.0)),
 
             should_refresh_proton: false,
+            download_needs_refresh: Arc::new(AtomicBool::new(false)),
             missing_deps: missing_deps_arc.clone(),
 
             steam_detected,
             steam_path,
 
             migration_path_input: String::new(),
+
+            pending_prefix_delete: None,
+            pending_proton_delete: None,
+
+            detected_games,
+            game_search_query: String::new(),
+            is_applying_game_fix: Arc::new(Mutex::new(false)),
+            game_fix_status: Arc::new(Mutex::new(String::new())),
+            game_fix_logs: Arc::new(Mutex::new(Vec::new())),
         };
 
         // Auto-fetch on startup (GE Proton)
@@ -353,5 +367,10 @@ impl MyApp {
 
         // Also refresh prefixes
         self.detected_prefixes = self.prefix_manager.scan_prefixes();
+    }
+
+    pub fn refresh_detected_games(&mut self) {
+        let game_finder = GameFinder::new();
+        self.detected_games = game_finder.find_all_games();
     }
 }

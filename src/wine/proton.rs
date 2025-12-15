@@ -264,13 +264,15 @@ pub fn fetch_ge_releases() -> Result<Vec<GithubRelease>, Box<dyn Error>> {
 }
 
 /// Downloads and extracts a GE-Proton release with progress tracking
-pub fn download_ge_proton<F>(
+pub fn download_ge_proton<F, S>(
     asset_url: String,
     file_name: String,
     progress_callback: F,
+    status_callback: S,
 ) -> Result<(), Box<dyn Error>>
 where
     F: Fn(u64, u64) + Send + 'static,
+    S: Fn(&str) + Send + 'static,
 {
     let home = std::env::var("HOME")?;
     let install_root = PathBuf::from(format!("{}/NaK/ProtonGE", home));
@@ -293,7 +295,7 @@ where
 
     let mut file = fs::File::create(&temp_file_path)?;
 
-    let mut buffer = [0; 8192];
+    let mut buffer = [0; 65536]; // 64KB buffer for faster downloads
     let mut downloaded: u64 = 0;
     let mut reader = response.into_reader();
 
@@ -311,6 +313,7 @@ where
     }
 
     // 2. Extract
+    status_callback("Extracting archive (this may take a moment)...");
     let tar_gz = fs::File::open(&temp_file_path)?;
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
@@ -351,13 +354,15 @@ pub fn fetch_cachyos_releases() -> Result<Vec<GithubRelease>, Box<dyn Error>> {
 
 /// Downloads and extracts a CachyOS Proton release with progress tracking
 /// Note: CachyOS uses .tar.xz format
-pub fn download_cachyos_proton<F>(
+pub fn download_cachyos_proton<F, S>(
     asset_url: String,
     file_name: String,
     progress_callback: F,
+    status_callback: S,
 ) -> Result<(), Box<dyn Error>>
 where
     F: Fn(u64, u64) + Send + 'static,
+    S: Fn(&str) + Send + 'static,
 {
     use xz2::read::XzDecoder;
 
@@ -382,7 +387,7 @@ where
 
     let mut file = fs::File::create(&temp_file_path)?;
 
-    let mut buffer = [0; 8192];
+    let mut buffer = [0; 65536]; // 64KB buffer for faster downloads
     let mut downloaded: u64 = 0;
     let mut reader = response.into_reader();
 
@@ -400,6 +405,7 @@ where
     }
 
     // 2. Extract (.tar.xz)
+    status_callback("Extracting archive (this may take a moment)...");
     let tar_xz = fs::File::open(&temp_file_path)?;
     let tar = XzDecoder::new(tar_xz);
     let mut archive = Archive::new(tar);

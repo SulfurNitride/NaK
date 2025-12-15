@@ -7,8 +7,9 @@ use std::path::Path;
 use crate::logging::{log_info, log_warning};
 
 /// Detect the Steam installation path
-/// Checks common locations for both native and Flatpak Steam installs
+/// Checks common locations for native, Flatpak, and Snap Steam installs
 /// Returns None if Steam is not found
+#[must_use]
 pub fn detect_steam_path_checked() -> Option<String> {
     let home = std::env::var("HOME").unwrap_or_default();
 
@@ -32,12 +33,20 @@ pub fn detect_steam_path_checked() -> Option<String> {
         return Some(flatpak_path);
     }
 
+    // Check Snap Steam location
+    let snap_path = format!("{}/snap/steam/common/.steam/steam", home);
+    if Path::new(&snap_path).exists() {
+        log_info(&format!("Steam detected (Snap) at: {}", snap_path));
+        return Some(snap_path);
+    }
+
     log_warning("Steam installation not detected! NaK requires Steam to be installed.");
     None
 }
 
 /// Detect the Steam installation path (legacy, always returns a path)
-/// Checks common locations for both native and Flatpak Steam installs
+/// Checks common locations for native, Flatpak, and Snap Steam installs
+#[must_use]
 pub fn detect_steam_path() -> String {
     let home = std::env::var("HOME").unwrap_or_default();
 
@@ -57,6 +66,12 @@ pub fn detect_steam_path() -> String {
     let flatpak_path = format!("{}/.var/app/com.valvesoftware.Steam/.steam/steam", home);
     if Path::new(&flatpak_path).exists() {
         return flatpak_path;
+    }
+
+    // Check Snap Steam location
+    let snap_path = format!("{}/snap/steam/common/.steam/steam", home);
+    if Path::new(&snap_path).exists() {
+        return snap_path;
     }
 
     // Fallback to default
