@@ -6,10 +6,36 @@ use std::path::{Path, PathBuf};
 // Main App Config
 // ============================================================================
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub selected_proton: Option<String>,
     pub active_nxm_prefix: Option<String>,
+    /// Whether to use Steam Linux Runtime (pressure-vessel) for launching
+    /// Some systems have issues with SLR, so this allows disabling it
+    #[serde(default = "default_true")]
+    pub use_steam_runtime: bool,
+    /// Whether the first-run setup has been completed
+    #[serde(default)]
+    pub first_run_completed: bool,
+    /// Whether to check for pre-release updates
+    #[serde(default)]
+    pub check_prereleases: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            selected_proton: None,
+            active_nxm_prefix: None,
+            use_steam_runtime: true,
+            first_run_completed: false,
+            check_prereleases: false,
+        }
+    }
 }
 
 impl AppConfig {

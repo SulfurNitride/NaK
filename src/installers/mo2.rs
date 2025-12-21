@@ -79,20 +79,76 @@ pub fn install_mo2(
     // 3. Extract
     ctx.set_status("Extracting MO2...".to_string());
     ctx.set_progress(0.15);
-    let status = std::process::Command::new("7z")
+
+    // Try 7z first
+    let extract_result = std::process::Command::new("7z")
         .arg("x")
         .arg(&archive_path)
         .arg(format!("-o{}", install_dir.to_string_lossy()))
         .arg("-y")
-        .status();
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output();
 
-    if status.is_err() || !status.unwrap().success() {
-        std::process::Command::new("unzip")
+    let extraction_ok = match &extract_result {
+        Ok(output) => {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                ctx.log(format!("7z extraction failed (exit code: {:?})", output.status.code()));
+                if !stderr.is_empty() {
+                    ctx.log(format!("7z stderr: {}", stderr));
+                    log_warning(&format!("7z stderr: {}", stderr));
+                }
+                if !stdout.is_empty() {
+                    log_warning(&format!("7z stdout: {}", stdout));
+                }
+                false
+            } else {
+                true
+            }
+        }
+        Err(e) => {
+            ctx.log(format!("7z not available or failed to run: {}", e));
+            log_warning(&format!("7z extraction failed: {}", e));
+            false
+        }
+    };
+
+    // Fall back to unzip if 7z failed
+    if !extraction_ok {
+        ctx.log("Falling back to unzip...".to_string());
+        let unzip_result = std::process::Command::new("unzip")
             .arg(&archive_path)
             .arg("-d")
             .arg(&install_dir)
-            .status()?;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+
+        match unzip_result {
+            Ok(output) => {
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    log_error(&format!("unzip extraction failed (exit code: {:?})", output.status.code()));
+                    if !stderr.is_empty() {
+                        ctx.log(format!("unzip stderr: {}", stderr));
+                        log_error(&format!("unzip stderr: {}", stderr));
+                    }
+                    if !stdout.is_empty() {
+                        log_error(&format!("unzip stdout: {}", stdout));
+                    }
+                    return Err(format!("MO2 extraction failed with both 7z and unzip").into());
+                }
+            }
+            Err(e) => {
+                log_error(&format!("unzip extraction failed: {}", e));
+                return Err(format!("MO2 extraction failed: neither 7z nor unzip available or working").into());
+            }
+        }
     }
+
     ctx.set_progress(0.20);
 
     // 4. Dependencies

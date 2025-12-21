@@ -131,12 +131,42 @@ pub fn install_vortex(
     };
 
     if !status.success() {
+        // Capture stdout and stderr for better error reporting
+        let stdout = child.stdout.take()
+            .map(|mut s| {
+                let mut buf = String::new();
+                use std::io::Read;
+                let _ = s.read_to_string(&mut buf);
+                buf
+            })
+            .unwrap_or_default();
+
+        let stderr = child.stderr.take()
+            .map(|mut s| {
+                let mut buf = String::new();
+                use std::io::Read;
+                let _ = s.read_to_string(&mut buf);
+                buf
+            })
+            .unwrap_or_default();
+
         ctx.log(format!("Installer exit code: {:?}", status.code()));
         log_error(&format!(
             "Vortex installer failed with exit code: {:?}",
             status.code()
         ));
-        return Err("Vortex installer failed".into());
+
+        if !stdout.is_empty() {
+            ctx.log(format!("Installer stdout:\n{}", stdout));
+            log_error(&format!("Vortex installer stdout:\n{}", stdout));
+        }
+
+        if !stderr.is_empty() {
+            ctx.log(format!("Installer stderr:\n{}", stderr));
+            log_error(&format!("Vortex installer stderr:\n{}", stderr));
+        }
+
+        return Err(format!("Vortex installer failed with exit code: {:?}", status.code()).into());
     }
 
     // Wait for files to settle (same as Python)

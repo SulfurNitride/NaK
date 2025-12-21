@@ -14,7 +14,7 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
             .rounding(egui::Rounding::same(4.0))
             .inner_margin(8.0)
             .show(ui, |ui| {
-                ui.colored_label(egui::Color32::RED, "⚠ STEAM NOT DETECTED");
+                ui.colored_label(egui::Color32::RED, "STEAM NOT DETECTED");
                 ui.colored_label(
                     egui::Color32::from_rgb(255, 150, 150),
                     "NaK requires Steam to be installed.",
@@ -33,9 +33,9 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
 
     let missing = app.missing_deps.lock().unwrap();
     if !missing.is_empty() {
-        ui.colored_label(egui::Color32::RED, "⚠ Missing Deps:");
+        ui.colored_label(egui::Color32::RED, "Missing Deps:");
         for dep in missing.iter() {
-            ui.colored_label(egui::Color32::RED, format!("• {}", dep));
+            ui.colored_label(egui::Color32::RED, format!("- {}", dep));
         }
         ui.small("Please install via OS package manager.");
         ui.separator();
@@ -49,6 +49,7 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
         (Page::Marketplace, "Marketplace"),
         (Page::ProtonTools, "Proton Picker"),
         (Page::Settings, "Settings"),
+        (Page::Updater, "Version"),
     ];
 
     for (page, label) in navigation_buttons {

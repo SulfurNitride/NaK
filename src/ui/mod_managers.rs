@@ -184,6 +184,10 @@ fn render_manager_view(app: &mut MyApp, ui: &mut egui::Ui, manager_name: &str) {
             app.install_wizard = InstallWizard::default();
             // Ensure we are back on the right manager page if reset changes things (it shouldn't here)
             app.install_wizard.manager_type = manager_name.to_string();
+            // Clear installation status to prevent state detection issues
+            *app.install_status.lock().unwrap() = String::new();
+            *app.install_progress.lock().unwrap() = 0.0;
+            app.logs.lock().unwrap().clear();
         }
         WizardAction::Cancel => {
              app.cancel_install.store(true, Ordering::Relaxed);
@@ -229,14 +233,25 @@ fn render_install_wizard(
         return action;
     }
 
-    // Simple hack: If status contains "Complete!" and !is_busy, verify we are not already at Finished.
-    // Check for error after installation finishes
-    if !is_busy && status.starts_with("Error:") {
-        wizard.last_install_error = Some(status.to_string());
-        wizard.step = WizardStep::Finished; // Transition to finished state even on error
-    } else if !is_busy && status.contains("Complete!") && wizard.step != WizardStep::Finished && wizard.step != WizardStep::Selection {
-        wizard.last_install_error = None; // Clear any previous errors on success
-        wizard.step = WizardStep::Finished;
+    // Handle installation completion states
+    if !is_busy && wizard.step != WizardStep::Finished && wizard.step != WizardStep::Selection {
+        if status.contains("Cancelled") {
+            // Installation was cancelled - reset wizard to allow retry
+            wizard.step = WizardStep::Selection;
+            wizard.last_install_error = None;
+            wizard.name.clear();
+            wizard.path.clear();
+            wizard.validation_error = None;
+            wizard.force_install = false;
+        } else if status.starts_with("Error:") {
+            // Installation failed with error
+            wizard.last_install_error = Some(status.to_string());
+            wizard.step = WizardStep::Finished;
+        } else if status.contains("Complete!") {
+            // Installation succeeded
+            wizard.last_install_error = None;
+            wizard.step = WizardStep::Finished;
+        }
     }
 
     match wizard.step {
@@ -344,15 +359,26 @@ fn render_install_wizard(
                     ui.add_space(10.0);
                     ui.label(egui::RichText::new("Please check the logs for more details:").strong());
                     ui.label("~/NaK/logs");
+                    ui.add_space(20.0);
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Try Again").clicked() {
+                            *action_ref = WizardAction::Reset;
+                        }
+                        ui.add_space(10.0);
+                        if ui.button("Return to Dashboard").clicked() {
+                            *action_ref = WizardAction::Reset;
+                        }
+                    });
                 } else {
                     ui.heading("Installation Successful!");
                     ui.add_space(10.0);
                     ui.label(format!("{} has been set up successfully.", manager_name));
-                }
-                ui.add_space(20.0);
-                
-                if ui.button("Return to Menu").clicked() {
-                    *action_ref = WizardAction::Reset;
+                    ui.add_space(20.0);
+
+                    if ui.button("Return to Menu").clicked() {
+                        *action_ref = WizardAction::Reset;
+                    }
                 }
             });
         }

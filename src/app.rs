@@ -21,12 +21,14 @@ use crate::wine::{GithubRelease, NakPrefix, PrefixManager, ProtonFinder, ProtonI
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum Page {
+    FirstRunSetup,
     GettingStarted,
     ModManagers,
     GameFixer,
     Marketplace,
     ProtonTools,
     Settings,
+    Updater,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -129,6 +131,8 @@ pub struct MyApp {
 
     // Settings page state
     pub migration_path_input: String,
+    pub cached_storage_info: Option<crate::config::StorageInfo>,
+    pub storage_info_last_update: std::time::Instant,
 
     // Confirmation dialog state
     pub pending_prefix_delete: Option<String>,
@@ -140,6 +144,13 @@ pub struct MyApp {
     pub is_applying_game_fix: Arc<Mutex<bool>>,
     pub game_fix_status: Arc<Mutex<String>>,
     pub game_fix_logs: Arc<Mutex<Vec<String>>>,
+
+    // Updater state
+    pub update_info: Arc<Mutex<Option<crate::updater::UpdateInfo>>>,
+    pub is_checking_update: Arc<Mutex<bool>>,
+    pub is_installing_update: Arc<Mutex<bool>>,
+    pub update_error: Arc<Mutex<Option<String>>>,
+    pub update_installed: Arc<Mutex<bool>>,
 }
 
 impl Default for MyApp {
@@ -179,8 +190,15 @@ impl Default for MyApp {
 
         let missing_deps_arc = Arc::new(Mutex::new(missing));
 
+        // Determine starting page based on first-run status
+        let starting_page = if config.first_run_completed {
+            Page::GettingStarted
+        } else {
+            Page::FirstRunSetup
+        };
+
         let app = Self {
-            current_page: Page::GettingStarted,
+            current_page: starting_page,
             mod_manager_view: ModManagerView::Dashboard,
 
             install_wizard: InstallWizard::default(),
@@ -221,6 +239,8 @@ impl Default for MyApp {
             steam_path,
 
             migration_path_input: String::new(),
+            cached_storage_info: None,
+            storage_info_last_update: std::time::Instant::now(),
 
             pending_prefix_delete: None,
             pending_proton_delete: None,
@@ -230,6 +250,13 @@ impl Default for MyApp {
             is_applying_game_fix: Arc::new(Mutex::new(false)),
             game_fix_status: Arc::new(Mutex::new(String::new())),
             game_fix_logs: Arc::new(Mutex::new(Vec::new())),
+
+            // Updater
+            update_info: Arc::new(Mutex::new(None)),
+            is_checking_update: Arc::new(Mutex::new(false)),
+            is_installing_update: Arc::new(Mutex::new(false)),
+            update_error: Arc::new(Mutex::new(None)),
+            update_installed: Arc::new(Mutex::new(false)),
         };
 
         // Auto-fetch on startup (GE Proton)
@@ -264,12 +291,18 @@ impl Default for MyApp {
             *is_fetching_cachyos.lock().unwrap() = false;
         });
 
-        // Auto-download Steam Runtime if missing
-        if !crate::wine::runtime::is_runtime_installed() {
+        // Auto-download Steam Runtime only if:
+        // 1. First-run setup is complete (user has made their choice)
+        // 2. User has opted to use SLR
+        // 3. SLR is not already installed
+        if app.config.first_run_completed
+            && app.config.use_steam_runtime
+            && !crate::wine::runtime::is_runtime_installed()
+        {
             let status = app.download_status.clone();
             let progress = app.download_progress.clone();
             let is_downloading = app.is_downloading.clone();
-            
+
             *is_downloading.lock().unwrap() = true;
             *status.lock().unwrap() = "Initializing Steam Runtime...".to_string();
 
@@ -372,5 +405,51 @@ impl MyApp {
     pub fn refresh_detected_games(&mut self) {
         let game_finder = GameFinder::new();
         self.detected_games = game_finder.find_all_games();
+    }
+
+    /// Trigger SLR download if not already installed/downloading
+    pub fn start_slr_download(&self) {
+        if crate::wine::runtime::is_runtime_installed() {
+            return; // Already installed
+        }
+
+        if *self.is_downloading.lock().unwrap() {
+            return; // Already downloading
+        }
+
+        let status = self.download_status.clone();
+        let progress = self.download_progress.clone();
+        let is_downloading = self.is_downloading.clone();
+
+        *is_downloading.lock().unwrap() = true;
+        *status.lock().unwrap() = "Starting Steam Runtime download...".to_string();
+
+        thread::spawn(move || {
+            let cb_status = status.clone();
+            let cb_progress = progress.clone();
+            let cb_downloading = is_downloading.clone();
+
+            let cb_status_inner = cb_status.clone();
+            let cb_progress_inner = cb_progress.clone();
+
+            let callback = move |current: u64, total: u64| {
+                if total > 0 {
+                    let p = current as f32 / total as f32;
+                    *cb_progress_inner.lock().unwrap() = p;
+                    *cb_status_inner.lock().unwrap() = format!("Downloading Runtime: {:.1}%", p * 100.0);
+                }
+            };
+
+            match crate::wine::runtime::download_runtime(callback) {
+                Ok(_) => {
+                    *cb_status.lock().unwrap() = "Runtime Ready!".to_string();
+                    *cb_progress.lock().unwrap() = 1.0;
+                }
+                Err(e) => {
+                    *cb_status.lock().unwrap() = format!("Error downloading runtime: {}", e);
+                }
+            }
+            *cb_downloading.lock().unwrap() = false;
+        });
     }
 }

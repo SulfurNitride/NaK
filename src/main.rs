@@ -12,6 +12,7 @@ mod logging;
 mod nxm;
 mod scripts;
 mod ui;
+mod updater;
 mod utils;
 mod wine;
 

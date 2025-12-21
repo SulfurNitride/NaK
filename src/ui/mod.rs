@@ -8,7 +8,7 @@ mod sidebar;
 
 pub use game_fixer::render_game_fixer;
 pub use mod_managers::render_mod_managers;
-pub use pages::{render_getting_started, render_marketplace, render_settings};
+pub use pages::{render_first_run_setup, render_getting_started, render_marketplace, render_settings, render_updater};
 pub use proton_tools::render_proton_tools;
 pub use sidebar::render_sidebar;
 
@@ -63,12 +63,15 @@ impl eframe::App for MyApp {
         // Render confirmation dialogs
         render_confirmation_dialogs(self, ctx);
 
-        egui::SidePanel::left("sidebar_panel")
-            .resizable(false)
-            .default_width(180.0)
-            .show(ctx, |ui| {
-                render_sidebar(self, ctx, ui, !is_busy);
-            });
+        // Hide sidebar during first-run setup
+        if self.current_page != crate::app::Page::FirstRunSetup {
+            egui::SidePanel::left("sidebar_panel")
+                .resizable(false)
+                .default_width(180.0)
+                .show(ctx, |ui| {
+                    render_sidebar(self, ctx, ui, !is_busy);
+                });
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // If busy, show overlay/status at top
@@ -93,6 +96,9 @@ impl eframe::App for MyApp {
             }
 
             match self.current_page {
+                crate::app::Page::FirstRunSetup => {
+                    render_first_run_setup(self, ui);
+                }
                 crate::app::Page::ModManagers => {
                     render_mod_managers(self, ui);
                 }
@@ -105,6 +111,7 @@ impl eframe::App for MyApp {
                         crate::app::Page::Marketplace => render_marketplace(self, ui),
                         crate::app::Page::ProtonTools => render_proton_tools(self, ui),
                         crate::app::Page::Settings => render_settings(self, ui),
+                        crate::app::Page::Updater => render_updater(self, ui),
                         _ => {}
                     });
                 }
@@ -124,7 +131,7 @@ fn render_confirmation_dialogs(app: &mut MyApp, ctx: &egui::Context) {
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(10.0);
-                    ui.label(egui::RichText::new("⚠ Delete Prefix?").size(18.0).strong());
+                    ui.label(egui::RichText::new("Delete Prefix?").size(18.0).strong());
                     ui.add_space(10.0);
                     ui.label(format!("Are you sure you want to delete '{}'?", prefix_name));
                     ui.label(egui::RichText::new("This will permanently remove all data in this prefix.")
@@ -161,7 +168,7 @@ fn render_confirmation_dialogs(app: &mut MyApp, ctx: &egui::Context) {
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(10.0);
-                    ui.label(egui::RichText::new("⚠ Uninstall Proton?").size(18.0).strong());
+                    ui.label(egui::RichText::new("Uninstall Proton?").size(18.0).strong());
                     ui.add_space(10.0);
                     ui.label(format!("Are you sure you want to uninstall '{}'?", proton_name));
                     ui.add_space(15.0);

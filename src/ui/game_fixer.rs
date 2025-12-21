@@ -32,7 +32,7 @@ pub fn render_game_fixer(app: &mut MyApp, ui: &mut egui::Ui) {
 
         ui.add_space(20.0);
 
-        if ui.button("🔄 Refresh Games").clicked() {
+        if ui.button("Refresh Games").clicked() {
             app.refresh_detected_games();
         }
 
@@ -129,23 +129,17 @@ fn render_game_card(app: &mut MyApp, ui: &mut egui::Ui, game: &DetectedGame) {
 
                     // Prefix status
                     if has_prefix {
-                        ui.horizontal(|ui| {
-                            ui.colored_label(egui::Color32::GREEN, "●");
-                            ui.label(
-                                egui::RichText::new("Has Wine prefix")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_gray(150)),
-                            );
-                        });
+                        ui.label(
+                            egui::RichText::new("[OK] Has Wine prefix")
+                                .size(11.0)
+                                .color(egui::Color32::GREEN),
+                        );
                     } else {
-                        ui.horizontal(|ui| {
-                            ui.colored_label(egui::Color32::YELLOW, "●");
-                            ui.label(
-                                egui::RichText::new("No prefix (run game first)")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_gray(150)),
-                            );
-                        });
+                        ui.label(
+                            egui::RichText::new("[--] No prefix (run game first)")
+                                .size(11.0)
+                                .color(egui::Color32::YELLOW),
+                        );
                     }
                 });
 
@@ -169,7 +163,7 @@ fn render_game_card(app: &mut MyApp, ui: &mut egui::Ui, game: &DetectedGame) {
                     }
 
                     if ui
-                        .button("📂")
+                        .button("Open")
                         .on_hover_text("Open install folder")
                         .clicked()
                     {
@@ -278,7 +272,7 @@ fn apply_fixes_to_game(app: &mut MyApp, game: DetectedGame) {
         ) {
             Ok(()) => {
                 if let Ok(mut guard) = status.lock() {
-                    *guard = format!("✓ Fixes applied successfully to {}!", game.name);
+                    *guard = format!("Fixes applied successfully to {}!", game.name);
                 }
             }
             Err(e) => {
