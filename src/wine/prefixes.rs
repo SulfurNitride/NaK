@@ -19,9 +19,8 @@ pub struct PrefixManager {
 #[allow(dead_code)]
 impl PrefixManager {
     pub fn new() -> Self {
-        let home = std::env::var("HOME").expect("Failed to get HOME");
         Self {
-            prefixes_root: PathBuf::from(format!("{}/NaK/Prefixes", home)),
+            prefixes_root: nak_path!("Prefixes")
         }
     }
 

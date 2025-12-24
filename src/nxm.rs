@@ -9,13 +9,12 @@ pub struct NxmHandler;
 impl NxmHandler {
     pub fn setup() -> Result<(), Box<dyn Error>> {
         let home = std::env::var("HOME")?;
-        let nak_dir = PathBuf::from(format!("{}/NaK", home));
-        let script_path = nak_dir.join("nxm_handler.sh");
+        let script_path = nak_path!("nxm_handler.sh");
         let applications_dir = PathBuf::from(format!("{}/.local/share/applications", home));
         let desktop_path = applications_dir.join("nak-nxm-handler.desktop");
 
         // Ensure directories exist
-        fs::create_dir_all(&nak_dir)?;
+        fs::create_dir_all(nak_path!())?;
         fs::create_dir_all(&applications_dir)?;
 
         // Clean up old NXM handler variations
@@ -40,7 +39,7 @@ impl NxmHandler {
 # NaK Global NXM Handler
 # Forwards nxm:// links to the active mod manager instance (MO2 or Vortex)
 
-ACTIVE_LINK="{}/NaK/active_nxm_game"
+ACTIVE_LINK="{}/active_nxm_game"
 
 if [ ! -L "$ACTIVE_LINK" ]; then
     zenity --error --text="No active mod manager instance selected in NaK!" --title="NaK Error"
@@ -81,7 +80,7 @@ fi
 # Run the mod manager with the NXM link
 "$LAUNCHER" "$1"
 "#,
-            home
+            nak_path!().display()
         );
 
         let mut file = fs::File::create(&script_path)?;
@@ -120,8 +119,7 @@ MimeType=x-scheme-handler/nxm;
     }
 
     pub fn set_active_instance(install_dir: &Path) -> Result<(), Box<dyn Error>> {
-        let home = std::env::var("HOME")?;
-        let link_path = PathBuf::from(format!("{}/NaK/active_nxm_game", home));
+        let link_path = nak_path!("active_nxm_game");
 
         if link_path.exists() || fs::symlink_metadata(&link_path).is_ok() {
             let _ = fs::remove_file(&link_path);

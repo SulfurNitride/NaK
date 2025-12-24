@@ -4,6 +4,9 @@
 
 use eframe::egui;
 
+#[macro_use]
+mod paths;
+
 mod app;
 mod config;
 mod games;

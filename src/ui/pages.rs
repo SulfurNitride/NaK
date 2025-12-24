@@ -207,7 +207,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                             ui.horizontal(|ui| {
                                 ui.label("• Other:");
                                 ui.strong(format!("{:.2} GB", storage_info.other_size_gb))
-                                  .on_hover_text("Includes logs, config files, and binaries in ~/NaK");
+                                  .on_hover_text(format!("Includes logs, config files, and binaries in {}", nak_path!().display()));
                             });
                         }
                     });
@@ -323,15 +323,11 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 ui.add_space(5.0);
 
                 if ui.button("📂 Open NaK Folder").clicked() {
-                    let home = std::env::var("HOME").unwrap_or_default();
-                    let nak_path = format!("{}/NaK", home);
-                    let _ = std::process::Command::new("xdg-open").arg(&nak_path).spawn();
+                    let _ = std::process::Command::new("xdg-open").arg(nak_path!()).spawn();
                 }
 
                 if ui.button("📂 Open Logs Folder").clicked() {
-                    let home = std::env::var("HOME").unwrap_or_default();
-                    let logs_path = format!("{}/NaK/logs", home);
-                    let _ = std::process::Command::new("xdg-open").arg(&logs_path).spawn();
+                    let _ = std::process::Command::new("xdg-open").arg(nak_path!("logs")).spawn();
                 }
             });
     });

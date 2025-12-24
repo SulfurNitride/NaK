@@ -31,8 +31,8 @@ impl ProtonFinder {
         let home = std::env::var("HOME").expect("Failed to get HOME directory");
         Self {
             steam_root: PathBuf::from(format!("{}/.steam/steam", home)),
-            nak_proton_ge_root: PathBuf::from(format!("{}/NaK/ProtonGE", home)),
-            nak_proton_cachyos_root: PathBuf::from(format!("{}/NaK/ProtonCachyOS", home)),
+            nak_proton_ge_root: nak_path!("ProtonGE"),
+            nak_proton_cachyos_root: nak_path!("ProtonCachyOS"),
         }
     }
 
@@ -162,8 +162,7 @@ impl ProtonFinder {
 
 /// Sets the 'active' symlink for the selected proton (at ~/NaK/ProtonGE/active)
 pub fn set_active_proton(proton: &ProtonInfo) -> Result<(), Box<dyn std::error::Error>> {
-    let home = std::env::var("HOME")?;
-    let active_link = PathBuf::from(format!("{}/NaK/ProtonGE/active", home));
+    let active_link = nak_path!("ProtonGE", "active");
 
     // Remove existing symlink if present
     if active_link.exists() || fs::symlink_metadata(&active_link).is_ok() {
@@ -274,9 +273,8 @@ where
     F: Fn(u64, u64) + Send + 'static,
     S: Fn(&str) + Send + 'static,
 {
-    let home = std::env::var("HOME")?;
-    let install_root = PathBuf::from(format!("{}/NaK/ProtonGE", home));
-    let temp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+    let install_root = nak_path!("ProtonGE");
+    let temp_dir = nak_path!("tmp");
 
     fs::create_dir_all(&install_root)?;
     fs::create_dir_all(&temp_dir)?;
@@ -329,8 +327,7 @@ where
 
 /// Deletes a GE-Proton version
 pub fn delete_ge_proton(version_name: &str) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-    let install_path = PathBuf::from(format!("{}/NaK/ProtonGE/{}", home, version_name));
+    let install_path = nak_path!("ProtonGE", version_name);
 
     if install_path.exists() {
         fs::remove_dir_all(install_path)?;
@@ -366,9 +363,8 @@ where
 {
     use xz2::read::XzDecoder;
 
-    let home = std::env::var("HOME")?;
-    let install_root = PathBuf::from(format!("{}/NaK/ProtonCachyOS", home));
-    let temp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+    let install_root = nak_path!("ProtonCachyOS");
+    let temp_dir = nak_path!("tmp");
 
     fs::create_dir_all(&install_root)?;
     fs::create_dir_all(&temp_dir)?;
@@ -421,8 +417,7 @@ where
 
 /// Deletes a CachyOS Proton version
 pub fn delete_cachyos_proton(version_name: &str) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-    let install_path = PathBuf::from(format!("{}/NaK/ProtonCachyOS/{}", home, version_name));
+    let install_path = nak_path!("ProtonCachyOS", version_name);
 
     if install_path.exists() {
         fs::remove_dir_all(install_path)?;

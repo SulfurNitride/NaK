@@ -20,11 +20,10 @@ use crate::logging::{log_error, log_info, log_warning};
 
 /// Get the resolved NaK base directory (handles symlinks)
 pub fn get_nak_real_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let nak_base = PathBuf::from(format!("{}/NaK", home));
+    let nak_base = nak_path!();
 
     // Try to read symlink directly first
-    if let Ok(target) = fs::read_link(&nak_base) {
+    if let Ok(target) = fs::read_link(nak_base) {
         // If it's a relative symlink, resolve it relative to parent
         if target.is_relative() {
             if let Some(parent) = nak_base.parent() {
@@ -35,7 +34,7 @@ pub fn get_nak_real_path() -> PathBuf {
     }
 
     // Fallback to canonicalize
-    fs::canonicalize(&nak_base).unwrap_or(nak_base)
+    fs::canonicalize(nak_base).unwrap_or(nak_base.into())
 }
 
 /// Get the NaK bin directory path (~//NaK/bin)
@@ -45,15 +44,9 @@ pub fn get_nak_bin_path() -> PathBuf {
 
 /// Resolve a path that might be under ~/NaK through the symlink
 pub fn resolve_nak_path(path: &Path) -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let nak_prefix = format!("{}/NaK/", home);
-
-    // If path starts with ~/NaK/, resolve it through the symlink
-    if let Some(path_str) = path.to_str() {
-        if path_str.starts_with(&nak_prefix) {
-            let relative = &path_str[nak_prefix.len()..];
-            return get_nak_real_path().join(relative);
-        }
+    // If path is under the config dir, resolve it through the symlink
+    if let Ok(relative) = path.strip_prefix(nak_path!()) {
+        return get_nak_real_path().join(relative);
     }
 
     // Otherwise try canonicalize or return as-is
@@ -99,9 +92,8 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
     }
 
     // Check if we already downloaded it - resolve NaK symlink first
-    let home = std::env::var("HOME").unwrap_or_default();
-    let nak_base = PathBuf::from(format!("{}/NaK", home));
-    let nak_real = fs::canonicalize(&nak_base).unwrap_or(nak_base);
+    let nak_base = nak_path!();
+    let nak_real = fs::canonicalize(nak_base).unwrap_or(nak_base.into());
     let bin_dir = nak_real.join("bin");
     let cabextract_path = bin_dir.join("cabextract");
 
@@ -167,11 +159,10 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
 
 /// Ensures winetricks is downloaded and available (stored in ~/NaK/bin)
 pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-    let nak_base = PathBuf::from(format!("{}/NaK", home));
+    let nak_base = nak_path!();
 
     // Resolve symlink for NaK directory if it exists
-    let nak_real = fs::canonicalize(&nak_base).unwrap_or(nak_base);
+    let nak_real = fs::canonicalize(nak_base).unwrap_or(nak_base.into());
     let bin_dir = nak_real.join("bin");
     let winetricks_path = bin_dir.join("winetricks");
 

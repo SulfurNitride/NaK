@@ -19,14 +19,12 @@ pub fn install_mo2(
     proton: &ProtonInfo,
     ctx: TaskContext,
 ) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-
     // Collision Check
     let prefix_mgr = PrefixManager::new();
     let base_name = format!("mo2_{}", install_name.replace(" ", "_").to_lowercase());
     let unique_name = prefix_mgr.get_unique_prefix_name(&base_name);
 
-    let prefix_root = PathBuf::from(format!("{}/NaK/Prefixes/{}/pfx", home, unique_name));
+    let prefix_root = nak_path!("Prefixes", unique_name, "pfx");
     let install_dir = target_install_path;
 
     log_install(&format!(
@@ -68,7 +66,7 @@ pub fn install_mo2(
     ctx.set_status(format!("Downloading {}...", asset.name));
     ctx.set_progress(0.10);
     log_download(&format!("Downloading MO2: {}", asset.name));
-    let archive_path = PathBuf::from(format!("{}/NaK/tmp/{}", home, asset.name));
+    let archive_path = nak_path!("tmp", asset.name);
     download_file(&asset.browser_download_url, &archive_path)?;
     log_download(&format!("MO2 downloaded to: {:?}", archive_path));
 
@@ -211,7 +209,7 @@ pub fn install_mo2(
     log_install("Installing .NET 9 SDK...");
     ctx.set_progress(0.90);
 
-    let tmp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+    let tmp_dir = nak_path!("tmp");
     fs::create_dir_all(&tmp_dir)?;
     let dotnet_installer = tmp_dir.join("dotnet9_sdk.exe");
 
@@ -343,8 +341,6 @@ pub fn setup_existing_mo2(
     proton: &ProtonInfo,
     ctx: TaskContext,
 ) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-
     // Verify MO2 exists at path
     let mo2_exe = existing_path.join("ModOrganizer.exe");
     if !mo2_exe.exists() {
@@ -363,7 +359,7 @@ pub fn setup_existing_mo2(
     let base_name = format!("mo2_{}", install_name.replace(" ", "_").to_lowercase());
     let unique_name = prefix_mgr.get_unique_prefix_name(&base_name);
 
-    let prefix_root = PathBuf::from(format!("{}/NaK/Prefixes/{}/pfx", home, unique_name));
+    let prefix_root = nak_path!("Prefixes", unique_name, "pfx");
 
     if ctx.is_cancelled() {
         return Err("Cancelled".into());
@@ -480,7 +476,7 @@ pub fn setup_existing_mo2(
     log_install("Installing .NET 9 SDK...");
     ctx.set_progress(0.85);
 
-    let tmp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+    let tmp_dir = nak_path!("tmp");
     fs::create_dir_all(&tmp_dir)?;
     let dotnet_installer = tmp_dir.join("dotnet9_sdk.exe");
 

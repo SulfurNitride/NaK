@@ -343,7 +343,7 @@ fn render_install_wizard(
                     ui.label(format!("Error: {}", error_msg));
                     ui.add_space(10.0);
                     ui.label(egui::RichText::new("Please check the logs for more details:").strong());
-                    ui.label("~/NaK/logs");
+                    ui.label(nak_path!("logs").to_string_lossy());
                 } else {
                     ui.heading("Installation Successful!");
                     ui.add_space(10.0);

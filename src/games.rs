@@ -403,8 +403,7 @@ impl GameFixer {
     ) -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
 
-        let home = std::env::var("HOME")?;
-        let tmp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+        let tmp_dir = nak_path!("tmp");
         fs::create_dir_all(&tmp_dir)?;
         let reg_file = tmp_dir.join("game_fix_settings.reg");
 

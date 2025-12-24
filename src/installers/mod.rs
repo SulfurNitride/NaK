@@ -255,8 +255,7 @@ pub fn apply_wine_registry_settings(
     use std::io::Write;
 
     // Create temp file for registry
-    let home = std::env::var("HOME")?;
-    let tmp_dir = std::path::PathBuf::from(format!("{}/NaK/tmp", home));
+    let tmp_dir = nak_path!("tmp");
     fs::create_dir_all(&tmp_dir)?;
     let reg_file = tmp_dir.join("wine_settings.reg");
 

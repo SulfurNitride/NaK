@@ -14,8 +14,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     fn get_path() -> PathBuf {
-        let home = std::env::var("HOME").expect("Failed to get HOME");
-        PathBuf::from(format!("{}/NaK/config.json", home))
+        nak_path!("config.json")
     }
 
     pub fn load() -> Self {
@@ -52,26 +51,24 @@ pub struct CacheConfig {
     pub cache_dependencies: bool,
     pub cache_mo2: bool,
     pub cache_vortex: bool,
-    pub cache_location: String,
+    pub cache_location: PathBuf,
 }
 
 impl Default for CacheConfig {
     fn default() -> Self {
-        let home = std::env::var("HOME").unwrap_or_default();
         Self {
             cache_enabled: true,
             cache_dependencies: true,
             cache_mo2: true,
             cache_vortex: true,
-            cache_location: format!("{}/NaK/cache", home),
+            cache_location: nak_path!("cache")
         }
     }
 }
 
 impl CacheConfig {
     fn get_path() -> PathBuf {
-        let home = std::env::var("HOME").expect("Failed to get HOME");
-        PathBuf::from(format!("{}/NaK/cache_config.json", home))
+        nak_path!("cache_config.json")
     }
 
     pub fn load() -> Self {
@@ -111,9 +108,7 @@ impl CacheConfig {
 // Storage Manager (for NaK folder location/migration)
 // ============================================================================
 
-pub struct StorageManager {
-    default_nak_path: PathBuf,
-}
+pub struct StorageManager {}
 
 impl Default for StorageManager {
     fn default() -> Self {
@@ -124,32 +119,29 @@ impl Default for StorageManager {
 impl StorageManager {
     #[must_use]
     pub fn new() -> Self {
-        let home = std::env::var("HOME").unwrap_or_default();
-        Self {
-            default_nak_path: PathBuf::from(format!("{}/NaK", home)),
-        }
+        Self {}
     }
 
-    /// Check if ~/NaK is a symlink
+    /// Check if config dir is a symlink
     pub fn is_symlink(&self) -> bool {
-        self.default_nak_path.is_symlink()
+        nak_path!().is_symlink()
     }
 
     /// Get the real storage location (resolves symlinks)
     pub fn get_real_location(&self) -> PathBuf {
-        if self.default_nak_path.exists() {
-            self.default_nak_path
+        if nak_path!().exists() {
+            nak_path!()
                 .canonicalize()
-                .unwrap_or_else(|_| self.default_nak_path.clone())
+                .unwrap_or_else(|_| nak_path!().into())
         } else {
-            self.default_nak_path.clone()
+            nak_path!().into()
         }
     }
 
     /// Get storage info
     pub fn get_storage_info(&self) -> StorageInfo {
         let real_path = self.get_real_location();
-        let exists = self.default_nak_path.exists();
+        let exists = nak_path!().exists();
 
         let (free_space_gb, used_space_gb, cache_size_gb, proton_size_gb, prefixes_size_gb, other_size_gb) =
             if exists {
@@ -170,7 +162,7 @@ impl StorageManager {
 
         StorageInfo {
             is_symlink: self.is_symlink(),
-            nak_path: self.default_nak_path.to_string_lossy().to_string(),
+            nak_path: nak_path!().to_string_lossy().to_string(),
             real_path: real_path.to_string_lossy().to_string(),
             exists,
             free_space_gb,
@@ -271,7 +263,7 @@ impl StorageManager {
         Ok(())
     }
 
-    /// Setup symlink from ~/NaK to a new location
+    /// Setup symlink from config dir to a new location
     pub fn setup_symlink(
         &self,
         new_location: &Path,
@@ -282,11 +274,11 @@ impl StorageManager {
 
         let target_nak = new_location.join("NaK");
 
-        // Handle existing ~/NaK
-        if self.default_nak_path.exists() {
-            if self.default_nak_path.is_symlink() {
+        // Handle existing config dir
+        if nak_path!().exists() {
+            if nak_path!().is_symlink() {
                 // Already a symlink, remove it
-                fs::remove_file(&self.default_nak_path)
+                fs::remove_file(nak_path!())
                     .map_err(|e| format!("Failed to remove existing symlink: {}", e))?;
             } else {
                 // It's a real directory
@@ -298,19 +290,17 @@ impl StorageManager {
                         ));
                     }
                     // Move existing data
-                    fs::rename(&self.default_nak_path, &target_nak)
+                    fs::rename(nak_path!(), &target_nak)
                         .map_err(|e| format!("Failed to move existing NaK folder: {}", e))?;
                 } else {
                     // Backup existing
-                    let mut backup_path = self.default_nak_path.with_file_name("NaK.backup");
+                    let mut backup_path = nak_path!("NaK.backup");
                     let mut counter = 1;
                     while backup_path.exists() {
-                        backup_path = self
-                            .default_nak_path
-                            .with_file_name(format!("NaK.backup.{}", counter));
+                        backup_path = nak_path!(format!("NaK.backup.{}", counter));
                         counter += 1;
                     }
-                    fs::rename(&self.default_nak_path, &backup_path)
+                    fs::rename(nak_path!(), &backup_path)
                         .map_err(|e| format!("Failed to backup existing NaK folder: {}", e))?;
                 }
             }
@@ -323,7 +313,7 @@ impl StorageManager {
         }
 
         // Create symlink
-        std::os::unix::fs::symlink(&target_nak, &self.default_nak_path)
+        std::os::unix::fs::symlink(&target_nak, nak_path!())
             .map_err(|e| format!("Failed to create symlink: {}", e))?;
 
         Ok(format!(
@@ -334,19 +324,19 @@ impl StorageManager {
 
     /// Remove symlink and restore to default location
     pub fn remove_symlink(&self) -> Result<String, String> {
-        if !self.default_nak_path.is_symlink() {
-            return Err("~/NaK is not a symlink".to_string());
+        if !nak_path!().is_symlink() {
+            return Err(format!("{} is not a symlink", nak_path!().display()));
         }
 
         let real_location = self.get_real_location();
 
-        fs::remove_file(&self.default_nak_path)
+        fs::remove_file(nak_path!())
             .map_err(|e| format!("Failed to remove symlink: {}", e))?;
 
         // Check for backup
-        let backup_path = self.default_nak_path.with_file_name("NaK.backup");
+        let backup_path = nak_path!("NaK.backup");
         if backup_path.exists() {
-            fs::rename(&backup_path, &self.default_nak_path)
+            fs::rename(&backup_path, nak_path!())
                 .map_err(|e| format!("Failed to restore backup: {}", e))?;
             return Ok(format!(
                 "Symlink removed and backup restored. Data still at {}",
