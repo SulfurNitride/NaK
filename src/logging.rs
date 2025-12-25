@@ -5,9 +5,10 @@
 use chrono::Local;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
+
+use crate::config::AppConfig;
 
 static LOGGER: OnceLock<Arc<Mutex<NakLogger>>> = OnceLock::new();
 
@@ -286,8 +287,8 @@ pub struct NakLogger {
 
 impl NakLogger {
     pub fn new() -> Self {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let log_dir = PathBuf::from(format!("{}/NaK/logs", home));
+        let config = AppConfig::load();
+        let log_dir = config.get_data_path().join("logs");
         let _ = fs::create_dir_all(&log_dir);
 
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");

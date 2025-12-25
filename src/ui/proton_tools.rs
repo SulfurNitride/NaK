@@ -120,6 +120,15 @@ pub fn render_proton_tools(app: &mut MyApp, ui: &mut egui::Ui) {
         if is_fetching {
             ui.spinner();
             ui.label("Fetching...");
+        } else {
+            // Refresh button
+            if ui.button("⟳ Refresh").on_hover_text("Refresh available versions").clicked() {
+                if app.proton_download_source == "ge" {
+                    refresh_ge_releases(app);
+                } else {
+                    refresh_cachyos_releases(app);
+                }
+            }
         }
     });
 
@@ -507,5 +516,59 @@ fn download_runtime_ui(app: &MyApp) {
         if let Ok(mut guard) = is_downloading.lock() {
             *guard = false;
         }
+    });
+}
+
+/// Refresh GE-Proton releases from GitHub
+fn refresh_ge_releases(app: &MyApp) {
+    use crate::wine::fetch_ge_releases;
+
+    let is_fetching = app.is_fetching_ge.clone();
+    let versions = app.available_ge_versions.clone();
+
+    // Don't start if already fetching
+    if *is_fetching.lock().unwrap() {
+        return;
+    }
+
+    *is_fetching.lock().unwrap() = true;
+
+    thread::spawn(move || {
+        match fetch_ge_releases() {
+            Ok(releases) => {
+                *versions.lock().unwrap() = releases;
+            }
+            Err(e) => {
+                eprintln!("Failed to fetch GE releases: {}", e);
+            }
+        }
+        *is_fetching.lock().unwrap() = false;
+    });
+}
+
+/// Refresh CachyOS Proton releases from GitHub
+fn refresh_cachyos_releases(app: &MyApp) {
+    use crate::wine::fetch_cachyos_releases;
+
+    let is_fetching = app.is_fetching_cachyos.clone();
+    let versions = app.available_cachyos_versions.clone();
+
+    // Don't start if already fetching
+    if *is_fetching.lock().unwrap() {
+        return;
+    }
+
+    *is_fetching.lock().unwrap() = true;
+
+    thread::spawn(move || {
+        match fetch_cachyos_releases() {
+            Ok(releases) => {
+                *versions.lock().unwrap() = releases;
+            }
+            Err(e) => {
+                eprintln!("Failed to fetch CachyOS releases: {}", e);
+            }
+        }
+        *is_fetching.lock().unwrap() = false;
     });
 }

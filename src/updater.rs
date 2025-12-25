@@ -6,7 +6,6 @@ use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 
 use crate::logging::{log_download, log_error, log_info};
 
@@ -20,14 +19,12 @@ pub struct UpdateInfo {
     pub download_url: Option<String>,
     pub release_notes: String,
     pub is_update_available: bool,
-    pub is_prerelease: bool,
 }
 
 #[derive(serde::Deserialize)]
 struct GitHubRelease {
     tag_name: String,
     body: Option<String>,
-    prerelease: Option<bool>,
     assets: Vec<GitHubAsset>,
 }
 
@@ -39,27 +36,11 @@ struct GitHubAsset {
 
 /// Check GitHub for the latest release
 pub fn check_for_updates() -> Result<UpdateInfo, Box<dyn Error>> {
-    check_for_updates_with_prerelease(false)
-}
-
-/// Check GitHub for the latest release, optionally including pre-releases
-pub fn check_for_updates_with_prerelease(include_prereleases: bool) -> Result<UpdateInfo, Box<dyn Error>> {
-    let release = if include_prereleases {
-        // Fetch all releases and find the first one (including pre-releases)
-        let url = format!("https://api.github.com/repos/{}/releases", GITHUB_REPO);
-        let response = ureq::get(&url)
-            .set("User-Agent", "NaK-Updater")
-            .call()?;
-        let releases: Vec<GitHubRelease> = response.into_json()?;
-        releases.into_iter().next().ok_or("No releases found")?
-    } else {
-        // Fetch only the latest stable release
-        let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
-        let response = ureq::get(&url)
-            .set("User-Agent", "NaK-Updater")
-            .call()?;
-        response.into_json()?
-    };
+    let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    let response = ureq::get(&url)
+        .set("User-Agent", "NaK-Updater")
+        .call()?;
+    let release: GitHubRelease = response.into_json()?;
 
     // Extract version number from tag (remove 'v' prefix if present)
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
@@ -76,20 +57,12 @@ pub fn check_for_updates_with_prerelease(include_prereleases: bool) -> Result<Up
         })
         .map(|a| a.browser_download_url.clone());
 
-    // Add prerelease indicator to notes if applicable
-    let release_notes = if release.prerelease.unwrap_or(false) {
-        format!("[PRE-RELEASE]\n\n{}", release.body.unwrap_or_default())
-    } else {
-        release.body.unwrap_or_default()
-    };
-
     Ok(UpdateInfo {
         current_version: CURRENT_VERSION.to_string(),
         latest_version,
         download_url,
-        release_notes,
+        release_notes: release.body.unwrap_or_default(),
         is_update_available,
-        is_prerelease: release.prerelease.unwrap_or(false),
     })
 }
 
@@ -165,11 +138,6 @@ pub fn install_update(download_url: &str) -> Result<(), Box<dyn Error>> {
 
     log_info("Update installed successfully! Please restart NaK.");
     Ok(())
-}
-
-/// Get the path where NaK would be installed/updated
-pub fn get_executable_path() -> Result<PathBuf, Box<dyn Error>> {
-    Ok(std::env::current_exe()?)
 }
 
 /// Check if the current executable is in a writable location

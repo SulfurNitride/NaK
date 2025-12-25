@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use crate::config::AppConfig;
+
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct NakPrefix {
@@ -19,13 +21,13 @@ pub struct PrefixManager {
 #[allow(dead_code)]
 impl PrefixManager {
     pub fn new() -> Self {
-        let home = std::env::var("HOME").expect("Failed to get HOME");
+        let config = AppConfig::load();
         Self {
-            prefixes_root: PathBuf::from(format!("{}/NaK/Prefixes", home)),
+            prefixes_root: config.get_prefixes_path(),
         }
     }
 
-    /// Scans for NaK prefixes in ~/NaK/Prefixes
+    /// Scans for NaK prefixes in $DATA_PATH/Prefixes
     pub fn scan_prefixes(&self) -> Vec<NakPrefix> {
         let mut prefixes = Vec::new();
 

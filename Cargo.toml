@@ -1,6 +1,6 @@
 [package]
 name = "nak_rust"
-version = "4.1.2"
+version = "4.2.0"
 edition = "2021"
 
 [dependencies]
@@ -15,11 +15,12 @@ env_logger = "0.11"
 log = "0.4"
 ureq = { version = "2.10", features = ["json"] } # Tiny HTTP client (removes tokio)
 wait-timeout = "0.2"  # For process timeout support
-chrono = "0.4"  # For timestamps in logging
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }  # For timestamps in logging
 flate2 = "1.0"
 tar = "0.4"
 rfd = "0.16"
 xz2 = "0.1"  # For CachyOS Proton .tar.xz extraction
+sevenz-rust = "0.6"  # For MO2 .7z extraction
 
 
 

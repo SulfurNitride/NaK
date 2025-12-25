@@ -5,8 +5,9 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use crate::config::AppConfig;
 use crate::logging::{log_info, log_warning};
 
 // ============================================================================
@@ -117,7 +118,7 @@ impl GameFinder {
     }
 
     /// Find Steam games by scanning steamapps
-    fn find_steam_games(&self, steam_path: &PathBuf) -> Vec<DetectedGame> {
+    fn find_steam_games(&self, steam_path: &Path) -> Vec<DetectedGame> {
         let mut games = Vec::new();
 
         // Get all library folders
@@ -152,8 +153,8 @@ impl GameFinder {
     }
 
     /// Get all Steam library folders from libraryfolders.vdf
-    fn get_steam_library_folders(&self, steam_path: &PathBuf) -> Vec<PathBuf> {
-        let mut folders = vec![steam_path.clone()];
+    fn get_steam_library_folders(&self, steam_path: &Path) -> Vec<PathBuf> {
+        let mut folders = vec![steam_path.to_path_buf()];
 
         let vdf_path = steam_path.join("steamapps/libraryfolders.vdf");
         if let Ok(content) = fs::read_to_string(&vdf_path) {
@@ -178,9 +179,9 @@ impl GameFinder {
     /// Parse a Steam app manifest file
     fn parse_steam_manifest(
         &self,
-        manifest_path: &PathBuf,
-        common_path: &PathBuf,
-        compatdata_path: &PathBuf,
+        manifest_path: &Path,
+        common_path: &Path,
+        compatdata_path: &Path,
     ) -> Option<DetectedGame> {
         let content = fs::read_to_string(manifest_path).ok()?;
 
@@ -229,7 +230,7 @@ impl GameFinder {
     }
 
     /// Find Heroic games (GOG, Epic, Amazon)
-    fn find_heroic_games(&self, heroic_path: &PathBuf) -> Vec<DetectedGame> {
+    fn find_heroic_games(&self, heroic_path: &Path) -> Vec<DetectedGame> {
         let mut games = Vec::new();
 
         // Check GOG games
@@ -243,7 +244,7 @@ impl GameFinder {
     }
 
     /// Find GOG games from Heroic
-    fn find_heroic_gog_games(&self, heroic_path: &PathBuf) -> Vec<DetectedGame> {
+    fn find_heroic_gog_games(&self, heroic_path: &Path) -> Vec<DetectedGame> {
         let mut games = Vec::new();
         let gog_installed = heroic_path.join("gog_store/installed.json");
 
@@ -263,7 +264,7 @@ impl GameFinder {
     }
 
     /// Find Epic/Legendary games from Heroic
-    fn find_heroic_legendary_games(&self, heroic_path: &PathBuf) -> Vec<DetectedGame> {
+    fn find_heroic_legendary_games(&self, heroic_path: &Path) -> Vec<DetectedGame> {
         let mut games = Vec::new();
         let legendary_installed = heroic_path.join("legendaryConfig/legendary/installed.json");
 
@@ -284,7 +285,7 @@ impl GameFinder {
     fn parse_heroic_game(
         &self,
         game: &serde_json::Value,
-        heroic_path: &PathBuf,
+        heroic_path: &Path,
         store: &str,
     ) -> Option<DetectedGame> {
         let title = game.get("title")
@@ -343,7 +344,7 @@ impl GameFixer {
     pub fn apply_fixes(
         game: &DetectedGame,
         proton: &ProtonInfo,
-        winetricks_path: &PathBuf,
+        winetricks_path: &Path,
         deps_to_install: &[&str],
         apply_registry: bool,
         log_callback: impl Fn(String) + Send + Sync + 'static,
@@ -358,7 +359,7 @@ impl GameFixer {
         // Install dependencies
         if !deps_to_install.is_empty() {
             log_callback("Installing dependencies...".to_string());
-            let dep_mgr = DependencyManager::new(winetricks_path.clone());
+            let dep_mgr = DependencyManager::new(winetricks_path.to_path_buf());
 
             for (i, dep) in deps_to_install.iter().enumerate() {
                 if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -397,14 +398,14 @@ impl GameFixer {
 
     /// Apply Wine registry fixes to a prefix
     fn apply_registry_fixes(
-        prefix_path: &PathBuf,
+        prefix_path: &Path,
         proton: &ProtonInfo,
         log_callback: &impl Fn(String),
     ) -> Result<(), Box<dyn std::error::Error>> {
         use std::io::Write;
 
-        let home = std::env::var("HOME")?;
-        let tmp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+        let config = AppConfig::load();
+        let tmp_dir = config.get_data_path().join("tmp");
         fs::create_dir_all(&tmp_dir)?;
         let reg_file = tmp_dir.join("game_fix_settings.reg");
 
@@ -428,6 +429,7 @@ impl GameFixer {
                 "LD_LIBRARY_PATH",
                 "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
             )
+            .env("PROTON_NO_XALIA", "1")
             .status();
 
         match status {

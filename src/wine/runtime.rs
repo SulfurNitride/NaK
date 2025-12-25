@@ -8,10 +8,12 @@ use std::path::PathBuf;
 use xz2::read::XzDecoder;
 use tar::Archive;
 
+use crate::config::AppConfig;
+
 pub fn find_steam_runtime_sniper() -> Option<PathBuf> {
     // Check NaK standalone installation ONLY
-    let home = std::env::var("HOME").expect("Failed to get HOME");
-    let nak_runtime = PathBuf::from(format!("{}/NaK/Runtime/SteamLinuxRuntime_sniper", home));
+    let config = AppConfig::load();
+    let nak_runtime = config.get_data_path().join("Runtime/SteamLinuxRuntime_sniper");
 
     if nak_runtime.join("_v2-entry-point").exists() {
         return Some(nak_runtime);
@@ -32,9 +34,10 @@ pub fn download_runtime<F>(progress_callback: F) -> Result<PathBuf, Box<dyn Erro
 where
     F: Fn(u64, u64) + Send + 'static,
 {
-    let home = std::env::var("HOME")?;
-    let install_root = PathBuf::from(format!("{}/NaK/Runtime", home));
-    let temp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+    let config = AppConfig::load();
+    let data_path = config.get_data_path();
+    let install_root = data_path.join("Runtime");
+    let temp_dir = data_path.join("tmp");
 
     fs::create_dir_all(&install_root)?;
     fs::create_dir_all(&temp_dir)?;

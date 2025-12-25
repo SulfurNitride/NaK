@@ -12,51 +12,33 @@ use std::thread;
 use std::time::Duration;
 
 use super::ProtonInfo;
+use crate::config::AppConfig;
 use crate::logging::{log_error, log_info, log_warning};
+
+/// Kill any xalia processes that might be running (accessibility helper that needs .NET 4.8)
+fn kill_xalia_processes() {
+    let _ = Command::new("pkill")
+        .arg("-f")
+        .arg("xalia")
+        .status();
+}
 
 // ============================================================================
 // NaK Bin Directory (for bundled tools like cabextract)
 // ============================================================================
 
-/// Get the resolved NaK base directory (handles symlinks)
+/// Get the NaK data directory path from config
 pub fn get_nak_real_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let nak_base = PathBuf::from(format!("{}/NaK", home));
-
-    // Try to read symlink directly first
-    if let Ok(target) = fs::read_link(&nak_base) {
-        // If it's a relative symlink, resolve it relative to parent
-        if target.is_relative() {
-            if let Some(parent) = nak_base.parent() {
-                return parent.join(&target);
-            }
-        }
-        return target;
-    }
-
-    // Fallback to canonicalize
-    fs::canonicalize(&nak_base).unwrap_or(nak_base)
+    AppConfig::load().get_data_path()
 }
 
-/// Get the NaK bin directory path (~//NaK/bin)
+/// Get the NaK bin directory path ($DATA_PATH/bin)
 pub fn get_nak_bin_path() -> PathBuf {
     get_nak_real_path().join("bin")
 }
 
-/// Resolve a path that might be under ~/NaK through the symlink
+/// Resolve a path - with config-based paths, just canonicalize if possible
 pub fn resolve_nak_path(path: &Path) -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let nak_prefix = format!("{}/NaK/", home);
-
-    // If path starts with ~/NaK/, resolve it through the symlink
-    if let Some(path_str) = path.to_str() {
-        if path_str.starts_with(&nak_prefix) {
-            let relative = &path_str[nak_prefix.len()..];
-            return get_nak_real_path().join(relative);
-        }
-    }
-
-    // Otherwise try canonicalize or return as-is
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
@@ -98,11 +80,8 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
         return Ok(PathBuf::from("cabextract"));
     }
 
-    // Check if we already downloaded it - resolve NaK symlink first
-    let home = std::env::var("HOME").unwrap_or_default();
-    let nak_base = PathBuf::from(format!("{}/NaK", home));
-    let nak_real = fs::canonicalize(&nak_base).unwrap_or(nak_base);
-    let bin_dir = nak_real.join("bin");
+    // Check if we already downloaded it
+    let bin_dir = get_nak_bin_path();
     let cabextract_path = bin_dir.join("cabextract");
 
     if cabextract_path.exists() {
@@ -165,14 +144,9 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
 // Winetricks Download
 // ============================================================================
 
-/// Ensures winetricks is downloaded and available (stored in ~/NaK/bin)
+/// Ensures winetricks is downloaded and available (stored in $DATA_PATH/bin)
 pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-    let nak_base = PathBuf::from(format!("{}/NaK", home));
-
-    // Resolve symlink for NaK directory if it exists
-    let nak_real = fs::canonicalize(&nak_base).unwrap_or(nak_base);
-    let bin_dir = nak_real.join("bin");
+    let bin_dir = get_nak_bin_path();
     let winetricks_path = bin_dir.join("winetricks");
 
     fs::create_dir_all(&bin_dir)?;
@@ -258,6 +232,8 @@ impl DependencyManager {
             .env("WINE", &wine_bin)
             .env("WINESERVER", &wineserver)
             .env("PATH", &path_env)
+            // Disable xalia - it requires .NET 4.8 to run, causing popups during .NET install
+            .env("PROTON_NO_XALIA", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -323,6 +299,12 @@ impl DependencyManager {
             if cancel_flag.load(Ordering::Relaxed) {
                 let _ = child.kill();
                 let _ = child.wait(); // Clean up zombie
+                // Kill wineserver
+                let _ = Command::new(&wineserver)
+                    .arg("-k")
+                    .env("WINEPREFIX", &prefix_real)
+                    .status();
+                kill_xalia_processes();
                 return Err("Installation Cancelled by User".into());
             }
 
@@ -334,7 +316,8 @@ impl DependencyManager {
                     break;
                 }
                 Ok(None) => {
-                    // Still running
+                    // Still running - kill any xalia popups
+                    kill_xalia_processes();
                     thread::sleep(Duration::from_millis(100));
                 }
                 Err(e) => return Err(e.into()),
@@ -351,6 +334,7 @@ impl DependencyManager {
         proton: &ProtonInfo,
         verb: &str,
         status_callback: impl Fn(String) + Clone + Send + 'static,
+        cancel_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error>> {
         // Get winetricks from NaK bin directory (handles symlinks properly)
         let nak_bin = get_nak_bin_path();
@@ -389,6 +373,8 @@ impl DependencyManager {
             .env("WINE", &wine_bin)
             .env("WINESERVER", &wineserver)
             .env("PATH", &path_env)
+            // Disable xalia - it requires .NET 4.8 to run, causing popups during .NET install
+            .env("PROTON_NO_XALIA", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -409,10 +395,34 @@ impl DependencyManager {
             }
         });
 
-        let status = child.wait()?;
+        // Poll for completion with cancel check
+        loop {
+            if cancel_flag.load(Ordering::Relaxed) {
+                let _ = child.kill();
+                let _ = child.wait(); // Clean up zombie
+                // Kill wineserver to stop all Wine processes
+                let _ = Command::new(&wineserver)
+                    .arg("-k")
+                    .env("WINEPREFIX", &prefix_real)
+                    .status();
+                kill_xalia_processes();
+                return Err("Installation Cancelled by User".into());
+            }
 
-        if !status.success() {
-            return Err(format!("Winetricks verb '{}' failed", verb).into());
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        return Err(format!("Winetricks verb '{}' failed", verb).into());
+                    }
+                    break;
+                }
+                Ok(None) => {
+                    // Still running - kill any xalia popups
+                    kill_xalia_processes();
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
 
         Ok(())

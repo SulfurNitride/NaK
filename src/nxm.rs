@@ -4,12 +4,15 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::config::AppConfig;
+
 pub struct NxmHandler;
 
 impl NxmHandler {
     pub fn setup() -> Result<(), Box<dyn Error>> {
         let home = std::env::var("HOME")?;
-        let nak_dir = PathBuf::from(format!("{}/NaK", home));
+        let config = AppConfig::load();
+        let nak_dir = config.get_data_path();
         let script_path = nak_dir.join("nxm_handler.sh");
         let applications_dir = PathBuf::from(format!("{}/.local/share/applications", home));
         let desktop_path = applications_dir.join("nak-nxm-handler.desktop");
@@ -33,56 +36,32 @@ impl NxmHandler {
         }
 
         // 1. Create the Handler Script
-        // This script finds the 'active_nxm_game' symlink and passes the argument to it.
-        // Supports both MO2 (via nxmhandler.exe) and Vortex mod managers.
-        let script_content = format!(
-            r#"#!/bin/bash
+        // Uses relative path from script location to find active_nxm_game symlink
+        // active_nxm_game points to prefix directory (e.g., $DATA_PATH/Prefixes/mo2_xxx)
+        // which contains nxm_handler.sh that runs nxmhandler.exe through proton
+        let script_content = r#"#!/bin/bash
 # NaK Global NXM Handler
-# Forwards nxm:// links to the active mod manager instance (MO2 or Vortex)
+# Forwards nxm:// links to the active prefix's nxm_handler.sh
 
-ACTIVE_LINK="{}/NaK/active_nxm_game"
+# Derive paths relative to script location (portable after NaK folder moves)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ACTIVE_LINK="$SCRIPT_DIR/active_nxm_game"
 
 if [ ! -L "$ACTIVE_LINK" ]; then
     zenity --error --text="No active mod manager instance selected in NaK!" --title="NaK Error"
     exit 1
 fi
 
-# Resolve the link to find the game directory
-GAME_DIR=$(readlink -f "$ACTIVE_LINK")
+PREFIX_DIR=$(readlink -f "$ACTIVE_LINK")
+NXM_SCRIPT="$PREFIX_DIR/nxm_handler.sh"
 
-# Detect mod manager type by looking for the actual executables
-# Then find the appropriate launch script
-
-if [ -f "$GAME_DIR/nxmhandler.exe" ]; then
-    # MO2 installation detected
-    if [ -f "$GAME_DIR/Handle NXM" ]; then
-        # New setup with dedicated NXM handler script
-        LAUNCHER="$GAME_DIR/Handle NXM"
-    elif [ -f "$GAME_DIR/Launch MO2" ]; then
-        # Fallback for older installations - MO2 can handle NXM args
-        LAUNCHER="$GAME_DIR/Launch MO2"
-    else
-        zenity --error --text="Found nxmhandler.exe but no launch script in: $GAME_DIR" --title="NaK Error"
-        exit 1
-    fi
-elif [ -f "$GAME_DIR/Vortex.exe" ]; then
-    # Vortex installation detected
-    if [ -f "$GAME_DIR/Launch Vortex" ]; then
-        LAUNCHER="$GAME_DIR/Launch Vortex"
-    else
-        zenity --error --text="Found Vortex.exe but no launch script in: $GAME_DIR" --title="NaK Error"
-        exit 1
-    fi
-else
-    zenity --error --text="Could not find nxmhandler.exe (MO2) or Vortex.exe in: $GAME_DIR" --title="NaK Error"
+if [ ! -f "$NXM_SCRIPT" ]; then
+    zenity --error --text="NXM handler script not found: $NXM_SCRIPT" --title="NaK Error"
     exit 1
 fi
 
-# Run the mod manager with the NXM link
-"$LAUNCHER" "$1"
-"#,
-            home
-        );
+"$NXM_SCRIPT" "$1"
+"#;
 
         let mut file = fs::File::create(&script_path)?;
         file.write_all(script_content.as_bytes())?;
@@ -119,16 +98,17 @@ MimeType=x-scheme-handler/nxm;
         Ok(())
     }
 
-    pub fn set_active_instance(install_dir: &Path) -> Result<(), Box<dyn Error>> {
-        let home = std::env::var("HOME")?;
-        let link_path = PathBuf::from(format!("{}/NaK/active_nxm_game", home));
+    /// Set active NXM instance - takes prefix base path (e.g., $DATA_PATH/Prefixes/mo2_xxx)
+    pub fn set_active_instance(prefix_base: &Path) -> Result<(), Box<dyn Error>> {
+        let config = AppConfig::load();
+        let link_path = config.get_data_path().join("active_nxm_game");
 
         if link_path.exists() || fs::symlink_metadata(&link_path).is_ok() {
             let _ = fs::remove_file(&link_path);
         }
 
-        std::os::unix::fs::symlink(install_dir, &link_path)?;
-        println!("Set active NXM instance to {:?}", install_dir);
+        std::os::unix::fs::symlink(prefix_base, &link_path)?;
+        println!("Set active NXM instance to {:?}", prefix_base);
         Ok(())
     }
 }

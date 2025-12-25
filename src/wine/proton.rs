@@ -8,6 +8,8 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use tar::Archive;
 
+use crate::config::AppConfig;
+
 // ============================================================================
 // Proton Info & Finder
 // ============================================================================
@@ -29,10 +31,12 @@ pub struct ProtonFinder {
 impl ProtonFinder {
     pub fn new() -> Self {
         let home = std::env::var("HOME").expect("Failed to get HOME directory");
+        let config = AppConfig::load();
+        let data_path = config.get_data_path();
         Self {
             steam_root: PathBuf::from(format!("{}/.steam/steam", home)),
-            nak_proton_ge_root: PathBuf::from(format!("{}/NaK/ProtonGE", home)),
-            nak_proton_cachyos_root: PathBuf::from(format!("{}/NaK/ProtonCachyOS", home)),
+            nak_proton_ge_root: data_path.join("ProtonGE"),
+            nak_proton_cachyos_root: data_path.join("ProtonCachyOS"),
         }
     }
 
@@ -160,10 +164,15 @@ impl ProtonFinder {
     }
 }
 
-/// Sets the 'active' symlink for the selected proton (at ~/NaK/ProtonGE/active)
+/// Sets the 'active' symlink for the selected proton (at $DATA_PATH/ProtonGE/active)
 pub fn set_active_proton(proton: &ProtonInfo) -> Result<(), Box<dyn std::error::Error>> {
-    let home = std::env::var("HOME")?;
-    let active_link = PathBuf::from(format!("{}/NaK/ProtonGE/active", home));
+    let config = AppConfig::load();
+    let active_link = config.get_data_path().join("ProtonGE/active");
+
+    // Ensure parent directory exists
+    if let Some(parent) = active_link.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
     // Remove existing symlink if present
     if active_link.exists() || fs::symlink_metadata(&active_link).is_ok() {
@@ -176,56 +185,144 @@ pub fn set_active_proton(proton: &ProtonInfo) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+// ============================================================================
+// GE-Proton10-18 Workaround for dotnet48
+// ============================================================================
+// Valve's Proton Experimental and some other Proton versions fail to install
+// .NET Framework 4.8 properly. GE-Proton10-18 is known to work reliably.
+
+const DOTNET48_PROTON_VERSION: &str = "GE-Proton10-18";
+const DOTNET48_PROTON_URL: &str = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton10-18/GE-Proton10-18.tar.gz";
+
 impl ProtonInfo {
-    pub fn parse_version(&self) -> (u32, u32) {
-        // Extract version from "GE-Proton9-20" -> 9, 20
-        let parts: Vec<&str> = self.name.split("Proton").collect();
-        if parts.len() < 2 {
+    /// Parse the major and minor version numbers from the Proton name.
+    /// Returns (major, minor) tuple, (0, 0) if parsing fails.
+    pub fn version(&self) -> (u32, u32) {
+        // GE-Proton format: "GE-Proton10-18" -> (10, 18)
+        if self.name.starts_with("GE-Proton") {
+            if let Some(ver_part) = self.name.strip_prefix("GE-Proton") {
+                let parts: Vec<&str> = ver_part.split('-').collect();
+                let major = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+                let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+                return (major, minor);
+            }
             return (0, 0);
         }
 
-        let ver_str = parts[1]; // "9-20"
-        let nums: Vec<&str> = ver_str.split('-').collect();
-
-        let major = nums.first().and_then(|s| s.parse().ok()).unwrap_or(0);
-        let minor = nums.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-
-        (major, minor)
-    }
-
-    pub fn supports_dotnet48(&self) -> bool {
-        // Most modern Proton versions support dotnet48 via winetricks
-        // GE-Proton 8+ and Valve Proton 7+ should work fine
-
-        if self.name.starts_with("GE-Proton") {
-            let (major, _) = self.parse_version();
-            return major >= 8;
-        }
-
-        // Valve Proton versions (e.g., "Proton 9.0 (Beta)", "Proton - Experimental")
+        // Valve Proton format: "Proton 9.0 (Beta)" or "Proton - Experimental"
         if self.name.starts_with("Proton") {
-            // Experimental always supports it
-            if self.is_experimental || self.name.contains("Experimental") {
-                return true;
+            // Experimental is always latest, assume 10+
+            if self.name.contains("Experimental") {
+                return (10, 0);
             }
 
-            // Parse version like "Proton 9.0 (Beta)" or "Proton 8.0"
-            let version_str = self
-                .name
+            let version_str = self.name
                 .replace("Proton ", "")
-                .replace(" (Beta)", "")
-                .replace("-", ".");
+                .replace(" (Beta)", "");
 
-            if let Some(major_str) = version_str.split('.').next() {
-                if let Ok(major) = major_str.parse::<u32>() {
-                    return major >= 7;
-                }
-            }
+            let parts: Vec<&str> = version_str.split('.').collect();
+            let major = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            return (major, minor);
         }
 
-        // Default to true - let winetricks try anyway
-        true
+        // CachyOS format: "proton-cachyos-10.0" -> (10, 0)
+        if self.name.starts_with("proton-cachyos") {
+            if let Some(ver) = self.name.strip_prefix("proton-cachyos-") {
+                let parts: Vec<&str> = ver.split('.').collect();
+                let major = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+                let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+                return (major, minor);
+            }
+            return (0, 0);
+        }
+
+        (0, 0)
     }
+
+    /// Check if this Proton version is 10 or higher (requires manual dotnet installation).
+    pub fn is_proton_10_plus(&self) -> bool {
+        self.version().0 >= 10
+    }
+
+    /// Check if this Proton version needs the GE-Proton10-18 workaround for dotnet installation.
+    /// ALL Proton 10+ versions use GE-Proton10-18 for dependency installation, then switch
+    /// to the user's selected Proton for runtime.
+    pub fn needs_ge_proton_workaround(&self) -> bool {
+        self.is_proton_10_plus()
+    }
+}
+
+/// Ensures GE-Proton10-18 is available for dotnet installation workaround.
+/// Returns the ProtonInfo for GE-Proton10-18.
+pub fn ensure_dotnet48_proton<S>(status_callback: S) -> Result<ProtonInfo, Box<dyn Error>>
+where
+    S: Fn(&str) + Send + 'static,
+{
+    let config = AppConfig::load();
+    let data_path = config.get_data_path();
+    let install_root = data_path.join("ProtonGE");
+    let proton_path = install_root.join(DOTNET48_PROTON_VERSION);
+
+    // Check if already installed
+    if proton_path.exists() && proton_path.join("proton").exists() {
+        status_callback(&format!("{} already available", DOTNET48_PROTON_VERSION));
+        return Ok(ProtonInfo {
+            name: DOTNET48_PROTON_VERSION.to_string(),
+            path: proton_path,
+            version: DOTNET48_PROTON_VERSION.to_string(),
+            is_experimental: false,
+        });
+    }
+
+    // Download GE-Proton10-18
+    status_callback(&format!(
+        "Downloading {} for dotnet compatibility...",
+        DOTNET48_PROTON_VERSION
+    ));
+
+    let temp_dir = data_path.join("tmp");
+    fs::create_dir_all(&install_root)?;
+    fs::create_dir_all(&temp_dir)?;
+
+    let file_name = format!("{}.tar.gz", DOTNET48_PROTON_VERSION);
+    let temp_file_path = temp_dir.join(&file_name);
+
+    // Download
+    let response = ureq::get(DOTNET48_PROTON_URL)
+        .set("User-Agent", "NaK-Rust-Agent")
+        .call()?;
+
+    let mut file = fs::File::create(&temp_file_path)?;
+    let mut buffer = [0; 65536];
+    let mut reader = response.into_reader();
+
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..bytes_read])?;
+    }
+
+    // Extract
+    status_callback("Extracting archive...");
+    let tar_gz = fs::File::open(&temp_file_path)?;
+    let tar = GzDecoder::new(tar_gz);
+    let mut archive = Archive::new(tar);
+    archive.unpack(&install_root)?;
+
+    // Cleanup
+    fs::remove_file(temp_file_path)?;
+
+    status_callback(&format!("{} ready", DOTNET48_PROTON_VERSION));
+
+    Ok(ProtonInfo {
+        name: DOTNET48_PROTON_VERSION.to_string(),
+        path: proton_path,
+        version: DOTNET48_PROTON_VERSION.to_string(),
+        is_experimental: false,
+    })
 }
 
 // ============================================================================
@@ -274,9 +371,10 @@ where
     F: Fn(u64, u64) + Send + 'static,
     S: Fn(&str) + Send + 'static,
 {
-    let home = std::env::var("HOME")?;
-    let install_root = PathBuf::from(format!("{}/NaK/ProtonGE", home));
-    let temp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+    let config = AppConfig::load();
+    let data_path = config.get_data_path();
+    let install_root = data_path.join("ProtonGE");
+    let temp_dir = data_path.join("tmp");
 
     fs::create_dir_all(&install_root)?;
     fs::create_dir_all(&temp_dir)?;
@@ -329,8 +427,8 @@ where
 
 /// Deletes a GE-Proton version
 pub fn delete_ge_proton(version_name: &str) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-    let install_path = PathBuf::from(format!("{}/NaK/ProtonGE/{}", home, version_name));
+    let config = AppConfig::load();
+    let install_path = config.get_data_path().join("ProtonGE").join(version_name);
 
     if install_path.exists() {
         fs::remove_dir_all(install_path)?;
@@ -366,9 +464,10 @@ where
 {
     use xz2::read::XzDecoder;
 
-    let home = std::env::var("HOME")?;
-    let install_root = PathBuf::from(format!("{}/NaK/ProtonCachyOS", home));
-    let temp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
+    let config = AppConfig::load();
+    let data_path = config.get_data_path();
+    let install_root = data_path.join("ProtonCachyOS");
+    let temp_dir = data_path.join("tmp");
 
     fs::create_dir_all(&install_root)?;
     fs::create_dir_all(&temp_dir)?;
@@ -421,8 +520,8 @@ where
 
 /// Deletes a CachyOS Proton version
 pub fn delete_cachyos_proton(version_name: &str) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
-    let install_path = PathBuf::from(format!("{}/NaK/ProtonCachyOS/{}", home, version_name));
+    let config = AppConfig::load();
+    let install_path = config.get_data_path().join("ProtonCachyOS").join(version_name);
 
     if install_path.exists() {
         fs::remove_dir_all(install_path)?;

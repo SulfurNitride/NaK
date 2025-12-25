@@ -42,25 +42,57 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
     }
     drop(missing); // Release lock early
 
+    // Update available notification
+    let update_available = app.update_info.lock().unwrap()
+        .as_ref()
+        .map(|i| i.is_update_available)
+        .unwrap_or(false);
+
+    if update_available {
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgb(40, 80, 40))
+            .rounding(egui::Rounding::same(4.0))
+            .inner_margin(8.0)
+            .show(ui, |ui| {
+                ui.colored_label(egui::Color32::from_rgb(100, 255, 100), "UPDATE AVAILABLE");
+                if let Some(info) = app.update_info.lock().unwrap().as_ref() {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(200, 255, 200),
+                        format!("v{} -> v{}", info.current_version, info.latest_version),
+                    );
+                }
+                if ui.small_button("View Update").clicked() {
+                    app.current_page = Page::Updater;
+                }
+            });
+        ui.add_space(5.0);
+        ui.separator();
+    }
+
     let navigation_buttons = [
         (Page::GettingStarted, "Getting Started"),
         (Page::ModManagers, "Mod Managers"),
-        (Page::GameFixer, "Game Modding Helper"),
+        (Page::GameFixer, "Game Modding"),
         (Page::Marketplace, "Marketplace"),
         (Page::ProtonTools, "Proton Picker"),
         (Page::Settings, "Settings"),
-        (Page::Updater, "Version"),
+        (Page::Updater, if update_available { "Version (NEW!)" } else { "Version" }),
     ];
 
     for (page, label) in navigation_buttons {
         let is_selected = app.current_page == page;
         let is_enabled_page = page != Page::Marketplace; // Disable Marketplace
 
+        // Highlight Version button if update available
+        let button = if page == Page::Updater && update_available {
+            egui::Button::new(egui::RichText::new(label).color(egui::Color32::from_rgb(100, 255, 100)))
+                .min_size(egui::vec2(150.0, 30.0))
+        } else {
+            egui::Button::new(label).min_size(egui::vec2(150.0, 30.0))
+        };
+
         if ui
-            .add_enabled(
-                !is_selected && is_enabled_page && is_enabled,
-                egui::Button::new(label).min_size(egui::vec2(150.0, 30.0)),
-            )
+            .add_enabled(!is_selected && is_enabled_page && is_enabled, button)
             .clicked()
         {
             app.current_page = page;

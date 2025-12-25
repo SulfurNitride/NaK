@@ -1,151 +1,171 @@
 //! Simple pages: Getting Started, Marketplace, Settings, First Run Setup
 
 use crate::app::{MyApp, Page};
-use crate::config::StorageManager;
+use crate::config::{AppConfig, StorageManager};
 use crate::logging::log_action;
 use crate::wine::runtime;
 use eframe::egui;
 
 /// First-run setup page - shown on first launch to configure SLR preference
 pub fn render_first_run_setup(app: &mut MyApp, ui: &mut egui::Ui) {
-    ui.vertical_centered(|ui| {
-        ui.add_space(30.0);
+    // Wrap in scroll area for fullscreen/small window support
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(20.0);
 
-        ui.heading(egui::RichText::new("Welcome to NaK!").size(28.0).strong());
-        ui.add_space(5.0);
-        ui.label(
-            egui::RichText::new("Linux Modding Helper")
-                .size(16.0)
-                .color(egui::Color32::GRAY),
-        );
+            ui.heading(egui::RichText::new("Welcome to NaK!").size(28.0).strong());
+            ui.add_space(5.0);
+            ui.label(
+                egui::RichText::new("Linux Modding Helper")
+                    .size(16.0)
+                    .color(egui::Color32::GRAY),
+            );
 
-        ui.add_space(30.0);
-        ui.separator();
-        ui.add_space(20.0);
+            ui.add_space(20.0);
+            ui.separator();
+            ui.add_space(15.0);
 
-        // SLR Configuration Section
-        ui.heading(egui::RichText::new("Runtime Configuration").size(20.0));
-        ui.add_space(15.0);
+            // SLR Configuration Section
+            ui.heading(egui::RichText::new("Runtime Configuration").size(20.0));
+            ui.add_space(10.0);
 
-        // Explanation
-        egui::Frame::none()
-            .fill(egui::Color32::from_rgb(35, 35, 45))
-            .rounding(egui::Rounding::same(8.0))
-            .inner_margin(15.0)
-            .show(ui, |ui| {
-                ui.set_width(550.0);
+            // Calculate max width based on available space
+            let max_width = ui.available_width().min(600.0);
 
-                ui.label(egui::RichText::new("What is Steam Linux Runtime (SLR)?").strong().size(14.0));
-                ui.add_space(8.0);
+            // Explanation
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(35, 35, 45))
+                .rounding(egui::Rounding::same(8.0))
+                .inner_margin(15.0)
+                .show(ui, |ui| {
+                    ui.set_max_width(max_width);
 
-                ui.label("SLR is a containerized environment that provides consistent libraries for running Windows applications via Proton.");
-                ui.add_space(10.0);
+                    ui.label(egui::RichText::new("What is Steam Linux Runtime (SLR)?").strong().size(14.0));
+                    ui.add_space(8.0);
 
-                ui.colored_label(
-                    egui::Color32::from_rgb(100, 200, 100),
-                    "Pros:",
-                );
-                ui.label("  - More consistent behavior across different Linux distributions");
-                ui.label("  - Better isolation from system libraries");
-                ui.add_space(8.0);
+                    ui.label("SLR is a containerized environment that provides consistent libraries for running Windows applications via Proton.");
+                    ui.add_space(10.0);
 
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 180, 100),
-                    "Cons:",
-                );
-                ui.label("  - Can cause issues on some systems (immutable distros, older hardware)");
-                ui.label("  - Requires ~500MB download");
-                ui.label("  - May conflict with certain system configurations");
-            });
+                    ui.colored_label(
+                        egui::Color32::from_rgb(100, 200, 100),
+                        "Pros:",
+                    );
+                    ui.label("  - Functions more like Steam does when running games");
+                    ui.label("  - More consistent behavior across different Linux distributions");
+                    ui.add_space(8.0);
 
-        ui.add_space(20.0);
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 180, 100),
+                        "Cons:",
+                    );
+                    ui.label("  - Might cause unexpected issues");
+                    ui.add_space(8.0);
 
-        // Important note
-        egui::Frame::none()
-            .fill(egui::Color32::from_rgb(50, 50, 30))
-            .rounding(egui::Rounding::same(8.0))
-            .inner_margin(12.0)
-            .show(ui, |ui| {
-                ui.set_width(550.0);
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 220, 100),
-                    "Note: You can change this setting anytime in Settings > Advanced. If you choose 'No' now and want to enable SLR later, you'll just need to wait for the download to complete.",
-                );
-            });
+                    ui.colored_label(
+                        egui::Color32::from_rgb(150, 150, 150),
+                        "Requirements:",
+                    );
+                    ui.label("  - ~750MB disk space for runtime files");
+                });
 
-        ui.add_space(25.0);
+            ui.add_space(15.0);
 
-        // Choice buttons
-        ui.label(egui::RichText::new("Would you like to use Steam Linux Runtime?").size(16.0));
-        ui.add_space(15.0);
+            // Important note
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(50, 50, 30))
+                .rounding(egui::Rounding::same(8.0))
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.set_max_width(max_width);
+                    ui.label(
+                        egui::RichText::new("Note: You can change this setting anytime in Settings > Advanced or per-prefix in the Prefix Manager. If you choose 'No' now and want to enable SLR later, you'll just need to wait for the download to complete.")
+                            .color(egui::Color32::from_rgb(255, 220, 100)),
+                    );
+                });
 
-        let slr_installed = runtime::is_runtime_installed();
-        let is_downloading = *app.is_downloading.lock().unwrap();
+            ui.add_space(20.0);
 
-        ui.horizontal(|ui| {
-            ui.add_space(100.0); // Center the buttons
+            // Choice buttons
+            ui.label(egui::RichText::new("Would you like to use Steam Linux Runtime?").size(16.0));
+            ui.add_space(15.0);
 
-            // Yes button
-            let yes_text = if slr_installed {
-                "Yes, use SLR (Already installed)"
-            } else if is_downloading {
-                "Yes, use SLR (Downloading...)"
-            } else {
-                "Yes, use SLR (Recommended)"
-            };
+            let slr_installed = runtime::is_runtime_installed();
+            let is_downloading = *app.is_downloading.lock().unwrap();
 
-            if ui.add_sized(
-                [200.0, 45.0],
-                egui::Button::new(egui::RichText::new(yes_text).size(14.0))
-            ).clicked() {
-                log_action("First-run setup: User chose to use SLR");
-                app.config.use_steam_runtime = true;
-                app.config.first_run_completed = true;
-                app.config.save();
+            // Center buttons using a centered horizontal layout
+            ui.horizontal(|ui| {
+                let button_width = 200.0;
+                let total_buttons_width = button_width * 2.0 + 20.0; // 2 buttons + spacing
+                let available = ui.available_width();
+                let padding = ((available - total_buttons_width) / 2.0).max(0.0);
 
-                // Start SLR download if not installed
-                if !slr_installed && !is_downloading {
-                    app.start_slr_download();
+                ui.add_space(padding);
+
+                // Yes button
+                let yes_text = if slr_installed {
+                    "Yes, use SLR (Already installed)"
+                } else if is_downloading {
+                    "Yes, use SLR (Downloading...)"
+                } else {
+                    "Yes, use SLR (Recommended)"
+                };
+
+                if ui.add_sized(
+                    [button_width, 40.0],
+                    egui::Button::new(egui::RichText::new(yes_text).size(13.0))
+                ).clicked() {
+                    log_action("First-run setup: User chose to use SLR");
+                    app.config.use_steam_runtime = true;
+                    app.config.first_run_completed = true;
+                    app.config.save();
+
+                    // Start SLR download if not installed
+                    if !slr_installed && !is_downloading {
+                        app.start_slr_download();
+                    }
+
+                    app.current_page = Page::GettingStarted;
                 }
 
-                app.current_page = Page::GettingStarted;
+                ui.add_space(20.0);
+
+                // No button
+                if ui.add_sized(
+                    [button_width, 40.0],
+                    egui::Button::new(egui::RichText::new("No, use Direct Proton").size(13.0))
+                ).clicked() {
+                    log_action("First-run setup: User chose Direct Proton (no SLR)");
+                    app.config.use_steam_runtime = false;
+                    app.config.first_run_completed = true;
+                    app.config.save();
+                    app.current_page = Page::GettingStarted;
+                }
+            });
+
+            ui.add_space(15.0);
+
+            // Show download progress if downloading
+            if is_downloading {
+                let status = app.download_status.lock().unwrap().clone();
+                let progress = *app.download_progress.lock().unwrap();
+
+                ui.add_space(5.0);
+                ui.set_max_width(max_width);
+                ui.label(&status);
+                ui.add(egui::ProgressBar::new(progress).animate(true));
             }
 
             ui.add_space(20.0);
 
-            // No button
-            if ui.add_sized(
-                [200.0, 45.0],
-                egui::Button::new(egui::RichText::new("No, use Direct Proton").size(14.0))
-            ).clicked() {
-                log_action("First-run setup: User chose Direct Proton (no SLR)");
-                app.config.use_steam_runtime = false;
-                app.config.first_run_completed = true;
-                app.config.save();
-                app.current_page = Page::GettingStarted;
-            }
+            // Skip for advanced users
+            ui.label(
+                egui::RichText::new("Not sure? 'Yes' works for most users. You can always change this later.")
+                    .size(12.0)
+                    .color(egui::Color32::GRAY),
+            );
+
+            ui.add_space(20.0);
         });
-
-        ui.add_space(20.0);
-
-        // Show download progress if downloading
-        if is_downloading {
-            let status = app.download_status.lock().unwrap().clone();
-            let progress = *app.download_progress.lock().unwrap();
-
-            ui.add_space(10.0);
-            ui.label(&status);
-            ui.add(egui::ProgressBar::new(progress).animate(true));
-        }
-
-        ui.add_space(30.0);
-
-        // Skip for advanced users
-        ui.label(
-            egui::RichText::new("Not sure? 'Yes' works for most users. You can always change this later.")
-                .size(12.0)
-                .color(egui::Color32::GRAY),
-        );
     });
 }
 
@@ -199,10 +219,57 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.add_space(10.0);
 
         // ============================================================
+        // Step 2: Choose Your Modding Approach
+        // ============================================================
+        ui.label(
+            egui::RichText::new("2. Choose Your Modding Approach")
+                .size(16.0)
+                .strong(),
+        );
+        ui.label(
+            egui::RichText::new("   Pick the option that fits your modding style")
+                .size(12.0)
+                .color(egui::Color32::LIGHT_GRAY),
+        );
+        ui.add_space(10.0);
+
+        // Option A: Mod Managers
+        ui.horizontal(|ui| {
+            if ui.button("Mod Managers").clicked() {
+                log_action("Navigate to Mod Managers from Getting Started");
+                app.current_page = Page::ModManagers;
+            }
+            ui.label(
+                egui::RichText::new("Install MO2 or Vortex for full mod management")
+                    .color(egui::Color32::LIGHT_GRAY),
+            );
+        });
+        ui.label("      Best for: Heavy modding with load order management, mod profiles, etc.");
+
+        ui.add_space(8.0);
+
+        // Option B: Game Modding
+        ui.horizontal(|ui| {
+            if ui.button("Game Modding").clicked() {
+                log_action("Navigate to Game Modding from Getting Started");
+                app.current_page = Page::GameFixer;
+            }
+            ui.label(
+                egui::RichText::new("Apply fixes directly to game prefixes")
+                    .color(egui::Color32::LIGHT_GRAY),
+            );
+        });
+        ui.label("      Best for: Simple modding without a dedicated mod manager");
+
+        ui.add_space(20.0);
+        ui.separator();
+        ui.add_space(10.0);
+
+        // ============================================================
         // Step 3: Check FAQ & Known Issues
         // ============================================================
         ui.label(
-            egui::RichText::new("2. Check FAQ & Known Issues")
+            egui::RichText::new("3. Check FAQ & Known Issues")
                 .size(16.0)
                 .strong(),
         );
@@ -212,29 +279,12 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
                 .color(egui::Color32::LIGHT_GRAY),
         );
         ui.add_space(5.0);
-        ui.label("   - Comprehensive FAQ with troubleshooting guides");
-        ui.label("   - Known issues and their solutions");
-        ui.label("   - Tips & best practices for Linux modding");
-        ui.add_space(5.0);
         if ui.button("View FAQ & Known Issues").clicked() {
             log_action("Open FAQ in browser");
             let _ = std::process::Command::new("xdg-open")
                 .arg("https://github.com/SulfurNitride/NaK/blob/main/docs/FAQ.md")
                 .spawn();
         }
-
-        ui.add_space(20.0);
-
-        // ============================================================
-        // Quick Tips
-        // ============================================================
-        ui.separator();
-        ui.add_space(10.0);
-
-        ui.label(egui::RichText::new("Quick Tips:").size(14.0).strong());
-        ui.label("- You can switch between pages using the tabs on the left");
-        ui.label("- Use 'Proton Picker' to manage GE-Proton versions");
-        ui.label("- Check Settings to configure caching and storage location");
 
         ui.add_space(15.0);
 
@@ -303,14 +353,12 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
             .show(ui, |ui| {
                 ui.add_space(5.0);
 
-                let storage_mgr = StorageManager::new();
-
                 // Cache storage info - only refresh every 5 seconds
                 let should_refresh = app.storage_info_last_update.elapsed().as_secs() > 5
                     || app.cached_storage_info.is_none();
 
                 if should_refresh {
-                    app.cached_storage_info = Some(storage_mgr.get_storage_info());
+                    app.cached_storage_info = Some(StorageManager::get_storage_info(&app.config.get_data_path()));
                     app.storage_info_last_update = std::time::Instant::now();
                 }
 
@@ -320,37 +368,32 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Storage Info").strong());
                     if ui.small_button("Refresh").clicked() {
-                        app.cached_storage_info = Some(storage_mgr.get_storage_info());
+                        app.cached_storage_info = Some(StorageManager::get_storage_info(&app.config.get_data_path()));
                         app.storage_info_last_update = std::time::Instant::now();
                     }
                 });
 
                 // --- Location Info ---
                 ui.horizontal(|ui| {
-                    ui.label("NaK Path:");
-                    ui.monospace(&storage_info.nak_path);
+                    ui.label("Data Path:");
+                    ui.monospace(&storage_info.data_path);
                 });
-
-                if storage_info.is_symlink {
-                    ui.horizontal(|ui| {
-                        ui.label("Real Location:");
-                        ui.monospace(&storage_info.real_path);
-                    });
-                    ui.colored_label(
-                        egui::Color32::LIGHT_BLUE,
-                        "Using symlink to custom location",
-                    );
-                }
+                ui.label(
+                    egui::RichText::new("Config stored in: ~/.config/nak/")
+                        .size(11.0)
+                        .color(egui::Color32::GRAY),
+                );
 
                 // --- Usage Breakdown ---
                 if storage_info.exists {
+                    ui.add_space(5.0);
                     ui.horizontal(|ui| {
                         ui.label("Total Used:");
                         ui.strong(format!("{:.2} GB", storage_info.used_space_gb));
                         ui.label(" | Free:");
                         ui.strong(format!("{:.2} GB", storage_info.free_space_gb));
                     });
-                    
+
                     ui.add_space(5.0);
                     ui.indent("storage_breakdown", |ui| {
                         ui.horizontal(|ui| {
@@ -365,12 +408,12 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                             ui.label("• Cache:");
                             ui.strong(format!("{:.2} GB", storage_info.cache_size_gb));
                         });
-                        
+
                         if storage_info.other_size_gb > 0.01 {
                             ui.horizontal(|ui| {
                                 ui.label("• Other:");
                                 ui.strong(format!("{:.2} GB", storage_info.other_size_gb))
-                                  .on_hover_text("Includes logs, config files, and binaries in ~/NaK");
+                                  .on_hover_text("Includes logs, tmp files, and binaries");
                             });
                         }
                     });
@@ -382,7 +425,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
 
                 // --- Cache Controls ---
                 ui.label(egui::RichText::new("Cache Configuration").strong());
-                
+
                 let mut cache_enabled = app.cache_config.cache_enabled;
                 if ui.checkbox(&mut cache_enabled, "Enable Caching").changed() {
                     app.cache_config.cache_enabled = cache_enabled;
@@ -415,7 +458,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 ui.add_space(5.0);
                 if ui.button("Clear Cache").clicked() {
                     log_action("Clear cache clicked");
-                    if let Err(e) = app.cache_config.clear_cache() {
+                    if let Err(e) = app.cache_config.clear_cache(&app.config) {
                         eprintln!("Failed to clear cache: {}", e);
                     }
                 }
@@ -427,7 +470,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 // --- Migration Controls ---
                 ui.label(egui::RichText::new("Move Installation").strong());
                 ui.label("Move the entire NaK folder to a different drive (e.g., SSD).");
-                
+
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut app.migration_path_input)
@@ -448,22 +491,19 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     if ui.add_enabled(can_move, egui::Button::new("Move NaK Here")).clicked() {
                         log_action(&format!("Move NaK to: {}", app.migration_path_input));
                         let path = std::path::PathBuf::from(app.migration_path_input.trim());
-                        match storage_mgr.setup_symlink(&path, true) {
+                        match StorageManager::move_data(&mut app.config, &path) {
                             Ok(msg) => {
                                 crate::logging::log_info(&msg);
                                 app.migration_path_input.clear();
+                                // Force refresh storage info
+                                app.cached_storage_info = None;
+                                // Refresh prefix manager and detected prefixes (paths changed)
+                                app.prefix_manager = crate::wine::PrefixManager::new();
+                                app.detected_prefixes = app.prefix_manager.scan_prefixes();
                             }
                             Err(e) => {
                                 crate::logging::log_error(&format!("Migration failed: {}", e));
                             }
-                        }
-                    }
-
-                    if storage_info.is_symlink && ui.button("Restore to Default Location").clicked() {
-                        log_action("Restore NaK location clicked");
-                        match storage_mgr.remove_symlink() {
-                            Ok(msg) => crate::logging::log_info(&msg),
-                            Err(e) => crate::logging::log_error(&format!("Restore failed: {}", e)),
                         }
                     }
                 });
@@ -562,31 +602,6 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 );
                 ui.add_space(5.0);
 
-                let mut check_prereleases = app.config.check_prereleases;
-                if ui.checkbox(&mut check_prereleases, "Check for Pre-Release Updates").changed() {
-                    app.config.check_prereleases = check_prereleases;
-                    app.config.save();
-                    log_action(&format!("Pre-release updates: {}", if check_prereleases { "enabled" } else { "disabled" }));
-                }
-
-                ui.indent("prerelease_info", |ui| {
-                    if check_prereleases {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(255, 200, 100),
-                            "Enabled - You'll see pre-release versions in the Version page",
-                        );
-                        ui.label(
-                            egui::RichText::new("Pre-releases may be unstable or incomplete")
-                                .size(11.0)
-                                .color(egui::Color32::GRAY),
-                        );
-                    } else {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(100, 200, 100),
-                            "Disabled - Only stable releases will be shown",
-                        );
-                    }
-                });
             });
 
         ui.add_space(10.0);
@@ -607,14 +622,14 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
 
                 ui.horizontal(|ui| {
                     if ui.button("Open NaK Folder").clicked() {
-                        let home = std::env::var("HOME").unwrap_or_default();
-                        let nak_path = format!("{}/NaK", home);
+                        let config = AppConfig::load();
+                        let nak_path = config.get_data_path();
                         let _ = std::process::Command::new("xdg-open").arg(&nak_path).spawn();
                     }
 
                     if ui.button("Open Logs Folder").clicked() {
-                        let home = std::env::var("HOME").unwrap_or_default();
-                        let logs_path = format!("{}/NaK/logs", home);
+                        let config = AppConfig::load();
+                        let logs_path = config.get_data_path().join("logs");
                         let _ = std::process::Command::new("xdg-open").arg(&logs_path).spawn();
                     }
                 });
@@ -679,37 +694,15 @@ pub fn render_updater(app: &mut MyApp, ui: &mut egui::Ui) {
             });
         } else if let Some(ref info) = update_info {
             if info.is_update_available {
-                let frame_color = if info.is_prerelease {
-                    egui::Color32::from_rgb(60, 50, 30) // Amber-ish for pre-release
-                } else {
-                    egui::Color32::from_rgb(40, 60, 40) // Green for stable
-                };
-
                 egui::Frame::none()
-                    .fill(frame_color)
+                    .fill(egui::Color32::from_rgb(40, 60, 40))
                     .rounding(egui::Rounding::same(4.0))
                     .inner_margin(10.0)
                     .show(ui, |ui| {
-                        if info.is_prerelease {
-                            ui.horizontal(|ui| {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(255, 200, 100),
-                                    format!("Pre-release available: v{}", info.latest_version),
-                                );
-                                egui::Frame::none()
-                                    .fill(egui::Color32::from_rgb(200, 150, 50))
-                                    .rounding(egui::Rounding::same(3.0))
-                                    .inner_margin(egui::Margin::symmetric(4.0, 2.0))
-                                    .show(ui, |ui| {
-                                        ui.label(egui::RichText::new("BETA").size(10.0).color(egui::Color32::BLACK));
-                                    });
-                            });
-                        } else {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(100, 200, 100),
-                                format!("Update available: v{}", info.latest_version),
-                            );
-                        }
+                        ui.colored_label(
+                            egui::Color32::from_rgb(100, 200, 100),
+                            format!("Update available: v{}", info.latest_version),
+                        );
                         ui.label(format!("Current: v{}", info.current_version));
                     });
 
@@ -789,24 +782,17 @@ pub fn render_updater(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.add_space(15.0);
 
         ui.horizontal(|ui| {
-            let button_text = if app.config.check_prereleases {
-                "Check for Updates (incl. Pre-releases)"
-            } else {
-                "Check for Updates"
-            };
-
-            if ui.add_enabled(!is_checking && !is_installing, egui::Button::new(button_text)).clicked() {
-                log_action(&format!("Check for updates clicked (prereleases: {})", app.config.check_prereleases));
+            if ui.add_enabled(!is_checking && !is_installing, egui::Button::new("Check for Updates")).clicked() {
+                log_action("Check for updates clicked");
                 let is_checking = app.is_checking_update.clone();
                 let update_info = app.update_info.clone();
                 let update_error = app.update_error.clone();
-                let check_prereleases = app.config.check_prereleases;
 
                 *is_checking.lock().unwrap() = true;
                 *update_error.lock().unwrap() = None;
 
                 std::thread::spawn(move || {
-                    match crate::updater::check_for_updates_with_prerelease(check_prereleases) {
+                    match crate::updater::check_for_updates() {
                         Ok(info) => {
                             *update_info.lock().unwrap() = Some(info);
                         }
@@ -824,15 +810,5 @@ pub fn render_updater(app: &mut MyApp, ui: &mut egui::Ui) {
                     .spawn();
             }
         });
-
-        // Show pre-release indicator
-        if app.config.check_prereleases {
-            ui.add_space(5.0);
-            ui.label(
-                egui::RichText::new("Pre-release updates enabled (change in Settings > Advanced)")
-                    .size(11.0)
-                    .color(egui::Color32::from_rgb(255, 200, 100)),
-            );
-        }
     });
 }

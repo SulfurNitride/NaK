@@ -44,38 +44,14 @@ pub fn detect_steam_path_checked() -> Option<String> {
     None
 }
 
-/// Detect the Steam installation path (legacy, always returns a path)
-/// Checks common locations for native, Flatpak, and Snap Steam installs
+/// Detect the Steam installation path (always returns a path)
+/// Wrapper around detect_steam_path_checked that provides a fallback
 #[must_use]
 pub fn detect_steam_path() -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-
-    // Check native Steam locations in order of preference
-    let native_paths = [
-        format!("{}/.steam/steam", home),
-        format!("{}/.local/share/Steam", home),
-    ];
-
-    for path in &native_paths {
-        if Path::new(path).exists() {
-            return path.clone();
-        }
-    }
-
-    // Check Flatpak Steam location
-    let flatpak_path = format!("{}/.var/app/com.valvesoftware.Steam/.steam/steam", home);
-    if Path::new(&flatpak_path).exists() {
-        return flatpak_path;
-    }
-
-    // Check Snap Steam location
-    let snap_path = format!("{}/snap/steam/common/.steam/steam", home);
-    if Path::new(&snap_path).exists() {
-        return snap_path;
-    }
-
-    // Fallback to default
-    native_paths[0].clone()
+    detect_steam_path_checked().unwrap_or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_default();
+        format!("{}/.steam/steam", home)
+    })
 }
 
 /// Download a file from URL to the specified path

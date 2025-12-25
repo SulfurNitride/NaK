@@ -1,9 +1,14 @@
 //! Mod manager installation logic
 
 mod mo2;
+mod prefix_setup;
 mod vortex;
 
 pub use mo2::{install_mo2, setup_existing_mo2};
+pub use prefix_setup::{
+    apply_dpi, brief_launch_and_kill, get_install_proton, install_all_dependencies,
+    kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
+};
 pub use vortex::{install_vortex, setup_existing_vortex};
 
 use std::error::Error;
@@ -12,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use crate::config::AppConfig;
 use crate::logging::{log_install, log_warning};
 use crate::wine::{GithubRelease, ProtonInfo};
 
@@ -255,8 +261,8 @@ pub fn apply_wine_registry_settings(
     use std::io::Write;
 
     // Create temp file for registry
-    let home = std::env::var("HOME")?;
-    let tmp_dir = std::path::PathBuf::from(format!("{}/NaK/tmp", home));
+    let config = AppConfig::load();
+    let tmp_dir = config.get_data_path().join("tmp");
     fs::create_dir_all(&tmp_dir)?;
     let reg_file = tmp_dir.join("wine_settings.reg");
 
@@ -283,6 +289,7 @@ pub fn apply_wine_registry_settings(
             "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
         )
         .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d")
+        .env("PROTON_NO_XALIA", "1")
         .status();
 
     match wineboot_status {
@@ -312,6 +319,7 @@ pub fn apply_wine_registry_settings(
             "LD_LIBRARY_PATH",
             "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
         )
+        .env("PROTON_NO_XALIA", "1")
         .status();
 
     match status {

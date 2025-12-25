@@ -1,7 +1,7 @@
-//! Game Modding Helper page UI
+//! Game Modding page UI
 //!
 //! Allows users to find Steam/Heroic games and apply modding fixes to their Wine prefixes.
-//! Uses the same dependencies and registry settings as the mod manager installers.
+//! For users who don't use a dedicated mod manager like MO2 or Vortex.
 
 use eframe::egui;
 use std::sync::atomic::AtomicBool;
@@ -13,8 +13,8 @@ use crate::games::{DetectedGame, GameFixer, GameSource};
 use crate::installers::STANDARD_DEPS;
 
 pub fn render_game_fixer(app: &mut MyApp, ui: &mut egui::Ui) {
-    ui.heading("Game Modding Helper");
-    ui.label("Apply modding fixes (dependencies & registry) to Steam and Heroic game prefixes.");
+    ui.heading("Game Modding");
+    ui.label("Apply modding fixes directly to game prefixes - for modding without MO2 or Vortex.");
     ui.separator();
 
     // Check if we're currently applying fixes

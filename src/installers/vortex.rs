@@ -7,13 +7,14 @@ use std::time::Duration;
 use wait_timeout::ChildExt;
 
 use super::{
-    apply_wine_registry_settings, fetch_latest_vortex_release, TaskContext, DOTNET9_SDK_URL,
-    STANDARD_DEPS,
+    brief_launch_and_kill, fetch_latest_vortex_release, get_install_proton,
+    install_all_dependencies, TaskContext,
 };
-use crate::logging::{log_download, log_error, log_install, log_warning};
+use crate::config::AppConfig;
+use crate::logging::{log_download, log_error, log_install};
 use crate::scripts::ScriptGenerator;
 use crate::utils::{detect_steam_path, download_file};
-use crate::wine::{DependencyManager, PrefixManager, ProtonInfo};
+use crate::wine::{PrefixManager, ProtonInfo};
 
 pub fn install_vortex(
     install_name: &str,
@@ -21,14 +22,14 @@ pub fn install_vortex(
     proton: &ProtonInfo,
     ctx: TaskContext,
 ) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
+    let config = AppConfig::load();
 
     // Collision Check
     let prefix_mgr = PrefixManager::new();
     let base_name = format!("vortex_{}", install_name.replace(" ", "_").to_lowercase());
     let unique_name = prefix_mgr.get_unique_prefix_name(&base_name);
 
-    let prefix_root = PathBuf::from(format!("{}/NaK/Prefixes/{}/pfx", home, unique_name));
+    let prefix_root = config.get_prefixes_path().join(&unique_name).join("pfx");
     let install_dir = target_install_path;
 
     log_install(&format!(
@@ -36,6 +37,9 @@ pub fn install_vortex(
         install_name, install_dir
     ));
     log_install(&format!("Using Proton: {}", proton.name));
+
+    // For Proton 10+, use GE-Proton10-18 for the entire installation process
+    let install_proton = get_install_proton(proton, &ctx);
 
     if ctx.is_cancelled() {
         return Err("Cancelled".into());
@@ -77,7 +81,9 @@ pub fn install_vortex(
     ctx.set_status(format!("Downloading {}...", asset.name));
     ctx.set_progress(0.10);
     log_download(&format!("Downloading Vortex: {}", asset.name));
-    let installer_path = PathBuf::from(format!("{}/NaK/tmp/{}", home, asset.name));
+    let tmp_dir = config.get_data_path().join("tmp");
+    fs::create_dir_all(&tmp_dir)?;
+    let installer_path = tmp_dir.join(&asset.name);
     download_file(&asset.browser_download_url, &installer_path)?;
     log_download(&format!("Vortex downloaded to: {:?}", installer_path));
 
@@ -89,7 +95,7 @@ pub fn install_vortex(
     ctx.set_status("Running Vortex Installer...".to_string());
     ctx.set_progress(0.15);
 
-    let proton_bin = proton.path.join("proton");
+    let install_proton_bin = install_proton.path.join("proton");
     // Convert install_dir to Windows path Z:\...
     let win_install_path = format!("Z:{}", install_dir.to_string_lossy().replace("/", "\\"));
 
@@ -101,7 +107,7 @@ pub fn install_vortex(
     ctx.log(format!("Using Steam path: {}", steam_path));
 
     // Run installer with proper Proton environment (matching Python implementation)
-    let mut child = std::process::Command::new(&proton_bin)
+    let mut child = std::process::Command::new(&install_proton_bin)
         .arg("run")
         .arg(&installer_path)
         .arg("/S")
@@ -114,6 +120,7 @@ pub fn install_vortex(
             "LD_LIBRARY_PATH",
             "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
         )
+        .env("PROTON_NO_XALIA", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
@@ -174,159 +181,12 @@ pub fn install_vortex(
 
     ctx.set_progress(0.20);
 
-    // 4. Dependencies
-    ctx.set_status("Preparing to install dependencies...".to_string());
-    let dep_mgr = DependencyManager::new(ctx.winetricks_path.clone());
+    // 4. Install all dependencies (dotnet48, registry, standard deps, dotnet9sdk)
+    install_all_dependencies(&prefix_root, &install_proton, &ctx, 0.20, 0.90)?;
 
-    if ctx.is_cancelled() {
-        return Err("Cancelled".into());
-    }
+    ctx.set_progress(0.92);
 
-    // 4.1 DotNet 4.8 (Priority)
-    if proton.supports_dotnet48() {
-        ctx.set_status("Installing dotnet48...".to_string());
-        log_install("Installing dependency: dotnet48");
-
-        let log_cb = {
-            let ctx = ctx.clone();
-            move |msg: String| ctx.log(msg)
-        };
-
-        if let Err(e) = dep_mgr.install_dependencies(
-            &prefix_root,
-            proton,
-            &["dotnet48"],
-            log_cb.clone(),
-            ctx.cancel_flag.clone(),
-        ) {
-            ctx.set_status(format!("Warning: dotnet48 failed: {}", e));
-            log_warning(&format!("dotnet48 installation failed: {}", e));
-        } else {
-            log_install("Dependency dotnet48 installed successfully");
-        }
-
-        ctx.set_status("Setting Windows version to win11...".to_string());
-        log_install("Setting Windows version to win11");
-        if let Err(e) = dep_mgr.run_winetricks_command(&prefix_root, proton, "win11", log_cb) {
-            log_warning(&format!("Failed to set win11: {}", e));
-        }
-    } else {
-        ctx.set_status("Skipping dotnet48 (not supported).".to_string());
-        log_install("Skipping dotnet48 (not supported by this Proton version)");
-    }
-
-    // 4.2 Main Dependencies
-    let total = STANDARD_DEPS.len();
-    let start_progress = 0.30;
-    let end_progress = 0.85;
-    let step_size = (end_progress - start_progress) / total as f32;
-
-    for (i, dep) in STANDARD_DEPS.iter().enumerate() {
-        if ctx.is_cancelled() {
-            return Err("Cancelled".into());
-        }
-
-        let current_p = start_progress + (i as f32 * step_size);
-        ctx.set_progress(current_p);
-
-        ctx.set_status(format!(
-            "Installing dependency {}/{} : {}...",
-            i + 1,
-            total,
-            dep
-        ));
-        log_install(&format!(
-            "Installing dependency {}/{}: {}",
-            i + 1,
-            total,
-            dep
-        ));
-
-        let log_cb = {
-            let ctx = ctx.clone();
-            move |msg: String| ctx.log(msg)
-        };
-
-        if let Err(e) = dep_mgr.install_dependencies(
-            &prefix_root,
-            proton,
-            &[dep],
-            log_cb,
-            ctx.cancel_flag.clone(),
-        ) {
-            ctx.set_status(format!(
-                "Warning: Failed to install {}: {} (Continuing...)",
-                dep, e
-            ));
-            log_warning(&format!("Failed to install {}: {}", dep, e));
-        } else {
-            log_install(&format!("Dependency {} installed successfully", dep));
-        }
-    }
-
-    // 4.3 Apply Wine registry settings
-    ctx.set_status("Applying Wine registry settings...".to_string());
-    ctx.set_progress(0.87);
-    let log_cb = {
-        let ctx = ctx.clone();
-        move |msg: String| ctx.log(msg)
-    };
-    apply_wine_registry_settings(&prefix_root, proton, &log_cb)?;
-
-    // 4.4 DotNet 9 SDK
-    ctx.set_status("Installing .NET 9 SDK...".to_string());
-    log_install("Installing .NET 9 SDK...");
-    ctx.set_progress(0.90);
-    let tmp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
-    fs::create_dir_all(&tmp_dir)?;
-    let dotnet_installer = tmp_dir.join("dotnet9_sdk.exe");
-    if !dotnet_installer.exists() {
-        ctx.log("Downloading .NET 9 SDK...".to_string());
-        log_download("Downloading .NET 9 SDK...");
-        download_file(DOTNET9_SDK_URL, &dotnet_installer)?;
-        log_download("Downloaded .NET 9 SDK");
-    }
-    ctx.log("Running .NET 9 SDK installer...".to_string());
-    match std::process::Command::new(&proton_bin)
-        .arg("run")
-        .arg(&dotnet_installer)
-        .arg("/quiet")
-        .arg("/norestart")
-        .env("WINEPREFIX", &prefix_root)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
-        .env(
-            "LD_LIBRARY_PATH",
-            "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
-        )
-        .status()
-    {
-        Ok(status) => {
-            if status.success() {
-                ctx.log(".NET 9 SDK installed successfully".to_string());
-                log_install(".NET 9 SDK installed successfully");
-            } else {
-                ctx.log(format!(
-                    ".NET 9 SDK installer exited with code: {:?}",
-                    status.code()
-                ));
-                log_warning(&format!(
-                    ".NET 9 SDK installer exited with code: {:?}",
-                    status.code()
-                ));
-            }
-        }
-        Err(e) => {
-            ctx.log(format!("Failed to run .NET 9 SDK installer: {}", e));
-            log_error(&format!("Failed to run .NET 9 SDK installer: {}", e));
-        }
-    }
-
-    ctx.set_progress(0.95);
-
-    // 5. Generate Scripts
-    ctx.set_status("Generating launch scripts...".to_string());
-
+    // 5. Brief launch to initialize prefix, then kill
     // Vortex.exe location might vary slightly
     let mut vortex_exe = install_dir.join("Vortex.exe");
     if !vortex_exe.exists() {
@@ -339,6 +199,13 @@ pub fn install_vortex(
             return Err("Vortex.exe not found after installation".into());
         }
     }
+
+    brief_launch_and_kill(&vortex_exe, &prefix_root, &install_proton, &ctx, "Vortex");
+
+    ctx.set_progress(0.95);
+
+    // 6. Generate Scripts (using user's selected proton)
+    ctx.set_status("Generating launch scripts...".to_string());
 
     let script_dir = prefix_root.parent().ok_or("Invalid prefix root")?;
 
@@ -360,6 +227,7 @@ pub fn install_vortex(
         script_dir,
     )?;
 
+    // Create symlinks in the Vortex folder for easy access
     let create_link = |target: &std::path::Path, link_name: &str| {
         let link_path = install_dir.join(link_name);
         if link_path.exists() || fs::symlink_metadata(&link_path).is_ok() {
@@ -371,6 +239,7 @@ pub fn install_vortex(
     create_link(&script_path, "Launch Vortex");
     create_link(&kill_script, "Kill Vortex Prefix");
     create_link(&reg_script, "Fix Game Registry");
+    log_install("Created shortcuts in Vortex folder: Launch Vortex, Kill Vortex Prefix, Fix Game Registry");
 
     if let Some(prefix_base) = prefix_root.parent() {
         let backlink = prefix_base.join("manager_link");
@@ -393,7 +262,7 @@ pub fn setup_existing_vortex(
     proton: &ProtonInfo,
     ctx: TaskContext,
 ) -> Result<(), Box<dyn Error>> {
-    let home = std::env::var("HOME")?;
+    let config = AppConfig::load();
 
     // Verify Vortex exists at path
     let mut vortex_exe = existing_path.join("Vortex.exe");
@@ -414,12 +283,15 @@ pub fn setup_existing_vortex(
     ));
     log_install(&format!("Using Proton: {}", proton.name));
 
+    // For Proton 10+, use GE-Proton10-18 for the entire installation process
+    let install_proton = get_install_proton(proton, &ctx);
+
     // Collision Check
     let prefix_mgr = PrefixManager::new();
     let base_name = format!("vortex_{}", install_name.replace(" ", "_").to_lowercase());
     let unique_name = prefix_mgr.get_unique_prefix_name(&base_name);
 
-    let prefix_root = PathBuf::from(format!("{}/NaK/Prefixes/{}/pfx", home, unique_name));
+    let prefix_root = config.get_prefixes_path().join(&unique_name).join("pfx");
 
     if ctx.is_cancelled() {
         return Err("Cancelled".into());
@@ -435,158 +307,17 @@ pub fn setup_existing_vortex(
         return Err("Cancelled".into());
     }
 
-    // 2. Dependencies
-    ctx.set_status("Preparing to install dependencies...".to_string());
-    ctx.set_progress(0.10);
-    let dep_mgr = DependencyManager::new(ctx.winetricks_path.clone());
+    // 2. Install all dependencies (dotnet48, registry, standard deps, dotnet9sdk)
+    install_all_dependencies(&prefix_root, &install_proton, &ctx, 0.10, 0.85)?;
 
-    // 2.1 DotNet 4.8 (Priority)
-    if proton.supports_dotnet48() {
-        ctx.set_status("Installing dotnet48...".to_string());
-        log_install("Installing dependency: dotnet48");
+    ctx.set_progress(0.88);
 
-        let log_cb = {
-            let ctx = ctx.clone();
-            move |msg: String| ctx.log(msg)
-        };
+    // 3. Brief launch to initialize prefix, then kill
+    brief_launch_and_kill(&vortex_exe, &prefix_root, &install_proton, &ctx, "Vortex");
 
-        if let Err(e) = dep_mgr.install_dependencies(
-            &prefix_root,
-            proton,
-            &["dotnet48"],
-            log_cb.clone(),
-            ctx.cancel_flag.clone(),
-        ) {
-            ctx.set_status(format!("Warning: dotnet48 failed: {}", e));
-            log_warning(&format!("dotnet48 installation failed: {}", e));
-        } else {
-            log_install("Dependency dotnet48 installed successfully");
-        }
+    ctx.set_progress(0.92);
 
-        ctx.set_status("Setting Windows version to win11...".to_string());
-        log_install("Setting Windows version to win11");
-        if let Err(e) = dep_mgr.run_winetricks_command(&prefix_root, proton, "win11", log_cb) {
-            log_warning(&format!("Failed to set win11: {}", e));
-        }
-    } else {
-        ctx.set_status("Skipping dotnet48 (not supported).".to_string());
-        log_install("Skipping dotnet48 (not supported by this Proton version)");
-    }
-
-    // 2.2 Main Dependencies
-    let total = STANDARD_DEPS.len();
-    let start_progress = 0.20;
-    let end_progress = 0.75;
-    let step_size = (end_progress - start_progress) / total as f32;
-
-    for (i, dep) in STANDARD_DEPS.iter().enumerate() {
-        if ctx.is_cancelled() {
-            return Err("Cancelled".into());
-        }
-
-        let current_p = start_progress + (i as f32 * step_size);
-        ctx.set_progress(current_p);
-
-        ctx.set_status(format!(
-            "Installing dependency {}/{} : {}...",
-            i + 1,
-            total,
-            dep
-        ));
-        log_install(&format!(
-            "Installing dependency {}/{}: {}",
-            i + 1,
-            total,
-            dep
-        ));
-
-        let log_cb = {
-            let ctx = ctx.clone();
-            move |msg: String| ctx.log(msg)
-        };
-
-        if let Err(e) = dep_mgr.install_dependencies(
-            &prefix_root,
-            proton,
-            &[dep],
-            log_cb,
-            ctx.cancel_flag.clone(),
-        ) {
-            ctx.set_status(format!(
-                "Warning: Failed to install {}: {} (Continuing...)",
-                dep, e
-            ));
-            log_warning(&format!("Failed to install {}: {}", dep, e));
-        } else {
-            log_install("Dependency {} installed successfully");
-        }
-    }
-
-    // 2.3 Apply Wine registry settings
-    ctx.set_status("Applying Wine registry settings...".to_string());
-    ctx.set_progress(0.80);
-    let log_cb = {
-        let ctx = ctx.clone();
-        move |msg: String| ctx.log(msg)
-    };
-    apply_wine_registry_settings(&prefix_root, proton, &log_cb)?;
-
-    // 2.4 DotNet 9 SDK
-    let proton_bin = proton.path.join("proton");
-    let compat_data = prefix_root.parent().unwrap_or(&prefix_root);
-    let steam_path = detect_steam_path();
-
-    ctx.set_status("Installing .NET 9 SDK...".to_string());
-    log_install("Installing .NET 9 SDK...");
-    ctx.set_progress(0.85);
-    let tmp_dir = PathBuf::from(format!("{}/NaK/tmp", home));
-    fs::create_dir_all(&tmp_dir)?;
-    let dotnet_installer = tmp_dir.join("dotnet9_sdk.exe");
-    if !dotnet_installer.exists() {
-        ctx.log("Downloading .NET 9 SDK...".to_string());
-        log_download("Downloading .NET 9 SDK...");
-        download_file(DOTNET9_SDK_URL, &dotnet_installer)?;
-        log_download("Downloaded .NET 9 SDK");
-    }
-    ctx.log("Running .NET 9 SDK installer...".to_string());
-    match std::process::Command::new(&proton_bin)
-        .arg("run")
-        .arg(&dotnet_installer)
-        .arg("/quiet")
-        .arg("/norestart")
-        .env("WINEPREFIX", &prefix_root)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
-        .env(
-            "LD_LIBRARY_PATH",
-            "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
-        )
-        .status()
-    {
-        Ok(status) => {
-            if status.success() {
-                ctx.log(".NET 9 SDK installed successfully".to_string());
-                log_install(".NET 9 SDK installed successfully");
-            } else {
-                ctx.log(format!(
-                    ".NET 9 SDK installer exited with code: {:?}",
-                    status.code()
-                ));
-                log_warning(&format!(
-                    ".NET 9 SDK installer exited with code: {:?}",
-                    status.code()
-                ));
-            }
-        }
-        Err(e) => {
-            ctx.log(format!("Failed to run .NET 9 SDK installer: {}", e));
-            log_error(&format!("Failed to run .NET 9 SDK installer: {}", e));
-        }
-    }
-
-    ctx.set_progress(0.90);
-
-    // 3. Generate Scripts
+    // 4. Generate Scripts
     ctx.set_status("Generating launch scripts...".to_string());
 
     let script_dir = prefix_root.parent().ok_or("Invalid prefix root")?;
@@ -609,6 +340,7 @@ pub fn setup_existing_vortex(
         script_dir,
     )?;
 
+    // Create symlinks in the Vortex folder for easy access
     let create_link = |target: &std::path::Path, link_name: &str| {
         let link_path = existing_path.join(link_name);
         if link_path.exists() || fs::symlink_metadata(&link_path).is_ok() {
@@ -620,6 +352,7 @@ pub fn setup_existing_vortex(
     create_link(&script_path, "Launch Vortex");
     create_link(&kill_script, "Kill Vortex Prefix");
     create_link(&reg_script, "Fix Game Registry");
+    log_install("Created shortcuts in Vortex folder: Launch Vortex, Kill Vortex Prefix, Fix Game Registry");
 
     if let Some(prefix_base) = prefix_root.parent() {
         let backlink = prefix_base.join("manager_link");

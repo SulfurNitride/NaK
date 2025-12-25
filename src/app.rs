@@ -44,6 +44,7 @@ pub enum WizardStep {
     Selection,
     NameInput,
     PathInput,
+    DpiSetup, // DPI scaling configuration (after install, before finished)
     Finished,
 }
 
@@ -57,6 +58,10 @@ pub struct InstallWizard {
     pub validation_error: Option<String>,
     pub force_install: bool,
     pub last_install_error: Option<String>,
+    pub use_slr: bool, // Whether to use Steam Linux Runtime for this installation
+    // DPI Setup state
+    pub selected_dpi: u32,      // Selected DPI value (96, 120, 144, 192, or custom)
+    pub custom_dpi_input: String, // Text input for custom DPI value
 }
 
 impl Default for InstallWizard {
@@ -70,6 +75,9 @@ impl Default for InstallWizard {
             validation_error: None,
             force_install: false,
             last_install_error: None,
+            use_slr: true, // Default to using SLR (user can toggle)
+            selected_dpi: 96, // Default 100% scaling
+            custom_dpi_input: String::new(),
         }
     }
 }
@@ -97,7 +105,6 @@ pub struct MyApp {
 
     // Page State: Prefix Manager
     pub detected_prefixes: Vec<NakPrefix>,
-    #[allow(dead_code)]
     pub prefix_manager: PrefixManager,
     pub winetricks_path: Arc<Mutex<Option<PathBuf>>>,
 
@@ -151,6 +158,12 @@ pub struct MyApp {
     pub is_installing_update: Arc<Mutex<bool>>,
     pub update_error: Arc<Mutex<Option<String>>>,
     pub update_installed: Arc<Mutex<bool>>,
+
+    // DPI test process tracking
+    pub dpi_test_processes: Arc<Mutex<Vec<u32>>>, // PIDs of running test apps
+
+    // Prefix manager DPI custom input (shared across all prefixes)
+    pub prefix_custom_dpi_input: String,
 }
 
 impl Default for MyApp {
@@ -173,17 +186,39 @@ impl Default for MyApp {
         let config = AppConfig::load();
         let cache_config = CacheConfig::load();
 
+        // Ensure data directories exist (for new installs or after data path change)
+        let data_path = config.get_data_path();
+        let _ = std::fs::create_dir_all(&data_path);
+        let _ = std::fs::create_dir_all(data_path.join("Prefixes"));
+        let _ = std::fs::create_dir_all(data_path.join("ProtonGE"));
+        let _ = std::fs::create_dir_all(data_path.join("tmp"));
+        let _ = std::fs::create_dir_all(data_path.join("bin"));
+        let _ = std::fs::create_dir_all(data_path.join("logs"));
+
+        // Ensure active proton symlink exists (for updating users)
+        // If user has a selected proton but no active symlink, create it
+        let active_link = data_path.join("ProtonGE/active");
+        if !active_link.exists() {
+            if let Some(selected_name) = &config.selected_proton {
+                // Find the selected proton in available versions
+                if let Some(selected_proton) = protons.iter().find(|p| &p.name == selected_name) {
+                    let _ = crate::wine::set_active_proton(selected_proton);
+                }
+            } else if let Some(first_proton) = protons.first() {
+                // No proton selected but we have some available - select the first one
+                let _ = crate::wine::set_active_proton(first_proton);
+            }
+        }
+
         // Detect Steam at startup (with logging)
         let steam_path = detect_steam_path_checked();
         let steam_detected = steam_path.is_some();
 
-        // Check Dependencies (uses check_command_available which also checks ~/NaK/bin)
+        // Check Dependencies (uses check_command_available which also checks $DATA_PATH/bin)
         // Note: cabextract will be auto-downloaded if missing, so we check it later
+        // Note: 7z extraction is now handled natively in Rust (sevenz-rust crate)
         let mut missing = Vec::new();
 
-        if !check_command_available("unzip") && !check_command_available("7z") {
-            missing.push("unzip or 7z".to_string());
-        }
         if !check_command_available("curl") && !check_command_available("wget") {
             missing.push("curl or wget".to_string());
         }
@@ -257,6 +292,12 @@ impl Default for MyApp {
             is_installing_update: Arc::new(Mutex::new(false)),
             update_error: Arc::new(Mutex::new(None)),
             update_installed: Arc::new(Mutex::new(false)),
+
+            // DPI test processes
+            dpi_test_processes: Arc::new(Mutex::new(Vec::new())),
+
+            // Prefix manager DPI input
+            prefix_custom_dpi_input: String::new(),
         };
 
         // Auto-fetch on startup (GE Proton)
@@ -336,6 +377,21 @@ impl Default for MyApp {
             });
         }
 
+        // Auto-check for updates on startup
+        let update_info_arc = app.update_info.clone();
+        let is_checking_arc = app.is_checking_update.clone();
+        thread::spawn(move || {
+            match crate::updater::check_for_updates() {
+                Ok(info) => {
+                    *update_info_arc.lock().unwrap() = Some(info);
+                }
+                Err(e) => {
+                    eprintln!("Failed to check for updates: {}", e);
+                }
+            }
+            *is_checking_arc.lock().unwrap() = false;
+        });
+
         // Ensure Winetricks and cabextract are downloaded
         let wt_path = winetricks_path_arc.clone();
         let missing_deps_for_thread = missing_deps_arc.clone();
@@ -370,7 +426,6 @@ impl Default for MyApp {
 }
 
 impl MyApp {
-    #[allow(dead_code)]
     pub fn refresh_proton_versions(&mut self) {
         let finder = ProtonFinder::new();
         self.proton_versions = finder.find_all();
