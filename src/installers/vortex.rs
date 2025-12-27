@@ -227,6 +227,14 @@ pub fn install_vortex(
         script_dir,
     )?;
 
+    // Generate NXM handler script (Vortex.exe handles NXM links directly)
+    let nxm_script = ScriptGenerator::generate_vortex_nxm_script(
+        &prefix_root,
+        &vortex_exe,
+        &proton.path,
+        script_dir,
+    )?;
+
     // Create symlinks in the Vortex folder for easy access
     let create_link = |target: &std::path::Path, link_name: &str| {
         let link_path = install_dir.join(link_name);
@@ -239,7 +247,8 @@ pub fn install_vortex(
     create_link(&script_path, "Launch Vortex");
     create_link(&kill_script, "Kill Vortex Prefix");
     create_link(&reg_script, "Fix Game Registry");
-    log_install("Created shortcuts in Vortex folder: Launch Vortex, Kill Vortex Prefix, Fix Game Registry");
+    create_link(&nxm_script, "Handle NXM");
+    log_install("Created shortcuts in Vortex folder: Launch Vortex, Kill Vortex Prefix, Fix Game Registry, Handle NXM");
 
     if let Some(prefix_base) = prefix_root.parent() {
         let backlink = prefix_base.join("manager_link");
@@ -340,6 +349,14 @@ pub fn setup_existing_vortex(
         script_dir,
     )?;
 
+    // Generate NXM handler script (Vortex.exe handles NXM links directly)
+    let nxm_script = ScriptGenerator::generate_vortex_nxm_script(
+        &prefix_root,
+        &vortex_exe,
+        &proton.path,
+        script_dir,
+    )?;
+
     // Create symlinks in the Vortex folder for easy access
     let create_link = |target: &std::path::Path, link_name: &str| {
         let link_path = existing_path.join(link_name);
@@ -352,7 +369,8 @@ pub fn setup_existing_vortex(
     create_link(&script_path, "Launch Vortex");
     create_link(&kill_script, "Kill Vortex Prefix");
     create_link(&reg_script, "Fix Game Registry");
-    log_install("Created shortcuts in Vortex folder: Launch Vortex, Kill Vortex Prefix, Fix Game Registry");
+    create_link(&nxm_script, "Handle NXM");
+    log_install("Created shortcuts in Vortex folder: Launch Vortex, Kill Vortex Prefix, Fix Game Registry, Handle NXM");
 
     if let Some(prefix_base) = prefix_root.parent() {
         let backlink = prefix_base.join("manager_link");

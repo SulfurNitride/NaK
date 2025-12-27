@@ -387,6 +387,73 @@ echo "Handling NXM link via MO2 nxmhandler (Direct Proton)..."
         Self::write_script(script_output_dir, "nxm_handler.sh", &script_content)
     }
 
+    /// Generate NXM handler launch script for Vortex
+    /// Vortex.exe itself handles NXM links when passed as an argument
+    /// Uses relative paths so it works after NaK is moved
+    pub fn generate_vortex_nxm_script(
+        _prefix_path: &Path,
+        vortex_exe: &Path,
+        _proton_ge_path: &Path, // No longer used - we use the active symlink
+        script_output_dir: &Path,
+    ) -> Result<PathBuf, Box<dyn Error>> {
+        let steam_path = detect_steam_path();
+        let use_slr = Self::should_use_slr();
+        let runtime_entry = runtime::get_entry_point();
+
+        let script_content = if use_slr {
+            let _entry_point = runtime_entry.ok_or(
+                "Steam Linux Runtime (Sniper) not found! Please download it in Proton Picker or disable it in Settings."
+            )?;
+
+            format!(
+                r#"#!/bin/bash
+# NaK Generated NXM Handler Script for Vortex
+# Running inside Steam Linux Runtime (Sniper) Container
+# Uses active Proton symlink - change Proton in NaK's Proton Picker
+
+{path_setup}
+VORTEX_EXE='{exe}'
+STEAM_PATH='{steam_path}'
+{slr_check}
+{env_block}
+
+echo "Handling NXM link via Vortex..."
+{launch_cmd}
+"#,
+                path_setup = PATH_SETUP_SLR,
+                exe = vortex_exe.to_string_lossy(),
+                steam_path = steam_path,
+                slr_check = Self::get_slr_check_block(),
+                env_block = Self::get_env_block(true),
+                launch_cmd = Self::get_launch_command(true, "VORTEX_EXE", r#"-d "$@""#)
+            )
+        } else {
+            format!(
+                r#"#!/bin/bash
+# NaK Generated NXM Handler Script for Vortex
+# Running WITHOUT Steam Linux Runtime (Direct Proton)
+# Uses active Proton symlink - change Proton in NaK's Proton Picker
+
+{path_setup}
+VORTEX_EXE='{exe}'
+STEAM_PATH='{steam_path}'
+
+{env_block}
+
+echo "Handling NXM link via Vortex (Direct Proton)..."
+{launch_cmd}
+"#,
+                path_setup = PATH_SETUP_DIRECT,
+                exe = vortex_exe.to_string_lossy(),
+                steam_path = steam_path,
+                env_block = Self::get_env_block(false),
+                launch_cmd = Self::get_launch_command(false, "VORTEX_EXE", r#"-d "$@""#)
+            )
+        };
+
+        Self::write_script(script_output_dir, "nxm_handler.sh", &script_content)
+    }
+
     /// Generate launch script for MO2
     pub fn generate_mo2_launch_script(
         prefix_path: &Path,
@@ -865,6 +932,9 @@ pub fn fix_symlinks_after_move() -> Result<usize, Box<dyn Error>> {
                 create_link(&script_path, "Launch Vortex");
                 create_link(&kill_script, "Kill Vortex Prefix");
                 create_link(&reg_script, "Fix Game Registry");
+                if nxm_script.exists() {
+                    create_link(&nxm_script, "Handle NXM");
+                }
             }
 
             log_info(&format!("Fixed symlinks for: {}", prefix_name));
@@ -1190,14 +1260,31 @@ pub fn regenerate_all_prefix_scripts() -> Result<usize, Box<dyn Error>> {
                 ));
             }
 
+            // NXM handler script (Vortex.exe handles NXM links directly)
+            if let Err(e) = ScriptGenerator::generate_vortex_nxm_script(
+                &pfx_path,
+                &vortex_exe,
+                &proton_path,
+                &prefix_dir,
+            ) {
+                log_error(&format!(
+                    "Failed to regenerate NXM script for {}: {}",
+                    prefix_name, e
+                ));
+            }
+
             // Recreate convenience symlinks in Vortex folder
             let script_path = prefix_dir.join("start.sh");
             let kill_script = prefix_dir.join(".kill_prefix.sh");
             let reg_script = prefix_dir.join("game_registry_fix.sh");
+            let nxm_script = prefix_dir.join("nxm_handler.sh");
 
             create_convenience_link(&script_path, &install_dir, "Launch Vortex");
             create_convenience_link(&kill_script, &install_dir, "Kill Vortex Prefix");
             create_convenience_link(&reg_script, &install_dir, "Fix Game Registry");
+            if nxm_script.exists() {
+                create_convenience_link(&nxm_script, &install_dir, "Handle NXM");
+            }
         }
 
         regenerated_count += 1;

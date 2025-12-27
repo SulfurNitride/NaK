@@ -176,7 +176,10 @@ pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
 "dinput8.dll"="native,builtin"
 
 [HKEY_CURRENT_USER\Software\Wine\DllOverrides]
-"mscoree"="native"
+"mscoree.dll"="native,builtin"
+
+[HKEY_CURRENT_USER\Software\Wine\DllOverrides]
+"mscoree"="native,builtin"
 
 [HKEY_CURRENT_USER\Software\Wine]
 "ShowDotFiles"="Y"

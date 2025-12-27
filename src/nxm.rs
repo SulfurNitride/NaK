@@ -38,10 +38,11 @@ impl NxmHandler {
         // 1. Create the Handler Script
         // Uses relative path from script location to find active_nxm_game symlink
         // active_nxm_game points to prefix directory (e.g., $DATA_PATH/Prefixes/mo2_xxx)
-        // which contains nxm_handler.sh that runs nxmhandler.exe through proton
+        // which contains manager_link symlink to the install directory
+        // Supports both MO2 (via nxmhandler.exe) and Vortex mod managers
         let script_content = r#"#!/bin/bash
 # NaK Global NXM Handler
-# Forwards nxm:// links to the active prefix's nxm_handler.sh
+# Forwards nxm:// links to the active mod manager instance (MO2 or Vortex)
 
 # Derive paths relative to script location (portable after NaK folder moves)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -52,15 +53,45 @@ if [ ! -L "$ACTIVE_LINK" ]; then
     exit 1
 fi
 
+# Get prefix directory and install directory via manager_link
 PREFIX_DIR=$(readlink -f "$ACTIVE_LINK")
-NXM_SCRIPT="$PREFIX_DIR/nxm_handler.sh"
+MANAGER_LINK="$PREFIX_DIR/manager_link"
 
-if [ ! -f "$NXM_SCRIPT" ]; then
-    zenity --error --text="NXM handler script not found: $NXM_SCRIPT" --title="NaK Error"
+if [ ! -L "$MANAGER_LINK" ]; then
+    zenity --error --text="manager_link not found in prefix: $PREFIX_DIR" --title="NaK Error"
     exit 1
 fi
 
-"$NXM_SCRIPT" "$1"
+INSTALL_DIR=$(readlink -f "$MANAGER_LINK")
+
+# Detect mod manager type and find appropriate launcher
+if [ -f "$INSTALL_DIR/nxmhandler.exe" ]; then
+    # MO2 installation - use Handle NXM symlink or fall back to Launch MO2
+    if [ -f "$INSTALL_DIR/Handle NXM" ]; then
+        LAUNCHER="$INSTALL_DIR/Handle NXM"
+    elif [ -f "$INSTALL_DIR/Launch MO2" ]; then
+        LAUNCHER="$INSTALL_DIR/Launch MO2"
+    else
+        zenity --error --text="MO2 detected but no launch script found in: $INSTALL_DIR" --title="NaK Error"
+        exit 1
+    fi
+elif [ -f "$INSTALL_DIR/Vortex.exe" ]; then
+    # Vortex installation - use Handle NXM symlink or fall back to Launch Vortex
+    if [ -f "$INSTALL_DIR/Handle NXM" ]; then
+        LAUNCHER="$INSTALL_DIR/Handle NXM"
+    elif [ -f "$INSTALL_DIR/Launch Vortex" ]; then
+        LAUNCHER="$INSTALL_DIR/Launch Vortex"
+    else
+        zenity --error --text="Vortex detected but no launch script found in: $INSTALL_DIR" --title="NaK Error"
+        exit 1
+    fi
+else
+    zenity --error --text="Could not detect mod manager type in: $INSTALL_DIR" --title="NaK Error"
+    exit 1
+fi
+
+# Run the launcher with the NXM link
+"$LAUNCHER" "$1"
 "#;
 
         let mut file = fs::File::create(&script_path)?;
