@@ -190,6 +190,9 @@ pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
 "FontSmoothingOrientation"=dword:00000001
 "FontSmoothingType"=dword:00000002
 
+[HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers]
+@="~ HIGHDPIAWARE"
+
 [HKEY_CURRENT_USER\Software\Wine\AppDefaults\Pandora Behaviour Engine+.exe\X11 Driver]
 "Decorated"="N"
 

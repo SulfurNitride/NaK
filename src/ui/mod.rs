@@ -145,10 +145,30 @@ fn render_confirmation_dialogs(app: &mut MyApp, ctx: &egui::Context) {
                         ui.add_space(20.0);
                         if ui.button(egui::RichText::new("Delete").color(egui::Color32::RED)).clicked() {
                             log_action(&format!("Confirmed delete prefix: {}", prefix_name));
+
+                            // Check if this prefix is the active NXM handler before deleting
+                            let prefix_path = app.config.get_prefixes_path().join(&prefix_name).join("pfx");
+                            let prefix_path_str = prefix_path.to_string_lossy().to_string();
+                            let is_active_nxm = app.config.active_nxm_prefix.as_ref() == Some(&prefix_path_str);
+
                             if let Err(e) = app.prefix_manager.delete_prefix(&prefix_name) {
                                 log_error(&format!("Failed to delete prefix '{}': {}", prefix_name, e));
                             } else {
                                 log_info(&format!("Prefix '{}' deleted successfully", prefix_name));
+
+                                // If this was the active NXM prefix, clear the NXM handler state
+                                if is_active_nxm {
+                                    log_info("Cleared active NXM handler (deleted prefix was active)");
+                                    app.config.active_nxm_prefix = None;
+                                    app.config.save();
+
+                                    // Also remove the active_nxm_game symlink
+                                    let nxm_link = app.config.get_data_path().join("active_nxm_game");
+                                    if nxm_link.exists() || std::fs::symlink_metadata(&nxm_link).is_ok() {
+                                        let _ = std::fs::remove_file(&nxm_link);
+                                    }
+                                }
+
                                 app.detected_prefixes = app.prefix_manager.scan_prefixes();
                             }
                             app.pending_prefix_delete = None;

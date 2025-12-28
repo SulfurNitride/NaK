@@ -7,8 +7,8 @@ use std::thread;
 use crate::app::{InstallWizard, ModManagerView, MyApp, WizardStep};
 use crate::config::AppConfig;
 use crate::installers::{
-    apply_dpi, install_mo2, install_vortex, kill_wineserver, launch_dpi_test_app,
-    setup_existing_mo2, setup_existing_vortex, TaskContext, DPI_PRESETS,
+    apply_dpi, apply_wine_registry_settings, install_mo2, install_vortex, kill_wineserver,
+    launch_dpi_test_app, setup_existing_mo2, setup_existing_vortex, TaskContext, DPI_PRESETS,
 };
 use crate::logging::log_action;
 use crate::nxm::NxmHandler;
@@ -1160,13 +1160,32 @@ fn regenerate_script(app: &MyApp, prefix: &crate::wine::NakPrefix, exe_path: &st
                  } else {
                      crate::logging::log_info("Regenerated registry fix script.");
                  }
-                 
-                 // Update "Launch [Manager]" symlink in the install directory
-                 // path is .../pfx/../start.sh usually
+
+                 // 4. Generate NXM Handler Script (for both MO2 and Vortex)
+                 let nxm_result = if exe_name.contains("modorganizer") {
+                     ScriptGenerator::generate_mo2_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
+                 } else {
+                     ScriptGenerator::generate_vortex_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
+                 };
+                 match &nxm_result {
+                     Ok(_) => crate::logging::log_info("Regenerated NXM handler script."),
+                     Err(e) => crate::logging::log_error(&format!("Failed to regenerate NXM script: {}", e)),
+                 }
+
+                 // 5. Re-apply Wine Registry Settings (includes HIGHDPIAWARE fix)
+                 if let Err(e) = apply_wine_registry_settings(&prefix.path, proton_info, &|msg| {
+                     crate::logging::log_info(&msg);
+                 }) {
+                     crate::logging::log_error(&format!("Failed to apply Wine registry settings: {}", e));
+                 } else {
+                     crate::logging::log_info("Applied Wine registry settings (HIGHDPIAWARE, DLL overrides, etc.)");
+                 }
+
+                 // Update "Launch [Manager]" and "Handle NXM" symlinks in the install directory
                  if let Some(install_dir) = final_exe_path.parent() {
                      let link_name = if exe_name.contains("modorganizer") { "Launch MO2" } else { "Launch Vortex" };
                      let link_path = install_dir.join(link_name);
-                     
+
                      if link_path.exists() || std::fs::symlink_metadata(&link_path).is_ok() {
                          let _ = std::fs::remove_file(&link_path);
                      }
@@ -1174,6 +1193,19 @@ fn regenerate_script(app: &MyApp, prefix: &crate::wine::NakPrefix, exe_path: &st
                          crate::logging::log_error(&format!("Failed to update Launch symlink: {}", e));
                      } else {
                          crate::logging::log_info("Updated Launch symlink.");
+                     }
+
+                     // Update Handle NXM symlink
+                     if let Ok(nxm_script) = nxm_result {
+                         let nxm_link = install_dir.join("Handle NXM");
+                         if nxm_link.exists() || std::fs::symlink_metadata(&nxm_link).is_ok() {
+                             let _ = std::fs::remove_file(&nxm_link);
+                         }
+                         if let Err(e) = std::os::unix::fs::symlink(&nxm_script, &nxm_link) {
+                             crate::logging::log_error(&format!("Failed to update Handle NXM symlink: {}", e));
+                         } else {
+                             crate::logging::log_info("Updated Handle NXM symlink.");
+                         }
                      }
                  }
              }
@@ -1233,7 +1265,24 @@ fn regenerate_script_with_slr(app: &MyApp, prefix: &crate::wine::NakPrefix, exe_
                 let _ = ScriptGenerator::generate_kill_prefix_script(&prefix.path, &proton_info.path, output_dir);
                 let _ = ScriptGenerator::generate_fix_game_registry_script(&prefix.path, &proton_info.path, &prefix.name, output_dir);
 
-                // Update symlink
+                // Generate NXM Handler Script
+                let nxm_result = if exe_name.contains("modorganizer") {
+                    ScriptGenerator::generate_mo2_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
+                } else {
+                    ScriptGenerator::generate_vortex_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
+                };
+                if let Err(e) = &nxm_result {
+                    crate::logging::log_error(&format!("Failed to regenerate NXM script: {}", e));
+                }
+
+                // Re-apply Wine Registry Settings (includes HIGHDPIAWARE fix)
+                if let Err(e) = apply_wine_registry_settings(&prefix.path, proton_info, &|msg| {
+                    crate::logging::log_info(&msg);
+                }) {
+                    crate::logging::log_error(&format!("Failed to apply Wine registry settings: {}", e));
+                }
+
+                // Update symlinks in install directory
                 if let Some(install_dir) = final_exe_path.parent() {
                     let link_name = if exe_name.contains("modorganizer") { "Launch MO2" } else { "Launch Vortex" };
                     let link_path = install_dir.join(link_name);
@@ -1241,6 +1290,15 @@ fn regenerate_script_with_slr(app: &MyApp, prefix: &crate::wine::NakPrefix, exe_
                         let _ = std::fs::remove_file(&link_path);
                     }
                     let _ = std::os::unix::fs::symlink(&path, &link_path);
+
+                    // Update Handle NXM symlink
+                    if let Ok(nxm_script) = nxm_result {
+                        let nxm_link = install_dir.join("Handle NXM");
+                        if nxm_link.exists() || std::fs::symlink_metadata(&nxm_link).is_ok() {
+                            let _ = std::fs::remove_file(&nxm_link);
+                        }
+                        let _ = std::os::unix::fs::symlink(&nxm_script, &nxm_link);
+                    }
                 }
             }
             Err(e) => crate::logging::log_error(&format!("Failed to regenerate script: {}", e)),

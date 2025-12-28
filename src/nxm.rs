@@ -49,7 +49,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ACTIVE_LINK="$SCRIPT_DIR/active_nxm_game"
 
 if [ ! -L "$ACTIVE_LINK" ]; then
-    zenity --error --text="No active mod manager instance selected in NaK!" --title="NaK Error"
+    zenity --error --text="No active mod manager instance selected in NaK!\n\nGo to NaK → Mod Managers and click 'Activate NXM' on your preferred prefix." --title="NaK Error"
+    exit 1
+fi
+
+# Check if symlink target exists (prefix might have been deleted)
+if [ ! -e "$ACTIVE_LINK" ]; then
+    zenity --error --text="Active NXM prefix no longer exists!\n\nThe prefix was likely deleted. Go to NaK → Mod Managers and click 'Activate NXM' on another prefix." --title="NaK Error"
     exit 1
 fi
 
@@ -58,7 +64,14 @@ PREFIX_DIR=$(readlink -f "$ACTIVE_LINK")
 MANAGER_LINK="$PREFIX_DIR/manager_link"
 
 if [ ! -L "$MANAGER_LINK" ]; then
-    zenity --error --text="manager_link not found in prefix: $PREFIX_DIR" --title="NaK Error"
+    zenity --error --text="manager_link not found in prefix.\n\nPrefix: $PREFIX_DIR\n\nTry clicking 'Regenerate Scripts' in NaK for this prefix." --title="NaK Error"
+    exit 1
+fi
+
+# Check if manager_link target exists (mod manager folder might have been deleted/moved)
+if [ ! -e "$MANAGER_LINK" ]; then
+    BROKEN_TARGET=$(readlink "$MANAGER_LINK")
+    zenity --error --text="Mod manager folder no longer exists!\n\nExpected location: $BROKEN_TARGET\n\nEither restore the folder or delete this prefix in NaK and set up a new one." --title="NaK Error"
     exit 1
 fi
 
@@ -72,7 +85,7 @@ if [ -f "$INSTALL_DIR/nxmhandler.exe" ]; then
     elif [ -f "$INSTALL_DIR/Launch MO2" ]; then
         LAUNCHER="$INSTALL_DIR/Launch MO2"
     else
-        zenity --error --text="MO2 detected but no launch script found in: $INSTALL_DIR" --title="NaK Error"
+        zenity --error --text="MO2 detected but no launch script found.\n\nLocation: $INSTALL_DIR\n\nTry clicking 'Regenerate Scripts' in NaK." --title="NaK Error"
         exit 1
     fi
 elif [ -f "$INSTALL_DIR/Vortex.exe" ]; then
@@ -82,11 +95,11 @@ elif [ -f "$INSTALL_DIR/Vortex.exe" ]; then
     elif [ -f "$INSTALL_DIR/Launch Vortex" ]; then
         LAUNCHER="$INSTALL_DIR/Launch Vortex"
     else
-        zenity --error --text="Vortex detected but no launch script found in: $INSTALL_DIR" --title="NaK Error"
+        zenity --error --text="Vortex detected but no launch script found.\n\nLocation: $INSTALL_DIR\n\nTry clicking 'Regenerate Scripts' in NaK." --title="NaK Error"
         exit 1
     fi
 else
-    zenity --error --text="Could not detect mod manager type in: $INSTALL_DIR" --title="NaK Error"
+    zenity --error --text="Could not detect mod manager type.\n\nLocation: $INSTALL_DIR\n\nExpected to find nxmhandler.exe (MO2) or Vortex.exe" --title="NaK Error"
     exit 1
 fi
 
