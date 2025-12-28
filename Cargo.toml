@@ -21,6 +21,7 @@ tar = "0.4"
 rfd = "0.16"
 xz2 = "0.1"  # For CachyOS Proton .tar.xz extraction
 sevenz-rust = "0.6"  # For MO2 .7z extraction
+zip = "2.2"  # For update extraction
 
 
 

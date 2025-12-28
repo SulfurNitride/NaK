@@ -3,9 +3,10 @@
 //! Checks GitHub releases and updates the application binary.
 
 use std::error::Error;
-use std::fs;
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 use crate::logging::{log_download, log_error, log_info};
 
@@ -98,26 +99,43 @@ pub fn install_update(download_url: &str) -> Result<(), Box<dyn Error>> {
     let exe_dir = current_exe.parent()
         .ok_or("Failed to get executable directory")?;
 
-    // Create temp file for download
-    let temp_path = exe_dir.join(".nak_update_temp");
+    // Create temp paths
+    let temp_download = exe_dir.join(".nak_update_download");
+    let temp_extract = exe_dir.join(".nak_update_extract");
     let backup_path = exe_dir.join(".nak_backup");
 
-    // Download the new binary
+    // Clean up any previous failed update attempts
+    let _ = fs::remove_file(&temp_download);
+    let _ = fs::remove_dir_all(&temp_extract);
+
+    // Download the update
     log_download("Downloading NaK update...");
     let response = ureq::get(download_url)
         .set("User-Agent", "NaK-Updater")
         .call()?;
 
-    let mut file = fs::File::create(&temp_path)?;
+    let mut file = File::create(&temp_download)?;
     let mut reader = response.into_reader();
     std::io::copy(&mut reader, &mut file)?;
     file.flush()?;
     drop(file);
 
+    log_info("Download complete, extracting...");
+
+    // Determine if it's an archive and extract if needed
+    let new_binary_path = if download_url.ends_with(".zip") {
+        extract_zip(&temp_download, &temp_extract)?
+    } else if download_url.ends_with(".tar.gz") || download_url.ends_with(".tgz") {
+        extract_tar_gz(&temp_download, &temp_extract)?
+    } else {
+        // Assume it's a raw binary
+        temp_download.clone()
+    };
+
     // Make the new binary executable
-    let mut perms = fs::metadata(&temp_path)?.permissions();
+    let mut perms = fs::metadata(&new_binary_path)?.permissions();
     perms.set_mode(0o755);
-    fs::set_permissions(&temp_path, perms)?;
+    fs::set_permissions(&new_binary_path, perms)?;
 
     // Backup current executable
     if backup_path.exists() {
@@ -126,18 +144,105 @@ pub fn install_update(download_url: &str) -> Result<(), Box<dyn Error>> {
     fs::rename(&current_exe, &backup_path)?;
 
     // Move new binary into place
-    if let Err(e) = fs::rename(&temp_path, &current_exe) {
+    if let Err(e) = fs::rename(&new_binary_path, &current_exe) {
         // Restore backup on failure
         log_error(&format!("Failed to install update: {}", e));
         let _ = fs::rename(&backup_path, &current_exe);
         return Err(e.into());
     }
 
-    // Clean up backup (optional - could keep it for rollback)
+    // Clean up
     let _ = fs::remove_file(&backup_path);
+    let _ = fs::remove_file(&temp_download);
+    let _ = fs::remove_dir_all(&temp_extract);
 
-    log_info("Update installed successfully! Please restart NaK.");
+    log_info("Update installed successfully!");
     Ok(())
+}
+
+/// Extract a zip archive and return the path to the binary inside
+fn extract_zip(zip_path: &Path, extract_dir: &Path) -> Result<std::path::PathBuf, Box<dyn Error>> {
+    fs::create_dir_all(extract_dir)?;
+
+    let file = File::open(zip_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+
+    // Extract all files
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let outpath = extract_dir.join(file.mangled_name());
+
+        if file.name().ends_with('/') {
+            fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    fs::create_dir_all(p)?;
+                }
+            }
+            let mut outfile = File::create(&outpath)?;
+            std::io::copy(&mut file, &mut outfile)?;
+        }
+    }
+
+    // Find the binary (look for nak_rust or nak)
+    find_binary_in_dir(extract_dir)
+}
+
+/// Extract a tar.gz archive and return the path to the binary inside
+fn extract_tar_gz(tar_path: &Path, extract_dir: &Path) -> Result<std::path::PathBuf, Box<dyn Error>> {
+    fs::create_dir_all(extract_dir)?;
+
+    let file = File::open(tar_path)?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    archive.unpack(extract_dir)?;
+
+    // Find the binary
+    find_binary_in_dir(extract_dir)
+}
+
+/// Find the NaK binary in an extracted directory
+fn find_binary_in_dir(dir: &Path) -> Result<std::path::PathBuf, Box<dyn Error>> {
+    // Look for common binary names
+    let binary_names = ["nak_rust", "nak", "NaK"];
+
+    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // Check exact matches first
+                if binary_names.contains(&name) {
+                    return Ok(path.to_path_buf());
+                }
+                // Check if it's an executable (no extension, not a known non-binary)
+                if !name.contains('.') && !name.starts_with('.') {
+                    // Verify it's actually executable by checking for ELF header
+                    if let Ok(mut f) = File::open(path) {
+                        let mut magic = [0u8; 4];
+                        if f.read_exact(&mut magic).is_ok() && magic == [0x7f, b'E', b'L', b'F'] {
+                            return Ok(path.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Err("Could not find binary in update archive".into())
+}
+
+/// Restart NaK after update
+pub fn restart_application() -> Result<(), Box<dyn Error>> {
+    let current_exe = std::env::current_exe()?;
+    log_info(&format!("Restarting NaK from: {:?}", current_exe));
+
+    // Spawn the new process
+    std::process::Command::new(&current_exe)
+        .spawn()?;
+
+    // Exit the current process
+    std::process::exit(0);
 }
 
 /// Check if the current executable is in a writable location
