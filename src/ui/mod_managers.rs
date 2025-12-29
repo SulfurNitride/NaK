@@ -897,7 +897,6 @@ fn start_installation(app: &mut MyApp) {
 
 /// Get the prefix path for the current wizard installation
 fn get_wizard_prefix_path(app: &MyApp) -> Option<std::path::PathBuf> {
-    let home = std::env::var("HOME").ok()?;
     let instance_name = &app.install_wizard.name;
     let manager_type = &app.install_wizard.manager_type;
     if instance_name.is_empty() {
@@ -911,10 +910,7 @@ fn get_wizard_prefix_path(app: &MyApp) -> Option<std::path::PathBuf> {
         instance_name.to_lowercase().replace(' ', "_")
     );
 
-    Some(std::path::PathBuf::from(format!(
-        "{}/NaK/Prefixes/{}/pfx",
-        home, prefix_name
-    )))
+    Some(app.config.get_prefixes_path().join(&prefix_name).join("pfx"))
 }
 
 /// Handle applying a new DPI value

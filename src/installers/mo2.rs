@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::{
-    brief_launch_and_kill, fetch_latest_mo2_release, get_install_proton,
+    brief_launch_and_kill, create_game_folders, fetch_latest_mo2_release, get_install_proton,
     install_all_dependencies, TaskContext,
 };
 use crate::config::AppConfig;
@@ -170,6 +170,9 @@ pub fn install_mo2(
     // Setup Global Instance support
     setup_global_instance_symlink(&prefix_root, &install_dir);
 
+    // Create game folders (prevents crashes for games that require them)
+    create_game_folders(&prefix_root);
+
     ctx.set_progress(1.0);
     ctx.set_status("MO2 Installed Successfully!".to_string());
     log_install(&format!("MO2 installation complete: {}", install_name));
@@ -292,6 +295,9 @@ pub fn setup_existing_mo2(
 
     // Setup Global Instance support
     setup_global_instance_symlink(&prefix_root, &existing_path);
+
+    // Create game folders (prevents crashes for games that require them)
+    create_game_folders(&prefix_root);
 
     ctx.set_progress(1.0);
     ctx.set_status("MO2 Setup Complete!".to_string());

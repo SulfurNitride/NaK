@@ -7,7 +7,7 @@ use std::time::Duration;
 use wait_timeout::ChildExt;
 
 use super::{
-    brief_launch_and_kill, fetch_latest_vortex_release, get_install_proton,
+    brief_launch_and_kill, create_game_folders, fetch_latest_vortex_release, get_install_proton,
     install_all_dependencies, TaskContext,
 };
 use crate::config::AppConfig;
@@ -258,6 +258,9 @@ pub fn install_vortex(
         let _ = std::os::unix::fs::symlink(&install_dir, &backlink);
     }
 
+    // Create game folders (prevents crashes for games that require them)
+    create_game_folders(&prefix_root);
+
     ctx.set_progress(1.0);
     ctx.set_status("Vortex Installed Successfully!".to_string());
     log_install(&format!("Vortex installation complete: {}", install_name));
@@ -379,6 +382,9 @@ pub fn setup_existing_vortex(
         }
         let _ = std::os::unix::fs::symlink(&existing_path, &backlink);
     }
+
+    // Create game folders (prevents crashes for games that require them)
+    create_game_folders(&prefix_root);
 
     ctx.set_progress(1.0);
     ctx.set_status("Vortex Setup Complete!".to_string());

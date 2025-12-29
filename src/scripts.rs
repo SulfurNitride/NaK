@@ -113,97 +113,11 @@ fi
     }
 
     /// Get the auto game registry fix block for MO2 portable mode
-    fn get_mo2_registry_fix_block(use_slr: bool) -> String {
-        let run_cmd = if use_slr {
-            r#""$ENTRY_POINT" --verb=waitforexitandrun -- "$PROTON_GE/proton" run"#
-        } else {
-            r#""$PROTON_GE/proton" run"#
-        };
-
-        format!(r#"
-# =============================================================================
-# Auto Game Registry Fix (Portable Mode)
-# =============================================================================
-fix_game_registry() {{
-    local MO2_DIR
-    MO2_DIR=$(dirname "$MO2_EXE")
-    local INI_FILE="$MO2_DIR/ModOrganizer.ini"
-
-    if [ ! -f "$INI_FILE" ]; then
-        # No INI yet (first run), skip registry fix
-        return 0
-    fi
-
-    # Parse gameName from INI
-    local GAME_NAME
-    GAME_NAME=$(grep -E "^gameName=" "$INI_FILE" | cut -d'=' -f2 | tr -d '\r')
-
-    if [ -z "$GAME_NAME" ]; then
-        return 0
-    fi
-
-    # Parse gamePath from INI (format: @ByteArray(Z:\path\to\game))
-    local GAME_PATH
-    GAME_PATH=$(grep -E "^gamePath=" "$INI_FILE" | sed 's/^gamePath=@ByteArray(//' | sed 's/)$//' | tr -d '\r')
-
-    if [ -z "$GAME_PATH" ]; then
-        return 0
-    fi
-
-    # Map game name to registry path
-    local REG_PATH=""
-    case "$GAME_NAME" in
-        "Enderal"|"Enderal Special Edition")
-            REG_PATH="Software\\SureAI\\Enderal"
-            ;;
-        "Fallout 3")
-            REG_PATH="Software\\Bethesda Softworks\\Fallout3"
-            ;;
-        "Fallout 4")
-            REG_PATH="Software\\Bethesda Softworks\\Fallout4"
-            ;;
-        "Fallout 4 VR")
-            REG_PATH="Software\\Bethesda Softworks\\Fallout 4 VR"
-            ;;
-        "New Vegas"|"Fallout New Vegas"|"TTW"|"Tale of Two Wastelands")
-            REG_PATH="Software\\Bethesda Softworks\\FalloutNV"
-            ;;
-        "Morrowind")
-            REG_PATH="Software\\Bethesda Softworks\\Morrowind"
-            ;;
-        "Oblivion")
-            REG_PATH="Software\\Bethesda Softworks\\Oblivion"
-            ;;
-        "Skyrim")
-            REG_PATH="Software\\Bethesda Softworks\\Skyrim"
-            ;;
-        "Skyrim Special Edition")
-            REG_PATH="Software\\Bethesda Softworks\\Skyrim Special Edition"
-            ;;
-        "Skyrim VR")
-            REG_PATH="Software\\Bethesda Softworks\\Skyrim VR"
-            ;;
-        "Starfield")
-            REG_PATH="Software\\Bethesda Softworks\\Starfield"
-            ;;
-        *)
-            # Unknown game, skip
-            return 0
-            ;;
-    esac
-
-    # Apply registry fix silently
-    {run_cmd} reg add "HKLM\\$REG_PATH" /v "Installed Path" /d "$GAME_PATH" /f /reg:32 >/dev/null 2>&1
-
-    # Also set 64-bit registry
-    local WOW64_PATH
-    WOW64_PATH=$(echo "$REG_PATH" | sed 's/^Software\\/SOFTWARE\\Wow6432Node\\/')
-    {run_cmd} reg add "HKLM\\$WOW64_PATH" /v "Installed Path" /d "$GAME_PATH" /f /reg:64 >/dev/null 2>&1
-}}
-
-# Run registry fix before launching
-fix_game_registry
-"#, run_cmd = run_cmd)
+    /// NOTE: Disabled - auto registry fix was removed as it caused issues for users
+    /// with malformed registries or different setups. Users can still run the
+    /// standalone game_registry_fix.sh script manually if needed.
+    fn get_mo2_registry_fix_block(_use_slr: bool) -> String {
+        String::new()
     }
 
     /// Generate a launch command based on SLR setting
@@ -665,6 +579,7 @@ const REGISTRY_FIX_BODY: &str = r#"
 # Format: "Game Name|Registry Path|Value Name"
 declare -a GAMES=(
     "Enderal|Software\SureAI\Enderal|Install_Path"
+    "Enderal Special Edition|Software\SureAI\Enderal SE|installed path"
     "Fallout 3|Software\Bethesda Softworks\Fallout3|Installed Path"
     "Fallout 4|Software\Bethesda Softworks\Fallout4|Installed Path"
     "Fallout 4 VR|Software\Bethesda Softworks\Fallout 4 VR|Installed Path"

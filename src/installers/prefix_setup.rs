@@ -656,3 +656,110 @@ pub fn kill_processes(pids: &[u32]) {
             .status();
     }
 }
+
+// Enderal Special Edition config files (embedded in binary)
+const ENDERAL_SE_INI: &str = include_str!("../../resources/game_configs/enderal_se/Enderal.ini");
+const ENDERAL_SE_PREFS_INI: &str =
+    include_str!("../../resources/game_configs/enderal_se/EnderalPrefs.ini");
+
+/// Create game-specific folders in the Wine prefix
+///
+/// Some games crash on startup if their Documents/My Games folder doesn't exist.
+/// This creates the necessary folder structure for all supported Bethesda/SureAI games.
+/// Also copies premade config files for games that need them (e.g., Enderal SE).
+pub fn create_game_folders(prefix_root: &Path) {
+    let users_dir = prefix_root.join("drive_c/users");
+    let mut username = "steamuser".to_string();
+
+    // Detect the correct user folder
+    if let Ok(entries) = fs::read_dir(&users_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name != "Public" && name != "root" {
+                username = name;
+                break;
+            }
+        }
+    }
+
+    let user_dir = users_dir.join(&username);
+    let documents_dir = user_dir.join("Documents");
+    let my_games_dir = documents_dir.join("My Games");
+    let appdata_local = user_dir.join("AppData/Local");
+
+    // Games that need Documents/My Games/<name>/
+    let my_games_folders = [
+        "Enderal",
+        "Enderal Special Edition",
+        "Fallout3",
+        "Fallout4",
+        "Fallout4VR",
+        "FalloutNV",
+        "Morrowind",
+        "Oblivion",
+        "Skyrim",
+        "Skyrim Special Edition",
+        "Skyrim VR",
+        "Starfield",
+    ];
+
+    // Games that also need AppData/Local/<name>/
+    let appdata_folders = [
+        "Fallout3",
+        "Fallout4",
+        "FalloutNV",
+        "Oblivion",
+        "Skyrim",
+        "Skyrim Special Edition",
+    ];
+
+    // Create My Games folders
+    for game in &my_games_folders {
+        let game_dir = my_games_dir.join(game);
+        if !game_dir.exists() {
+            if let Err(e) = fs::create_dir_all(&game_dir) {
+                log_warning(&format!("Failed to create My Games/{}: {}", game, e));
+            }
+        }
+    }
+
+    // Create AppData/Local folders
+    for game in &appdata_folders {
+        let game_dir = appdata_local.join(game);
+        if !game_dir.exists() {
+            if let Err(e) = fs::create_dir_all(&game_dir) {
+                log_warning(&format!("Failed to create AppData/Local/{}: {}", game, e));
+            }
+        }
+    }
+
+    // Create "My Documents" symlink if it doesn't exist (some games expect this)
+    let my_documents_link = user_dir.join("My Documents");
+    if !my_documents_link.exists() && fs::symlink_metadata(&my_documents_link).is_err() {
+        // Create relative symlink: "My Documents" -> "Documents"
+        if let Err(e) = std::os::unix::fs::symlink("Documents", &my_documents_link) {
+            log_warning(&format!("Failed to create My Documents symlink: {}", e));
+        }
+    }
+
+    // Copy Enderal Special Edition config files
+    // These fix the Enderal Launcher not working properly and set sensible defaults
+    let enderal_se_dir = my_games_dir.join("Enderal Special Edition");
+    if enderal_se_dir.exists() {
+        let enderal_ini = enderal_se_dir.join("Enderal.ini");
+        let enderal_prefs_ini = enderal_se_dir.join("EnderalPrefs.ini");
+
+        if !enderal_ini.exists() {
+            if let Err(e) = fs::write(&enderal_ini, ENDERAL_SE_INI) {
+                log_warning(&format!("Failed to write Enderal.ini: {}", e));
+            }
+        }
+        if !enderal_prefs_ini.exists() {
+            if let Err(e) = fs::write(&enderal_prefs_ini, ENDERAL_SE_PREFS_INI) {
+                log_warning(&format!("Failed to write EnderalPrefs.ini: {}", e));
+            }
+        }
+    }
+
+    log_install("Created game folders in prefix (Documents/My Games, AppData/Local)");
+}

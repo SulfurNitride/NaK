@@ -2230,7 +2230,7 @@ dependencies = [
 
 [[package]]
 name = "nak_rust"
-version = "4.2.2"
+version = "4.2.3"
 dependencies = [
  "chrono",
  "eframe",

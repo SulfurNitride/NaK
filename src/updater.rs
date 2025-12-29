@@ -232,19 +232,6 @@ fn find_binary_in_dir(dir: &Path) -> Result<std::path::PathBuf, Box<dyn Error>> 
     Err("Could not find binary in update archive".into())
 }
 
-/// Restart NaK after update
-pub fn restart_application() -> Result<(), Box<dyn Error>> {
-    let current_exe = std::env::current_exe()?;
-    log_info(&format!("Restarting NaK from: {:?}", current_exe));
-
-    // Spawn the new process
-    std::process::Command::new(&current_exe)
-        .spawn()?;
-
-    // Exit the current process
-    std::process::exit(0);
-}
-
 /// Check if the current executable is in a writable location
 pub fn can_self_update() -> bool {
     match std::env::current_exe() {

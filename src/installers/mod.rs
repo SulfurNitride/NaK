@@ -6,8 +6,8 @@ mod vortex;
 
 pub use mo2::{install_mo2, setup_existing_mo2};
 pub use prefix_setup::{
-    apply_dpi, brief_launch_and_kill, get_install_proton, install_all_dependencies,
-    kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
+    apply_dpi, brief_launch_and_kill, create_game_folders, get_install_proton,
+    install_all_dependencies, kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
 };
 pub use vortex::{install_vortex, setup_existing_vortex};
 
