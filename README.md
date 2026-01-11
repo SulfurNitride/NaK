@@ -22,4 +22,4 @@ Requirements:
 
 My YT: https://www.youtube.com/@sulfurnitride
 
-Made with AI via Claude Code
+Made with AI via Claude Code. In the meantime I'm learning rust when I can. Heres the current [playlist](https://www.youtube.com/watch?v=XRcdnokYx74&list=PLB52iltb95qIMAQNma2nHP7Og9c9mqAXl&pp=gAQB)
