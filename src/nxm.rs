@@ -101,17 +101,75 @@ fi
 
 # Read Proton path from NXM config
 ACTIVE_PROTON_FILE="$NAK_CONFIG_DIR/active_nxm_proton"
-if [ ! -f "$ACTIVE_PROTON_FILE" ]; then
-    zenity --error --text="NXM Proton configuration missing!\n\nRun the 'NXM Toggle.sh' script in your mod manager's 'NaK Tools' folder to reconfigure." --title="NaK Error"
-    exit 1
+PROTON_PATH=""
+PROTON_BIN=""
+
+# Function to find alternative Proton if configured one is missing
+find_proton() {
+    # Search locations: Steam common, user compatibilitytools.d, system compatibilitytools.d
+    local search_paths=(
+        "$STEAM_PATH/steamapps/common/Proton - Experimental"
+        "$STEAM_PATH/compatibilitytools.d"
+        "/usr/share/steam/compatibilitytools.d"
+        "$STEAM_PATH/steamapps/common"
+    )
+
+    for search_dir in "${search_paths[@]}"; do
+        [ ! -d "$search_dir" ] && continue
+
+        # Check if this is a direct Proton path (Proton Experimental)
+        if [ -f "$search_dir/proton" ]; then
+            echo "$search_dir"
+            return 0
+        fi
+
+        # Search subdirectories for Proton installations
+        for dir in "$search_dir"/*/; do
+            [ ! -d "$dir" ] && continue
+            if [ -f "$dir/proton" ]; then
+                # Prefer GE-Proton or versions with "10" in the name (Proton 10+)
+                local name=$(basename "$dir")
+                if [[ "$name" == *"GE-Proton"* ]] || [[ "$name" == *"Proton"*"10"* ]] || [[ "$name" == *"Experimental"* ]] || [[ "$name" == *"CachyOS"* ]] || [[ "$name" == *"cachy"* ]]; then
+                    echo "${dir%/}"
+                    return 0
+                fi
+            fi
+        done
+    done
+
+    # Last resort: find any Proton
+    for search_dir in "${search_paths[@]}"; do
+        [ ! -d "$search_dir" ] && continue
+        for dir in "$search_dir"/*/; do
+            [ -f "$dir/proton" ] && echo "${dir%/}" && return 0
+        done
+    done
+
+    return 1
+}
+
+# Try configured Proton first
+if [ -f "$ACTIVE_PROTON_FILE" ]; then
+    PROTON_PATH=$(cat "$ACTIVE_PROTON_FILE")
+    PROTON_BIN="$PROTON_PATH/proton"
 fi
 
-PROTON_PATH=$(cat "$ACTIVE_PROTON_FILE")
-PROTON_BIN="$PROTON_PATH/proton"
-
+# If configured Proton is missing, search for alternatives
 if [ ! -f "$PROTON_BIN" ]; then
-    zenity --error --text="Proton binary not found!\n\nPath: $PROTON_BIN\n\nThe Proton may have been moved or deleted. Run 'NXM Toggle.sh' again after reinstalling." --title="NaK Error"
-    exit 1
+    echo "NaK: Configured Proton not found at: $PROTON_PATH"
+    echo "NaK: Searching for alternative Proton..."
+
+    ALT_PROTON=$(find_proton)
+    if [ -n "$ALT_PROTON" ] && [ -f "$ALT_PROTON/proton" ]; then
+        echo "NaK: Found alternative Proton: $ALT_PROTON"
+        PROTON_PATH="$ALT_PROTON"
+        PROTON_BIN="$PROTON_PATH/proton"
+        # Update config for future use
+        echo "$PROTON_PATH" > "$ACTIVE_PROTON_FILE"
+    else
+        zenity --error --text="No Proton installation found!\n\nThe configured Proton was not found and no alternative could be located.\n\nPlease ensure Proton is installed via Steam or run 'NXM Toggle.sh' again." --title="NaK Error"
+        exit 1
+    fi
 fi
 
 # Determine the mod manager type and process name
@@ -119,12 +177,15 @@ NXM_DIR=$(dirname "$NXM_EXE")
 if [ -f "$NXM_DIR/ModOrganizer.exe" ]; then
     MOD_MANAGER="MO2"
     PROCESS_NAME="ModOrganizer.exe"
+    NXM_ARGS=""
 elif [ -f "$NXM_DIR/Vortex.exe" ]; then
     MOD_MANAGER="Vortex"
     PROCESS_NAME="Vortex.exe"
+    NXM_ARGS="-d"  # Vortex requires -d flag for NXM download handling
 else
     MOD_MANAGER="Unknown"
     PROCESS_NAME=""
+    NXM_ARGS=""
 fi
 
 # Check if mod manager is already running (look for wine process with the exe name)
@@ -171,11 +232,15 @@ export STEAM_COMPAT_DATA_PATH="${WINEPREFIX%/pfx}"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
 export WINEDLLOVERRIDES="winemenubuilder.exe="
 
-# Launch nxmhandler.exe directly with Proton
+# Launch mod manager with NXM link via Proton
 echo "NaK: Handling NXM link via direct Proton launch..."
 echo "  EXE: $NXM_EXE"
 echo "  URL: $NXM_URL"
-"$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
+if [ -n "$NXM_ARGS" ]; then
+    "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
+else
+    "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
+fi
 "##;
 
         let mut file = fs::File::create(&script_path)?;

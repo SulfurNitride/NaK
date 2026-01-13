@@ -119,21 +119,23 @@ pub fn detect_extra_mounts() -> Vec<String> {
     mounts
 }
 
-/// DXVK configuration to disable Graphics Pipeline Library
-/// (can cause issues with modded games)
-const DXVK_CONFIG: &str = r#"DXVK_CONFIG="dxvk.enableGraphicsPipelineLibrary = False""#;
-
-/// Generate launch options string with DXVK config and STEAM_COMPAT_MOUNTS
+/// Generate launch options string with DXVK config file and STEAM_COMPAT_MOUNTS
 ///
 /// Returns something like:
-/// `DXVK_CONFIG="..." STEAM_COMPAT_MOUNTS=/mnt:/media:/opt %command%`
-pub fn generate_launch_options() -> String {
+/// `DXVK_CONFIG_FILE="/path/to/dxvk.conf" STEAM_COMPAT_MOUNTS=/mnt:/media:/opt %command%`
+pub fn generate_launch_options(dxvk_conf_path: Option<&std::path::Path>) -> String {
     let mounts = detect_extra_mounts();
 
-    if mounts.is_empty() {
-        format!("{} %command%", DXVK_CONFIG)
-    } else {
-        format!("{} STEAM_COMPAT_MOUNTS={} %command%", DXVK_CONFIG, mounts.join(":"))
+    let dxvk_part = match dxvk_conf_path {
+        Some(path) => format!("DXVK_CONFIG_FILE=\"{}\"", path.display()),
+        None => String::new(),
+    };
+
+    match (dxvk_part.is_empty(), mounts.is_empty()) {
+        (true, true) => "%command%".to_string(),
+        (true, false) => format!("STEAM_COMPAT_MOUNTS={} %command%", mounts.join(":")),
+        (false, true) => format!("{} %command%", dxvk_part),
+        (false, false) => format!("{} STEAM_COMPAT_MOUNTS={} %command%", dxvk_part, mounts.join(":")),
     }
 }
 
@@ -161,13 +163,18 @@ mod mount_tests {
 
     #[test]
     fn test_generate_launch_options() {
-        let options = generate_launch_options();
-        println!("Generated launch options: {}", options);
+        // Test without dxvk.conf
+        let options = generate_launch_options(None);
+        println!("Generated launch options (no dxvk): {}", options);
+        assert!(options.contains("%command%"));
 
-        // Should always have DXVK_CONFIG and %command%
-        assert!(options.contains("DXVK_CONFIG="));
-        assert!(options.contains("enableGraphicsPipelineLibrary"));
-        assert!(options.ends_with(" %command%"));
+        // Test with dxvk.conf path
+        let dxvk_path = std::path::Path::new("/test/path/dxvk.conf");
+        let options = generate_launch_options(Some(dxvk_path));
+        println!("Generated launch options (with dxvk): {}", options);
+        assert!(options.contains("DXVK_CONFIG_FILE="));
+        assert!(options.contains("/test/path/dxvk.conf"));
+        assert!(options.ends_with("%command%"));
     }
 }
 
@@ -198,6 +205,7 @@ pub struct SteamShortcutResult {
 /// * `exe_path` - Path to the executable (e.g., "/path/to/ModOrganizer.exe")
 /// * `start_dir` - Working directory for the exe
 /// * `proton_name` - Proton config name (e.g., "GE-Proton9-20", "proton_experimental")
+/// * `dxvk_conf_path` - Optional path to dxvk.conf file for DXVK_CONFIG_FILE env var
 ///
 /// # Returns
 /// `SteamShortcutResult` with AppID and prefix paths
@@ -206,13 +214,14 @@ pub fn add_mod_manager_shortcut(
     exe_path: &str,
     start_dir: &str,
     proton_name: &str,
+    dxvk_conf_path: Option<&std::path::Path>,
 ) -> Result<SteamShortcutResult, Box<dyn std::error::Error>> {
     // 1. Load existing shortcuts
     let mut vdf = ShortcutsVdf::load()?;
 
-    // 2. Generate launch options with STEAM_COMPAT_MOUNTS
-    let launch_options = generate_launch_options();
-    if !launch_options.is_empty() {
+    // 2. Generate launch options with DXVK_CONFIG_FILE and STEAM_COMPAT_MOUNTS
+    let launch_options = generate_launch_options(dxvk_conf_path);
+    if !launch_options.is_empty() && launch_options != "%command%" {
         crate::logging::log_install(&format!("Setting launch options: {}", launch_options));
     }
 

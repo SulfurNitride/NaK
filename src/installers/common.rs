@@ -6,7 +6,7 @@
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::logging::{log_error, log_install, log_warning};
 
@@ -14,6 +14,77 @@ use super::TaskContext;
 
 // Re-export ManagerType from config for use in other installer modules
 pub use crate::config::ManagerType;
+
+// ============================================================================
+// DXVK Configuration
+// ============================================================================
+
+/// URL to the latest dxvk.conf template from the DXVK repository
+const DXVK_CONF_URL: &str = "https://raw.githubusercontent.com/doitsujin/dxvk/master/dxvk.conf";
+
+/// Custom DXVK settings to append to the config file
+const DXVK_CUSTOM_SETTINGS: &str = r#"
+# =============================================================================
+# NaK Custom Settings
+# =============================================================================
+
+# Disable Graphics Pipeline Library (can cause issues with modded games)
+dxvk.enableGraphicsPipelineLibrary = False
+"#;
+
+/// Download dxvk.conf from GitHub and append custom settings
+/// Returns the path to the created config file
+pub fn download_and_create_dxvk_conf(install_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let tools_dir = install_dir.join("NaK Tools");
+    fs::create_dir_all(&tools_dir)?;
+
+    let dxvk_conf_path = tools_dir.join("dxvk.conf");
+
+    // Try to download the latest dxvk.conf from GitHub
+    let base_config = match download_dxvk_conf_template() {
+        Ok(content) => {
+            log_install("Downloaded latest dxvk.conf from DXVK repository");
+            content
+        }
+        Err(e) => {
+            log_warning(&format!("Could not download dxvk.conf: {}. Using minimal config.", e));
+            // Fallback minimal config
+            "# DXVK Configuration File\n# See https://github.com/doitsujin/dxvk for all options\n".to_string()
+        }
+    };
+
+    // Append our custom settings
+    let full_config = format!("{}\n{}", base_config, DXVK_CUSTOM_SETTINGS);
+
+    // Write to file
+    fs::write(&dxvk_conf_path, full_config)?;
+    log_install(&format!("Created dxvk.conf at {:?}", dxvk_conf_path));
+
+    Ok(dxvk_conf_path)
+}
+
+/// Download the dxvk.conf template from GitHub
+fn download_dxvk_conf_template() -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Read;
+    use std::time::Duration;
+
+    let agent = ureq::AgentBuilder::new()
+        .timeout_read(Duration::from_secs(30))
+        .timeout_write(Duration::from_secs(10))
+        .build();
+
+    let response = agent.get(DXVK_CONF_URL).call()?;
+
+    let mut content = String::new();
+    response.into_reader().take(512 * 1024).read_to_string(&mut content)?; // Max 512KB
+
+    Ok(content)
+}
+
+/// Get the path where dxvk.conf will be created (for use before actual creation)
+pub fn get_dxvk_conf_path(install_dir: &Path) -> PathBuf {
+    install_dir.join("NaK Tools").join("dxvk.conf")
+}
 
 // ============================================================================
 // Shared Installation Errors
@@ -268,27 +339,32 @@ pub fn create_nak_tools_folder(
 
     // === All scripts go in NaK Tools folder for better organization ===
 
-    // 2. Create Launch script
+    // 2. Download and create dxvk.conf (non-fatal if download fails)
+    if let Err(e) = download_and_create_dxvk_conf(install_dir) {
+        log_warning(&format!("Could not create dxvk.conf: {}", e));
+    }
+
+    // 3. Create Launch script
     let launch_script = generate_steam_launch_script(app_id, manager_name);
     write_script(&tools_dir.join(format!("Launch {}.sh", manager_name)), &launch_script)?;
     log_install(&format!("Created Launch {} script", manager_name));
 
-    // 3. Create NXM Toggle script
+    // 4. Create NXM Toggle script
     let nxm_script = generate_nxm_toggle_script(app_id, manager_name, install_dir, prefix_path, proton_path);
     write_script(&tools_dir.join("NXM Toggle.sh"), &nxm_script)?;
     log_install("Created NXM Toggle script");
 
-    // 4. Create Fix Game Registry script
+    // 5. Create Fix Game Registry script
     let registry_script = generate_fix_registry_script(manager_name, prefix_path, proton_path);
     write_script(&tools_dir.join("Fix Game Registry.sh"), &registry_script)?;
     log_install("Created Fix Game Registry script");
 
-    // 5. Create Import Saves script
+    // 6. Create Import Saves script
     let import_script = generate_import_saves_script(prefix_path);
     write_script(&tools_dir.join("Import Saves.sh"), &import_script)?;
     log_install("Created Import Saves script");
 
-    // 6. Create Winetricks GUI script
+    // 7. Create Winetricks GUI script
     let winetricks_script = generate_winetricks_gui_script(prefix_path);
     write_script(&tools_dir.join("Winetricks.sh"), &winetricks_script)?;
     log_install("Created Winetricks GUI script");
@@ -512,12 +588,21 @@ APP_ID={}
 MANAGER_NAME="{}"
 NXM_EXE="{}"
 PREFIX_PATH="{}"
-PROTON_PATH="{}"
+DEFAULT_PROTON_PATH="{}"
 NAK_CONFIG_DIR="${{XDG_CONFIG_HOME:-$HOME/.config}}/nak"
 ACTIVE_APPID_FILE="$NAK_CONFIG_DIR/active_nxm_appid"
 ACTIVE_EXE_FILE="$NAK_CONFIG_DIR/active_nxm_exe"
 ACTIVE_PREFIX_FILE="$NAK_CONFIG_DIR/active_nxm_prefix"
 ACTIVE_PROTON_FILE="$NAK_CONFIG_DIR/active_nxm_proton"
+
+# Find Steam path
+if [ -d "$HOME/.steam/steam" ]; then
+    STEAM_PATH="$HOME/.steam/steam"
+elif [ -d "$HOME/.local/share/Steam" ]; then
+    STEAM_PATH="$HOME/.local/share/Steam"
+else
+    STEAM_PATH=""
+fi
 
 echo "=================================================="
 echo "NaK NXM Handler Toggle"
@@ -526,14 +611,90 @@ echo "Steam AppID: $APP_ID"
 echo "=================================================="
 echo ""
 
+# Function to find all available Protons
+find_all_protons() {{
+    declare -g -a PROTON_PATHS=()
+    declare -g -a PROTON_NAMES=()
+
+    # Search locations
+    local search_dirs=()
+    [ -n "$STEAM_PATH" ] && search_dirs+=("$STEAM_PATH/steamapps/common")
+    [ -n "$STEAM_PATH" ] && search_dirs+=("$STEAM_PATH/compatibilitytools.d")
+    search_dirs+=("/usr/share/steam/compatibilitytools.d")
+
+    for search_dir in "${{search_dirs[@]}}"; do
+        [ ! -d "$search_dir" ] && continue
+
+        for dir in "$search_dir"/*/; do
+            [ ! -d "$dir" ] && continue
+            if [ -f "$dir/proton" ]; then
+                local name=$(basename "$dir")
+                # Filter to Proton 10+ (skip older versions)
+                if [[ "$name" == *"GE-Proton"* ]]; then
+                    # GE-Proton: check version number
+                    local ver=$(echo "$name" | sed -n 's/GE-Proton\([0-9]*\).*/\1/p')
+                    [ -n "$ver" ] && [ "$ver" -lt 10 ] && continue
+                elif [[ "$name" == "Proton "* ]]; then
+                    # Steam Proton: check version
+                    local ver=$(echo "$name" | sed -n 's/Proton \([0-9]*\).*/\1/p')
+                    [ -n "$ver" ] && [ "$ver" -lt 10 ] && continue
+                fi
+                PROTON_PATHS+=("${{dir%/}}")
+                PROTON_NAMES+=("$name")
+            fi
+        done
+    done
+}}
+
+# Function to select Proton
+select_proton() {{
+    find_all_protons
+
+    if [ ${{#PROTON_PATHS[@]}} -eq 0 ]; then
+        echo "ERROR: No Proton installations found!"
+        echo "Please install Proton via Steam or ProtonUp-Qt."
+        return 1
+    fi
+
+    echo ""
+    echo "Available Proton versions:"
+    echo ""
+    for i in "${{!PROTON_NAMES[@]}}"; do
+        local marker=""
+        # Mark the default/currently configured one
+        if [ "${{PROTON_PATHS[$i]}}" == "$DEFAULT_PROTON_PATH" ]; then
+            marker=" (default)"
+        elif [ -f "$ACTIVE_PROTON_FILE" ] && [ "${{PROTON_PATHS[$i]}}" == "$(cat "$ACTIVE_PROTON_FILE")" ]; then
+            marker=" (current)"
+        fi
+        echo "  $((i+1)). ${{PROTON_NAMES[$i]}}$marker"
+    done
+    echo ""
+
+    read -p "Select Proton (1-${{#PROTON_PATHS[@]}}): " choice
+
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${{#PROTON_PATHS[@]}} ]; then
+        echo "Invalid selection, using default."
+        SELECTED_PROTON="$DEFAULT_PROTON_PATH"
+    else
+        SELECTED_PROTON="${{PROTON_PATHS[$((choice-1))]}}"
+    fi
+
+    echo ""
+    echo "Selected: $(basename "$SELECTED_PROTON")"
+}}
+
 enable_nxm() {{
+    select_proton || return 1
+
     mkdir -p "$NAK_CONFIG_DIR"
     echo "$APP_ID" > "$ACTIVE_APPID_FILE"
     echo "$NXM_EXE" > "$ACTIVE_EXE_FILE"
     echo "$PREFIX_PATH" > "$ACTIVE_PREFIX_FILE"
-    echo "$PROTON_PATH" > "$ACTIVE_PROTON_FILE"
+    echo "$SELECTED_PROTON" > "$ACTIVE_PROTON_FILE"
     echo ""
     echo "✓ NXM handling enabled for this instance"
+    echo "  Using Proton: $(basename "$SELECTED_PROTON")"
 }}
 
 disable_nxm() {{
@@ -542,22 +703,33 @@ disable_nxm() {{
     echo "✓ NXM handling disabled for this instance"
 }}
 
+change_proton() {{
+    select_proton || return 1
+    echo "$SELECTED_PROTON" > "$ACTIVE_PROTON_FILE"
+    echo ""
+    echo "✓ Proton updated to: $(basename "$SELECTED_PROTON")"
+}}
+
 # Check current status
 if [ -f "$ACTIVE_APPID_FILE" ]; then
     CURRENT_APPID=$(cat "$ACTIVE_APPID_FILE")
     if [ "$CURRENT_APPID" == "$APP_ID" ]; then
+        CURRENT_PROTON=""
+        [ -f "$ACTIVE_PROTON_FILE" ] && CURRENT_PROTON=$(basename "$(cat "$ACTIVE_PROTON_FILE")")
         echo "Status: ENABLED (this instance handles NXM links)"
+        [ -n "$CURRENT_PROTON" ] && echo "Proton: $CURRENT_PROTON"
         echo ""
         echo "Options:"
-        echo "  1. Disable NXM handling for this instance"
-        echo "  2. Keep enabled"
-        read -p "Choice (1-2): " choice
+        echo "  1. Disable NXM handling"
+        echo "  2. Change Proton version"
+        echo "  3. Keep current settings"
+        read -p "Choice (1-3): " choice
 
-        if [ "$choice" == "1" ]; then
-            disable_nxm
-        else
-            echo "Keeping NXM handling enabled."
-        fi
+        case "$choice" in
+            1) disable_nxm ;;
+            2) change_proton ;;
+            *) echo "Keeping current settings." ;;
+        esac
     else
         echo "Status: DISABLED (another instance handles NXM: AppID $CURRENT_APPID)"
         echo ""

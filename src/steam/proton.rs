@@ -34,8 +34,11 @@ pub fn find_steam_protons() -> Vec<SteamProton> {
     // 1. Steam's built-in Protons (steamapps/common/Proton*)
     protons.extend(find_builtin_protons(&steam_path));
 
-    // 2. Custom Protons in compatibilitytools.d
+    // 2. Custom Protons in user's compatibilitytools.d
     protons.extend(find_custom_protons(&steam_path));
+
+    // 3. System-level Protons in /usr/share/steam/compatibilitytools.d/
+    protons.extend(find_system_protons());
 
     // Filter to only include Proton 10+ (required for Steam-native integration)
     protons.retain(is_proton_10_or_newer);
@@ -175,6 +178,43 @@ fn find_custom_protons(steam_path: &std::path::Path) -> Vec<SteamProton> {
 
         if has_proton || has_vdf {
             // For custom Protons, config_name is usually the folder name
+            found.push(SteamProton {
+                name: name.clone(),
+                config_name: name.clone(),
+                path,
+                is_steam_proton: false,
+                is_experimental: false,
+            });
+        }
+    }
+
+    found
+}
+
+/// Find system-level Protons in /usr/share/steam/compatibilitytools.d/
+/// These are typically installed via system packages (e.g., proton-cachyos, proton-ge)
+fn find_system_protons() -> Vec<SteamProton> {
+    let mut found = Vec::new();
+    let system_compat_dir = PathBuf::from("/usr/share/steam/compatibilitytools.d");
+
+    let Ok(entries) = fs::read_dir(&system_compat_dir) else {
+        return found;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Check for valid Proton (has proton script or compatibilitytool.vdf)
+        let has_proton = path.join("proton").exists();
+        let has_vdf = path.join("compatibilitytool.vdf").exists();
+
+        if has_proton || has_vdf {
+            // For system Protons, config_name is the folder name
             found.push(SteamProton {
                 name: name.clone(),
                 config_name: name.clone(),

@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 use wait_timeout::ChildExt;
 
-use super::common::{check_cancelled, check_disk_space, finalize_steam_installation_with_tools, InstallError, ManagerType};
+use super::common::{check_cancelled, check_disk_space, finalize_steam_installation_with_tools, get_dxvk_conf_path, InstallError, ManagerType};
 use super::{fetch_latest_vortex_release, install_all_dependencies, TaskContext};
 use crate::config::{AppConfig, ManagedPrefixes};
 use crate::logging::{log_download, log_error, log_install};
@@ -76,11 +76,13 @@ pub fn install_vortex(
     ctx.set_progress(0.05);
 
     let exe_path = install_path.join("Vortex.exe");
+    let dxvk_conf_path = get_dxvk_conf_path(&install_path);
     let steam_result = steam::add_mod_manager_shortcut(
         install_name,
         exe_path.to_str().unwrap_or(""),
         install_path.to_str().unwrap_or(""),
         &proton.config_name,
+        Some(&dxvk_conf_path),
     ).map_err(|e| InstallError::SteamError { reason: e.to_string() })?;
 
     log_install(&format!(
@@ -282,11 +284,13 @@ pub fn setup_existing_vortex(
     ctx.set_status("Creating Steam shortcut...".to_string());
     ctx.set_progress(0.05);
 
+    let dxvk_conf_path = get_dxvk_conf_path(&actual_install_dir);
     let steam_result = steam::add_mod_manager_shortcut(
         install_name,
         vortex_exe.to_str().unwrap_or(""),
         actual_install_dir.to_str().unwrap_or(""),
         &proton.config_name,
+        Some(&dxvk_conf_path),
     ).map_err(|e| InstallError::SteamError { reason: e.to_string() })?;
 
     log_install(&format!(
