@@ -3,233 +3,71 @@
 //! This module handles all the common dependency installation logic
 //! shared between MO2 and Vortex installers.
 //!
-//! Key approach for .NET Framework installation:
-//! 1. Remove mono
-//! 2. Set winxp → install dotnet40
-//! 3. Set win7 → install dotnet48 + dotnet481 (win7 avoids "already installed" detection)
-//! 4. Set win11 for normal operation
-//! 5. Install remaining dependencies via winetricks
+//! Key approach (Jackify-style):
+//! 1. Install dependencies via native deps system (vcrun2022, physx, etc.)
+//! 2. Apply universal dotnet4.x registry fixes (*mscoree=native, OnlyUseLatestCLR=1)
+//!
+//! This approach replaces installing dotnet40/dotnet48/etc which caused Wine version
+//! mismatch issues. The registry fixes tell Wine to use native .NET runtime.
 
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
-use super::{apply_wine_registry_settings, TaskContext, DOTNET9_SDK_URL, STANDARD_DEPS};
+use super::{apply_wine_registry_settings, TaskContext};
 use crate::config::AppConfig;
-use crate::logging::{log_download, log_error, log_install, log_warning};
-use crate::utils::{detect_steam_path, download_file};
-use crate::wine::{ensure_dotnet48_proton, DependencyManager, ProtonInfo};
+use crate::deps::wine_utils::apply_universal_dotnet_fixes;
+use crate::deps::{DepInstallContext, NativeDependencyManager, STANDARD_DEPS};
+use crate::logging::{log_error, log_install, log_warning};
+use crate::steam::{detect_steam_path_checked, SteamProton};
 
-// .NET Framework installer URLs
-const DOTNET40_URL: &str = "https://download.microsoft.com/download/9/5/A/95A9616B-7A37-4AF6-BC36-D6EA96C8DAAE/dotNetFx40_Full_x86_x64.exe";
-const DOTNET48_URL: &str = "https://download.visualstudio.microsoft.com/download/pr/7afca223-55d2-470a-8edc-6a1739ae3252/abd170b4b0ec15ad0222a809b761a036/ndp48-x86-x64-allos-enu.exe";
-const DOTNET481_URL: &str = "https://download.visualstudio.microsoft.com/download/pr/6f083c7e-bd40-44d4-9e3f-ffba71ec8b09/3951fd5af6098f2c7e8ff5c331a0679c/ndp481-x86-x64-allos-enu.exe";
+// =============================================================================
+// Constants
+// =============================================================================
 
-/// Get the proton to use for .NET Framework installation.
-/// Valve Proton versions fail to install dotnet48 properly, so we use GE-Proton10-18 for those.
-/// GE-Proton versions work fine with the win7 approach.
-pub fn get_install_proton(proton: &ProtonInfo, ctx: &TaskContext) -> ProtonInfo {
-    if proton.needs_ge_proton_workaround() {
-        log_install(&format!(
-            "{} needs GE-Proton10-18 workaround for dotnet installation",
-            proton.name
-        ));
-        ctx.set_status("Preparing GE-Proton10-18 for dotnet installation...".to_string());
+/// Default Wine prefix username (Proton always uses this)
+const PREFIX_USERNAME: &str = "steamuser";
 
-        let status_cb = {
-            let ctx = ctx.clone();
-            move |msg: &str| ctx.log(msg.to_string())
-        };
-
-        match ensure_dotnet48_proton(status_cb) {
-            Ok(p) => {
-                log_install(&format!("Using {} for dotnet installation", p.name));
-                p
-            }
-            Err(e) => {
-                log_warning(&format!(
-                    "Failed to get GE-Proton10-18: {}, falling back to {}",
-                    e, proton.name
-                ));
-                proton.clone()
-            }
-        }
-    } else {
-        log_install(&format!("Using {} for dotnet installation (no workaround needed)", proton.name));
-        proton.clone()
-    }
+/// Create a DepInstallContext from TaskContext
+fn create_dep_context(
+    prefix: &Path,
+    proton: &SteamProton,
+    ctx: &TaskContext,
+) -> DepInstallContext {
+    let log_ctx = ctx.clone();
+    DepInstallContext::new(
+        prefix.to_path_buf(),
+        proton.clone(),
+        move |msg| log_ctx.log(msg),
+        ctx.cancel_flag.clone(),
+    )
 }
 
-/// Install all dependencies to a prefix.
-/// For Proton 10+: Installs .NET Framework 4.0/4.8/4.8.1 using manual approach.
-/// For Proton < 10: Skips .NET Framework installation entirely.
-/// Always installs: registry settings, standard deps via winetricks, and .NET 9 SDK.
+/// Install all dependencies to a prefix using Jackify-style approach.
 ///
-/// # Arguments
-/// * `prefix_root` - The prefix path (ending in /pfx)
-/// * `install_proton` - The proton to use for installation
-/// * `ctx` - Task context for status updates and cancellation
-/// * `start_progress` - Starting progress value (0.0-1.0)
-/// * `end_progress` - Ending progress value (0.0-1.0)
-/// * `user_proton` - The user's originally selected proton (for version checking)
+/// Installs: registry settings, standard deps (vcrun2022, physx, etc.),
+/// and universal dotnet4.x registry fixes.
+///
+/// This approach replaces installing dotnet40/dotnet48/etc which caused Wine version
+/// mismatch issues. The registry fixes tell Wine to use native .NET runtime.
 pub fn install_all_dependencies(
     prefix_root: &Path,
-    install_proton: &ProtonInfo,
+    install_proton: &SteamProton,
     ctx: &TaskContext,
     start_progress: f32,
     end_progress: f32,
 ) -> Result<(), Box<dyn Error>> {
-    let config = AppConfig::load();
-    let dep_mgr = DependencyManager::new(ctx.winetricks_path.clone());
-    let tmp_dir = config.get_data_path().join("tmp");
-    fs::create_dir_all(&tmp_dir)?;
+    fs::create_dir_all(AppConfig::get_tmp_path())?;
 
-    // Check if we need to install .NET Framework (only for Proton 10+)
-    let needs_dotnet = install_proton.is_proton_10_plus();
+    // Create NativeDependencyManager for all dep operations
+    let dep_ctx = create_dep_context(prefix_root, install_proton, ctx);
+    let dep_mgr = NativeDependencyManager::new(dep_ctx);
 
-    // Calculate progress ranges
-    let dotnet_steps = if needs_dotnet { 4 } else { 0 }; // remove_mono, dotnet40, dotnet48, dotnet481
-    let total_steps = dotnet_steps + 1 + STANDARD_DEPS.len() + 1; // + registry + deps + dotnet9sdk
+    // Calculate progress ranges: registry + deps + dotnet_fixes
+    let total_steps = 1 + STANDARD_DEPS.len() + 1; // registry + deps + dotnet_fixes
     let progress_per_step = (end_progress - start_progress) / total_steps as f32;
     let mut current_step = 0;
-
-    let log_cb = {
-        let ctx = ctx.clone();
-        move |msg: String| ctx.log(msg)
-    };
-
-    // Helper to run winetricks commands
-    let run_winetricks = |cmd: &str, ctx: &TaskContext| -> Result<(), Box<dyn Error>> {
-        dep_mgr.run_winetricks_command(prefix_root, install_proton, cmd, {
-            let ctx = ctx.clone();
-            move |msg: String| ctx.log(msg)
-        }, ctx.cancel_flag.clone())
-    };
-
-    // =========================================================================
-    // .NET Framework Installation (Only for Proton 10+)
-    // =========================================================================
-    if needs_dotnet {
-        log_install(&format!(
-            "Proton 10+ detected ({}) - installing .NET Framework",
-            install_proton.name
-        ));
-
-        // 1. Remove Mono and set winxp for dotnet40
-        ctx.set_status("Removing Wine Mono...".to_string());
-        log_install("Removing Wine Mono for .NET Framework installation");
-
-        if let Err(e) = run_winetricks("remove_mono", ctx) {
-            ctx.log(format!("Warning: remove_mono failed: {}", e));
-            log_warning(&format!("remove_mono failed: {}", e));
-        }
-
-        if ctx.is_cancelled() {
-            return Err("Cancelled".into());
-        }
-
-        ctx.set_status("Setting Windows XP for dotnet40...".to_string());
-        log_install("Setting Windows version to winxp for dotnet40");
-        if let Err(e) = run_winetricks("winxp", ctx) {
-            log_warning(&format!("Failed to set winxp: {}", e));
-        }
-
-        current_step += 1;
-        ctx.set_progress(start_progress + (current_step as f32 * progress_per_step));
-
-        if ctx.is_cancelled() {
-            return Err("Cancelled".into());
-        }
-
-        // 2. Install .NET Framework 4.0
-        ctx.set_status("Installing .NET Framework 4.0...".to_string());
-        log_install("Installing .NET Framework 4.0");
-
-        let dotnet40_installer = tmp_dir.join("dotNetFx40_Full_x86_x64.exe");
-        if !dotnet40_installer.exists() {
-            ctx.log("Downloading .NET Framework 4.0...".to_string());
-            log_download("Downloading .NET Framework 4.0...");
-            download_file(DOTNET40_URL, &dotnet40_installer)?;
-            log_download("Downloaded .NET Framework 4.0");
-        }
-
-        run_dotnet_installer(prefix_root, install_proton, &dotnet40_installer, ctx)?;
-        log_install(".NET Framework 4.0 installed successfully");
-
-        current_step += 1;
-        ctx.set_progress(start_progress + (current_step as f32 * progress_per_step));
-
-        if ctx.is_cancelled() {
-            return Err("Cancelled".into());
-        }
-
-        // 3. Set win7 and install .NET Framework 4.8
-        // IMPORTANT: Use win7, NOT win11! The dotnet48 installer detects Windows 11
-        // as having .NET 4.8 built-in and skips installation.
-        ctx.set_status("Setting Windows 7 for dotnet48...".to_string());
-        log_install("Setting Windows version to win7 for dotnet48 (avoids built-in detection)");
-        if let Err(e) = run_winetricks("win7", ctx) {
-            log_warning(&format!("Failed to set win7: {}", e));
-        }
-
-        ctx.set_status("Installing .NET Framework 4.8...".to_string());
-        log_install("Installing .NET Framework 4.8");
-
-        let dotnet48_installer = tmp_dir.join("ndp48-x86-x64-allos-enu.exe");
-        if !dotnet48_installer.exists() {
-            ctx.log("Downloading .NET Framework 4.8...".to_string());
-            log_download("Downloading .NET Framework 4.8...");
-            download_file(DOTNET48_URL, &dotnet48_installer)?;
-            log_download("Downloaded .NET Framework 4.8");
-        }
-
-        run_dotnet_installer(prefix_root, install_proton, &dotnet48_installer, ctx)?;
-        log_install(".NET Framework 4.8 installed successfully");
-
-        current_step += 1;
-        ctx.set_progress(start_progress + (current_step as f32 * progress_per_step));
-
-        if ctx.is_cancelled() {
-            return Err("Cancelled".into());
-        }
-
-        // 4. Install .NET Framework 4.8.1
-        ctx.set_status("Installing .NET Framework 4.8.1...".to_string());
-        log_install("Installing .NET Framework 4.8.1");
-
-        let dotnet481_installer = tmp_dir.join("ndp481-x86-x64-allos-enu.exe");
-        if !dotnet481_installer.exists() {
-            ctx.log("Downloading .NET Framework 4.8.1...".to_string());
-            log_download("Downloading .NET Framework 4.8.1...");
-            download_file(DOTNET481_URL, &dotnet481_installer)?;
-            log_download("Downloaded .NET Framework 4.8.1");
-        }
-
-        run_dotnet_installer(prefix_root, install_proton, &dotnet481_installer, ctx)?;
-        log_install(".NET Framework 4.8.1 installed successfully");
-
-        current_step += 1;
-        ctx.set_progress(start_progress + (current_step as f32 * progress_per_step));
-
-        if ctx.is_cancelled() {
-            return Err("Cancelled".into());
-        }
-
-        // 5. Set win11 for normal operation
-        ctx.set_status("Setting Windows 11 for normal operation...".to_string());
-        log_install("Setting Windows version to win11");
-        if let Err(e) = run_winetricks("win11", ctx) {
-            log_warning(&format!("Failed to set win11: {}", e));
-        }
-    } else {
-        // Proton < 10: Skip .NET Framework installation
-        log_install(&format!(
-            "Proton < 10 detected ({}) - skipping .NET Framework installation",
-            install_proton.name
-        ));
-        ctx.log("Skipping .NET Framework installation (not needed for Proton < 10)".to_string());
-    }
 
     // =========================================================================
     // Registry Settings
@@ -237,6 +75,11 @@ pub fn install_all_dependencies(
     ctx.set_status("Applying Wine Registry Settings...".to_string());
     ctx.log("Applying Wine Registry Settings...".to_string());
     log_install("Applying Wine registry settings");
+
+    let log_cb = {
+        let ctx = ctx.clone();
+        move |msg: String| ctx.log(msg)
+    };
     apply_wine_registry_settings(prefix_root, install_proton, &log_cb)?;
 
     current_step += 1;
@@ -247,8 +90,11 @@ pub fn install_all_dependencies(
     }
 
     // =========================================================================
-    // 7. Standard Dependencies via winetricks
+    // Standard Dependencies via Native System (NO WINETRICKS!)
     // =========================================================================
+    // Critical dependencies that MUST succeed - failure stops the entire installation
+    const CRITICAL_DEPS: &[&str] = &["vcrun2022"];
+
     let total = STANDARD_DEPS.len();
     for (i, dep) in STANDARD_DEPS.iter().enumerate() {
         if ctx.is_cancelled() {
@@ -261,35 +107,40 @@ pub fn install_all_dependencies(
             "Installing dependency {}/{}: {}...",
             i + 1,
             total,
-            dep
+            dep.name
         ));
         log_install(&format!(
             "Installing dependency {}/{}: {}",
             i + 1,
             total,
-            dep
+            dep.name
         ));
 
-        let log_cb = {
-            let ctx = ctx.clone();
-            move |msg: String| ctx.log(msg)
-        };
+        // Install using NativeDependencyManager
+        if let Err(e) = dep_mgr.install_dep(dep) {
+            let is_critical = CRITICAL_DEPS.contains(&dep.id);
 
-        if let Err(e) = dep_mgr.install_dependencies(
-            prefix_root,
-            install_proton,
-            &[dep],
-            log_cb,
-            ctx.cancel_flag.clone(),
-        ) {
-            ctx.set_status(format!(
-                "Warning: Failed to install {}: {} (Continuing...)",
-                dep, e
-            ));
-            ctx.log(format!("Warning: Failed to install {}: {}", dep, e));
-            log_warning(&format!("Failed to install {}: {}", dep, e));
+            if is_critical {
+                // Critical dependency failed - stop the entire installation
+                let err_msg = format!(
+                    "Critical dependency '{}' failed to install: {}. Installation cannot continue.",
+                    dep.name, e
+                );
+                ctx.set_status(format!("ERROR: {}", err_msg));
+                ctx.log(format!("ERROR: {}", err_msg));
+                log_error(&err_msg);
+                return Err(err_msg.into());
+            } else {
+                // Non-critical dependency failed - warn and continue
+                ctx.set_status(format!(
+                    "Warning: Failed to install {}: {} (Continuing...)",
+                    dep.id, e
+                ));
+                ctx.log(format!("Warning: Failed to install {}: {}", dep.id, e));
+                log_warning(&format!("Failed to install {}: {}", dep.id, e));
+            }
         } else {
-            log_install(&format!("Dependency {} installed successfully", dep));
+            log_install(&format!("Dependency {} installed successfully", dep.id));
         }
     }
 
@@ -301,223 +152,22 @@ pub fn install_all_dependencies(
     }
 
     // =========================================================================
-    // 8. .NET 9 SDK
+    // Universal dotnet4.x Registry Fixes (Jackify-style)
     // =========================================================================
-    ctx.set_status("Installing .NET 9 SDK...".to_string());
-    ctx.log("Installing .NET 9 SDK...".to_string());
-    log_install("Installing .NET 9 SDK...");
+    // Apply AFTER wine component installation to prevent overwrites.
+    // This replaces the need to install dotnet40/dotnet48/etc.
+    ctx.set_status("Applying dotnet4.x compatibility fixes...".to_string());
+    log_install("Applying universal dotnet4.x compatibility registry fixes");
 
-    let dotnet9_installer = tmp_dir.join("dotnet9_sdk.exe");
-
-    if !dotnet9_installer.exists() {
-        ctx.log("Downloading .NET 9 SDK...".to_string());
-        log_download("Downloading .NET 9 SDK...");
-        download_file(DOTNET9_SDK_URL, &dotnet9_installer)?;
-        log_download("Downloaded .NET 9 SDK");
-    }
-
-    let install_proton_bin = install_proton.path.join("proton");
-    let compat_data = prefix_root.parent().unwrap_or(prefix_root);
-    let steam_path = detect_steam_path();
-
-    ctx.log("Running .NET 9 SDK installer...".to_string());
-    match std::process::Command::new(&install_proton_bin)
-        .arg("run")
-        .arg(&dotnet9_installer)
-        .arg("/quiet")
-        .arg("/norestart")
-        .env("WINEPREFIX", prefix_root)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
-        .env("PROTON_NO_XALIA", "1")
-        .env(
-            "LD_LIBRARY_PATH",
-            "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
-        )
-        .status()
-    {
-        Ok(status) => {
-            if status.success() {
-                ctx.log(".NET 9 SDK installed successfully".to_string());
-                log_install(".NET 9 SDK installed successfully");
-            } else {
-                ctx.log(format!(
-                    ".NET 9 SDK installer exited with code: {:?}",
-                    status.code()
-                ));
-                log_warning(&format!(
-                    ".NET 9 SDK installer exited with code: {:?}",
-                    status.code()
-                ));
-            }
-        }
-        Err(e) => {
-            ctx.log(format!("Failed to run .NET 9 SDK installer: {}", e));
-            log_error(&format!("Failed to run .NET 9 SDK installer: {}", e));
-        }
+    let fix_ctx = create_dep_context(prefix_root, install_proton, ctx);
+    if let Err(e) = apply_universal_dotnet_fixes(&fix_ctx) {
+        // Don't fail installation, just warn - the fixes are best-effort
+        ctx.log(format!("Warning: dotnet fixes failed: {}", e));
+        log_warning(&format!("dotnet4.x registry fixes failed: {}", e));
     }
 
     ctx.set_progress(end_progress);
     Ok(())
-}
-
-/// Run a .NET Framework installer using Proton
-fn run_dotnet_installer(
-    prefix_root: &Path,
-    proton: &ProtonInfo,
-    installer_path: &Path,
-    ctx: &TaskContext,
-) -> Result<(), Box<dyn Error>> {
-    let proton_bin = proton.path.join("proton");
-    let wineserver = proton.path.join("files/bin/wineserver");
-    let compat_data = prefix_root.parent().unwrap_or(prefix_root);
-    let steam_path = detect_steam_path();
-
-    ctx.log(format!(
-        "Running installer: {}",
-        installer_path.file_name().unwrap_or_default().to_string_lossy()
-    ));
-
-    // Kill any xalia processes that might be lingering
-    kill_xalia_processes();
-
-    let mut child = std::process::Command::new(&proton_bin)
-        .arg("run")
-        .arg(installer_path)
-        .arg("/q")
-        .arg("/norestart")
-        .env("WINEPREFIX", prefix_root)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
-        // Disable xalia - it requires .NET 4.8 to run, causing a chicken-and-egg problem
-        .env("PROTON_NO_XALIA", "1")
-        .env(
-            "LD_LIBRARY_PATH",
-            "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu",
-        )
-        .spawn()?;
-
-    // Poll for completion with cancel check
-    loop {
-        if ctx.is_cancelled() {
-            let _ = child.kill();
-            let _ = child.wait();
-            // Kill wineserver to stop all Wine processes
-            let _ = Command::new(&wineserver)
-                .arg("-k")
-                .env("WINEPREFIX", prefix_root)
-                .status();
-            kill_xalia_processes();
-            return Err("Installation Cancelled by User".into());
-        }
-
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    let code = status.code();
-                    // Exit code 236 = reboot required, which is expected
-                    if code != Some(236) {
-                        let msg = format!(
-                            "Installer {} exited with code: {:?}",
-                            installer_path.file_name().unwrap_or_default().to_string_lossy(),
-                            code
-                        );
-                        log_warning(&msg);
-                        ctx.log(format!("Warning: {}", msg));
-                    }
-                }
-                break;
-            }
-            Ok(None) => {
-                // Still running - also kill any xalia that pops up
-                kill_xalia_processes();
-                std::thread::sleep(std::time::Duration::from_millis(200));
-            }
-            Err(e) => return Err(e.into()),
-        }
-    }
-
-    // Final cleanup of any xalia
-    kill_xalia_processes();
-
-    // Kill wineserver to simulate reboot (required after .NET installation)
-    ctx.log("Simulating reboot (killing wineserver)...".to_string());
-    let _ = Command::new(&wineserver)
-        .arg("-k")
-        .env("WINEPREFIX", prefix_root)
-        .status();
-
-    // Wait for wineserver to fully shut down
-    std::thread::sleep(std::time::Duration::from_secs(2));
-
-    Ok(())
-}
-
-/// Kill any xalia processes that might be running
-fn kill_xalia_processes() {
-    // Use pkill to kill any xalia.exe processes
-    let _ = Command::new("pkill")
-        .arg("-f")
-        .arg("xalia")
-        .status();
-}
-
-/// Brief launch of an executable to initialize the prefix, then kill it.
-/// This ensures the prefix is properly initialized before the user runs the mod manager.
-///
-/// # Arguments
-/// * `exe_path` - Path to the executable to launch
-/// * `prefix_root` - The prefix path (ending in /pfx)
-/// * `install_proton` - The proton to use for the brief launch
-/// * `ctx` - Task context for status updates
-/// * `app_name` - Name of the application (for logging)
-pub fn brief_launch_and_kill(
-    exe_path: &Path,
-    prefix_root: &Path,
-    install_proton: &ProtonInfo,
-    ctx: &TaskContext,
-    app_name: &str,
-) {
-    ctx.set_status("Initializing prefix (brief launch)...".to_string());
-    log_install(&format!(
-        "Launching {} briefly to initialize prefix...",
-        app_name
-    ));
-
-    let compat_data = prefix_root.parent().unwrap_or(prefix_root);
-    let steam_path = detect_steam_path();
-
-    let mut child = std::process::Command::new(install_proton.path.join("proton"))
-        .arg("run")
-        .arg(exe_path)
-        .env("WINEPREFIX", prefix_root)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
-        .env("PROTON_NO_XALIA", "1")
-        .spawn();
-
-    match &mut child {
-        Ok(process) => {
-            // Wait 8 seconds
-            std::thread::sleep(std::time::Duration::from_secs(8));
-            ctx.set_status("Killing prefix after initialization...".to_string());
-            log_install("Killing prefix after brief launch");
-            let _ = process.kill();
-            let _ = process.wait();
-
-            // Also kill any remaining wine processes in prefix
-            let _ = std::process::Command::new(install_proton.path.join("files/bin/wineserver"))
-                .arg("-k")
-                .env("WINEPREFIX", prefix_root)
-                .status();
-        }
-        Err(e) => {
-            log_warning(&format!(
-                "Failed to launch {} for initialization: {}",
-                app_name, e
-            ));
-        }
-    }
 }
 
 // =============================================================================
@@ -533,10 +183,9 @@ pub const DPI_PRESETS: &[(u32, &str)] = &[
 ];
 
 /// Apply DPI setting to a Wine prefix via registry
-/// Uses: HKCU\Control Panel\Desktop\LogPixels
 pub fn apply_dpi(
     prefix_root: &Path,
-    proton: &ProtonInfo,
+    proton: &SteamProton,
     dpi_value: u32,
 ) -> Result<(), Box<dyn Error>> {
     log_install(&format!("Applying DPI {} to prefix", dpi_value));
@@ -555,7 +204,7 @@ pub fn apply_dpi(
         .arg(dpi_value.to_string())
         .arg("/f")
         .env("WINEPREFIX", prefix_root)
-        .env("PROTON_NO_XALIA", "1")
+        .env("PROTON_USE_XALIA", "0")
         .status()?;
 
     if !status.success() {
@@ -566,48 +215,10 @@ pub fn apply_dpi(
     Ok(())
 }
 
-/// Get current DPI setting from a Wine prefix
-#[allow(dead_code)]
-pub fn get_current_dpi(prefix_root: &Path, proton: &ProtonInfo) -> Option<u32> {
-    let proton_bin = proton.path.join("proton");
-    let compat_data = prefix_root.parent().unwrap_or(prefix_root);
-    let steam_path = detect_steam_path();
-
-    let output = Command::new(&proton_bin)
-        .arg("run")
-        .arg("reg")
-        .arg("query")
-        .arg(r"HKCU\Control Panel\Desktop")
-        .arg("/v")
-        .arg("LogPixels")
-        .env("WINEPREFIX", prefix_root)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
-        .env("PROTON_NO_XALIA", "1")
-        .output()
-        .ok()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Parse output like: "    LogPixels    REG_DWORD    0x60" (0x60 = 96)
-    for line in stdout.lines() {
-        if line.contains("LogPixels") {
-            // Find the hex value
-            if let Some(hex_part) = line.split_whitespace().last() {
-                if let Some(stripped) = hex_part.strip_prefix("0x") {
-                    if let Ok(val) = u32::from_str_radix(stripped, 16) {
-                        return Some(val);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
 /// Launch a test application (winecfg, regedit, notepad, control) and return its PID
 pub fn launch_dpi_test_app(
     prefix_root: &Path,
-    proton: &ProtonInfo,
+    proton: &SteamProton,
     app_name: &str,
 ) -> Result<Child, Box<dyn Error>> {
     let wine_bin = proton.path.join("files/bin/wine");
@@ -628,14 +239,14 @@ pub fn launch_dpi_test_app(
     let child = Command::new(&wine_bin)
         .arg(app_name)
         .env("WINEPREFIX", prefix_root)
-        .env("PROTON_NO_XALIA", "1")
+        .env("PROTON_USE_XALIA", "0")
         .spawn()?;
 
     Ok(child)
 }
 
 /// Kill the wineserver for a prefix (terminates all Wine processes in that prefix)
-pub fn kill_wineserver(prefix_root: &Path, proton: &ProtonInfo) {
+pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
     log_install("Killing wineserver for prefix");
 
     let wineserver_bin = proton.path.join("files/bin/wineserver");
@@ -646,85 +257,153 @@ pub fn kill_wineserver(prefix_root: &Path, proton: &ProtonInfo) {
         .status();
 }
 
-/// Kill specific processes by PID
-#[allow(dead_code)]
-pub fn kill_processes(pids: &[u32]) {
-    for pid in pids {
-        let _ = Command::new("kill")
-            .arg("-9")
-            .arg(pid.to_string())
-            .status();
-    }
-}
-
 // Enderal Special Edition config files (embedded in binary)
 const ENDERAL_SE_INI: &str = include_str!("../../resources/game_configs/enderal_se/Enderal.ini");
 const ENDERAL_SE_PREFS_INI: &str =
     include_str!("../../resources/game_configs/enderal_se/EnderalPrefs.ini");
 
-/// Create game-specific folders in the Wine prefix
-///
-/// Some games crash on startup if their Documents/My Games folder doesn't exist.
-/// This creates the necessary folder structure for all supported Bethesda/SureAI games.
-/// Also copies premade config files for games that need them (e.g., Enderal SE).
-pub fn create_game_folders(prefix_root: &Path) {
-    let users_dir = prefix_root.join("drive_c/users");
-    let mut username = "steamuser".to_string();
+// ============================================================================
+// Bethesda Game Mapping
+// ============================================================================
 
-    // Detect the correct user folder
-    if let Ok(entries) = fs::read_dir(&users_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name != "Public" && name != "root" {
-                username = name;
-                break;
+/// Mapping of My Games folder name to Steam App ID
+const BETHESDA_GAMES: &[(&str, &str)] = &[
+    // (My Games folder name, Steam App ID)
+    ("Enderal", "933480"),                    // Enderal: Forgotten Stories
+    ("Enderal Special Edition", "976620"),    // Enderal: Forgotten Stories SE
+    ("Fallout3", "22300"),                    // Fallout 3 (also 22370 for GOTY)
+    ("Fallout4", "377160"),                   // Fallout 4
+    ("Fallout4VR", "611660"),                 // Fallout 4 VR
+    ("FalloutNV", "22380"),                   // Fallout: New Vegas
+    ("Morrowind", "22320"),                   // Morrowind
+    ("Oblivion", "22330"),                    // Oblivion
+    ("Skyrim", "72850"),                      // Skyrim (original)
+    ("Skyrim Special Edition", "489830"),     // Skyrim SE/AE
+    ("Skyrim VR", "611670"),                  // Skyrim VR
+    ("Starfield", "1716740"),                 // Starfield
+];
+
+/// Games that need AppData/Local/<name>/
+const APPDATA_GAMES: &[&str] = &[
+    "Fallout3",
+    "Fallout4",
+    "FalloutNV",
+    "Oblivion",
+    "Skyrim",
+    "Skyrim Special Edition",
+];
+
+/// Find the Steam prefix for a game by App ID
+fn find_steam_game_prefix(steam_path: &Path, app_id: &str) -> Option<PathBuf> {
+    // Check main steamapps first
+    let main_prefix = steam_path
+        .join("steamapps/compatdata")
+        .join(app_id)
+        .join("pfx");
+    if main_prefix.exists() {
+        return Some(main_prefix);
+    }
+
+    // Check library folders
+    let library_vdf = steam_path.join("steamapps/libraryfolders.vdf");
+    if let Ok(content) = fs::read_to_string(&library_vdf) {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("\"path\"") {
+                if let Some(path_str) = trimmed.split('"').nth(3) {
+                    let prefix = PathBuf::from(path_str)
+                        .join("steamapps/compatdata")
+                        .join(app_id)
+                        .join("pfx");
+                    if prefix.exists() {
+                        return Some(prefix);
+                    }
+                }
             }
         }
     }
+    None
+}
 
-    let user_dir = users_dir.join(&username);
+/// Get the username from a Wine prefix (Proton always uses "steamuser")
+fn get_prefix_username(_prefix_root: &Path) -> &'static str {
+    PREFIX_USERNAME
+}
+
+/// Create game-specific folders in the Wine prefix
+/// Symlinks to existing Steam game saves/configs when available
+pub fn create_game_folders(prefix_root: &Path) {
+    let username = get_prefix_username(prefix_root);
+    let user_dir = prefix_root.join("drive_c/users").join(username);
     let documents_dir = user_dir.join("Documents");
     let my_games_dir = documents_dir.join("My Games");
     let appdata_local = user_dir.join("AppData/Local");
 
-    // Games that need Documents/My Games/<name>/
-    let my_games_folders = [
-        "Enderal",
-        "Enderal Special Edition",
-        "Fallout3",
-        "Fallout4",
-        "Fallout4VR",
-        "FalloutNV",
-        "Morrowind",
-        "Oblivion",
-        "Skyrim",
-        "Skyrim Special Edition",
-        "Skyrim VR",
-        "Starfield",
-    ];
+    // Ensure base directories exist
+    let _ = fs::create_dir_all(&my_games_dir);
+    let _ = fs::create_dir_all(&appdata_local);
 
-    // Games that also need AppData/Local/<name>/
-    let appdata_folders = [
-        "Fallout3",
-        "Fallout4",
-        "FalloutNV",
-        "Oblivion",
-        "Skyrim",
-        "Skyrim Special Edition",
-    ];
+    // Find Steam installation (using shared utility)
+    let steam_path = detect_steam_path_checked().map(PathBuf::from);
 
-    // Create My Games folders
-    for game in &my_games_folders {
-        let game_dir = my_games_dir.join(game);
-        if !game_dir.exists() {
-            if let Err(e) = fs::create_dir_all(&game_dir) {
-                log_warning(&format!("Failed to create My Games/{}: {}", game, e));
+    // Process each Bethesda game
+    for (game_folder, app_id) in BETHESDA_GAMES {
+        let target_dir = my_games_dir.join(game_folder);
+
+        // Skip if already exists (don't overwrite)
+        if target_dir.exists() || fs::symlink_metadata(&target_dir).is_ok() {
+            continue;
+        }
+
+        // Try to find and symlink from Steam prefix
+        let mut linked = false;
+        if let Some(ref steam) = steam_path {
+            if let Some(game_prefix) = find_steam_game_prefix(steam, app_id) {
+                let game_username = get_prefix_username(&game_prefix);
+                let source_dir = game_prefix
+                    .join("drive_c/users")
+                    .join(game_username)
+                    .join("Documents/My Games")
+                    .join(game_folder);
+
+                if source_dir.exists() {
+                    match std::os::unix::fs::symlink(&source_dir, &target_dir) {
+                        Ok(()) => {
+                            log_install(&format!(
+                                "Linked My Games/{} from Steam prefix (App {})",
+                                game_folder, app_id
+                            ));
+                            linked = true;
+                        }
+                        Err(e) => {
+                            log_warning(&format!(
+                                "Failed to symlink My Games/{}: {}",
+                                game_folder, e
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Create empty folder if no Steam prefix found
+        if !linked {
+            if let Err(e) = fs::create_dir_all(&target_dir) {
+                log_warning(&format!("Failed to create My Games/{}: {}", game_folder, e));
             }
         }
     }
 
-    // Create AppData/Local folders
-    for game in &appdata_folders {
+    // Handle Oblivion lowercase INI symlinks
+    // Some tools expect lowercase oblivion.ini alongside Oblivion.ini
+    let oblivion_dir = my_games_dir.join("Oblivion");
+    if oblivion_dir.exists() {
+        create_lowercase_ini_symlink(&oblivion_dir, "Oblivion.ini", "oblivion.ini");
+        create_lowercase_ini_symlink(&oblivion_dir, "OblivionPrefs.ini", "oblivionprefs.ini");
+    }
+
+    // Create AppData/Local folders (these don't usually have existing data to link)
+    for game in APPDATA_GAMES {
         let game_dir = appdata_local.join(game);
         if !game_dir.exists() {
             if let Err(e) = fs::create_dir_all(&game_dir) {
@@ -733,19 +412,18 @@ pub fn create_game_folders(prefix_root: &Path) {
         }
     }
 
-    // Create "My Documents" symlink if it doesn't exist (some games expect this)
+    // Create "My Documents" symlink if it doesn't exist
     let my_documents_link = user_dir.join("My Documents");
     if !my_documents_link.exists() && fs::symlink_metadata(&my_documents_link).is_err() {
-        // Create relative symlink: "My Documents" -> "Documents"
         if let Err(e) = std::os::unix::fs::symlink("Documents", &my_documents_link) {
             log_warning(&format!("Failed to create My Documents symlink: {}", e));
         }
     }
 
-    // Copy Enderal Special Edition config files
-    // These fix the Enderal Launcher not working properly and set sensible defaults
+    // Copy Enderal Special Edition config files (if folder exists but is empty)
     let enderal_se_dir = my_games_dir.join("Enderal Special Edition");
-    if enderal_se_dir.exists() {
+    if enderal_se_dir.exists() && !fs::symlink_metadata(&enderal_se_dir).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        // Only write default configs if folder is NOT a symlink (i.e., we created it empty)
         let enderal_ini = enderal_se_dir.join("Enderal.ini");
         let enderal_prefs_ini = enderal_se_dir.join("EnderalPrefs.ini");
 
@@ -761,5 +439,27 @@ pub fn create_game_folders(prefix_root: &Path) {
         }
     }
 
-    log_install("Created game folders in prefix (Documents/My Games, AppData/Local)");
+    log_install("Created/linked game folders in prefix (Documents/My Games, AppData/Local)");
+}
+
+/// Create a lowercase symlink for an INI file (for tools that expect lowercase)
+fn create_lowercase_ini_symlink(dir: &Path, original: &str, lowercase: &str) {
+    let original_path = dir.join(original);
+    let lowercase_path = dir.join(lowercase);
+
+    // Only create if original exists and lowercase doesn't
+    if original_path.exists()
+        && !lowercase_path.exists()
+        && fs::symlink_metadata(&lowercase_path).is_err()
+    {
+        // Create relative symlink (just the filename)
+        if let Err(e) = std::os::unix::fs::symlink(original, &lowercase_path) {
+            log_warning(&format!(
+                "Failed to create lowercase symlink {} -> {}: {}",
+                lowercase, original, e
+            ));
+        } else {
+            log_install(&format!("Created lowercase INI symlink: {} -> {}", lowercase, original));
+        }
+    }
 }

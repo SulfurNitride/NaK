@@ -3,12 +3,12 @@
 //! Provides structured logging with system information header
 
 use chrono::Local;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::config::AppConfig;
+// Log files are now written to the current working directory for easy access
 
 static LOGGER: OnceLock<Arc<Mutex<NakLogger>>> = OnceLock::new();
 
@@ -287,12 +287,11 @@ pub struct NakLogger {
 
 impl NakLogger {
     pub fn new() -> Self {
-        let config = AppConfig::load();
-        let log_dir = config.get_data_path().join("logs");
-        let _ = fs::create_dir_all(&log_dir);
-
+        // Write log to current working directory for easy access
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let log_path = log_dir.join(format!("nak_{}.log", timestamp));
+        let log_path = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(format!("nak_{}.log", timestamp));
 
         let log_file = OpenOptions::new()
             .create(true)
@@ -300,12 +299,18 @@ impl NakLogger {
             .open(&log_path)
             .ok();
 
+        let has_log_file = log_file.is_some();
         let mut logger = Self { log_file };
 
         // Write system info header
         let sys_info = SystemInfo::detect();
         let header = sys_info.to_log_header();
         logger.write_raw(&header);
+
+        // Log where the file is being written
+        if has_log_file {
+            println!("Log file: {}", log_path.display());
+        }
 
         logger
     }

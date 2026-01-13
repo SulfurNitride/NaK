@@ -1,170 +1,92 @@
 //! Simple pages: Getting Started, Marketplace, Settings, First Run Setup
 
 use crate::app::{MyApp, Page};
-use crate::config::{AppConfig, StorageManager};
+use crate::config::{AppConfig, ManagedPrefixes};
 use crate::logging::log_action;
-use crate::wine::runtime;
+use crate::steam::ShortcutsVdf;
 use eframe::egui;
+use std::collections::HashSet;
 
-/// First-run setup page - shown on first launch to configure SLR preference
+/// First-run setup page - shown on first launch
+/// Now simplified since Steam handles Proton/runtime natively
 pub fn render_first_run_setup(app: &mut MyApp, ui: &mut egui::Ui) {
-    // Wrap in scroll area for fullscreen/small window support
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.vertical_centered(|ui| {
-            ui.add_space(20.0);
+            ui.add_space(40.0);
 
-            ui.heading(egui::RichText::new("Welcome to NaK!").size(28.0).strong());
-            ui.add_space(5.0);
+            ui.heading(egui::RichText::new("Welcome to NaK!").size(32.0).strong());
+            ui.add_space(8.0);
             ui.label(
                 egui::RichText::new("Linux Modding Helper")
-                    .size(16.0)
+                    .size(18.0)
                     .color(egui::Color32::GRAY),
             );
 
-            ui.add_space(20.0);
-            ui.separator();
-            ui.add_space(15.0);
+            ui.add_space(30.0);
 
-            // SLR Configuration Section
-            ui.heading(egui::RichText::new("Runtime Configuration").size(20.0));
-            ui.add_space(10.0);
+            let max_width = ui.available_width().min(550.0);
 
-            // Calculate max width based on available space
-            let max_width = ui.available_width().min(600.0);
-
-            // Explanation
+            // Info box
             egui::Frame::none()
                 .fill(egui::Color32::from_rgb(35, 35, 45))
+                .rounding(egui::Rounding::same(8.0))
+                .inner_margin(20.0)
+                .show(ui, |ui| {
+                    ui.set_max_width(max_width);
+
+                    ui.label(egui::RichText::new("What NaK Does").strong().size(16.0));
+                    ui.add_space(12.0);
+
+                    ui.label("NaK helps you install and run mod managers (MO2, Vortex) on Linux:");
+                    ui.add_space(8.0);
+                    ui.label("  - Creates Steam shortcuts for your mod managers");
+                    ui.label("  - Installs required Windows dependencies (VC++, DirectX, etc.)");
+                    ui.label("  - Sets up game registry entries for mod detection");
+                    ui.label("  - Handles NXM links from Nexus Mods");
+                });
+
+            ui.add_space(20.0);
+
+            // Steam integration note
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(30, 50, 40))
                 .rounding(egui::Rounding::same(8.0))
                 .inner_margin(15.0)
                 .show(ui, |ui| {
                     ui.set_max_width(max_width);
-
-                    ui.label(egui::RichText::new("What is Steam Linux Runtime (SLR)?").strong().size(14.0));
-                    ui.add_space(8.0);
-
-                    ui.label("SLR is a containerized environment that provides consistent libraries for running Windows applications via Proton.");
-                    ui.add_space(10.0);
-
                     ui.colored_label(
                         egui::Color32::from_rgb(100, 200, 100),
-                        "Pros:",
+                        "Steam Integration",
                     );
-                    ui.label("  - Functions more like Steam does when running games");
-                    ui.label("  - More consistent behavior across different Linux distributions");
-                    ui.add_space(8.0);
-
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 180, 100),
-                        "Cons:",
-                    );
-                    ui.label("  - Might cause unexpected issues");
-                    ui.add_space(8.0);
-
-                    ui.colored_label(
-                        egui::Color32::from_rgb(150, 150, 150),
-                        "Requirements:",
-                    );
-                    ui.label("  - ~750MB disk space for runtime files");
+                    ui.add_space(5.0);
+                    ui.label("NaK adds your mod managers as non-Steam games. This means:");
+                    ui.label("  - Proton versions are managed through Steam");
+                    ui.label("  - Launch mod managers directly from Steam");
+                    ui.label("  - Steam overlay and controller support work");
                 });
 
-            ui.add_space(15.0);
+            ui.add_space(30.0);
 
-            // Important note
-            egui::Frame::none()
-                .fill(egui::Color32::from_rgb(50, 50, 30))
-                .rounding(egui::Rounding::same(8.0))
-                .inner_margin(12.0)
-                .show(ui, |ui| {
-                    ui.set_max_width(max_width);
-                    ui.label(
-                        egui::RichText::new("Note: You can change this setting anytime in Settings > Advanced or per-prefix in the Prefix Manager. If you choose 'No' now and want to enable SLR later, you'll just need to wait for the download to complete.")
-                            .color(egui::Color32::from_rgb(255, 220, 100)),
-                    );
-                });
-
-            ui.add_space(20.0);
-
-            // Choice buttons
-            ui.label(egui::RichText::new("Would you like to use Steam Linux Runtime?").size(16.0));
-            ui.add_space(15.0);
-
-            let slr_installed = runtime::is_runtime_installed();
-            let is_downloading = *app.is_downloading.lock().unwrap();
-
-            // Center buttons using a centered horizontal layout
-            ui.horizontal(|ui| {
-                let button_width = 200.0;
-                let total_buttons_width = button_width * 2.0 + 20.0; // 2 buttons + spacing
-                let available = ui.available_width();
-                let padding = ((available - total_buttons_width) / 2.0).max(0.0);
-
-                ui.add_space(padding);
-
-                // Yes button
-                let yes_text = if slr_installed {
-                    "Yes, use SLR (Already installed)"
-                } else if is_downloading {
-                    "Yes, use SLR (Downloading...)"
-                } else {
-                    "Yes, use SLR (Recommended)"
-                };
-
-                if ui.add_sized(
-                    [button_width, 40.0],
-                    egui::Button::new(egui::RichText::new(yes_text).size(13.0))
-                ).clicked() {
-                    log_action("First-run setup: User chose to use SLR");
-                    app.config.use_steam_runtime = true;
-                    app.config.first_run_completed = true;
-                    app.config.save();
-
-                    // Start SLR download if not installed
-                    if !slr_installed && !is_downloading {
-                        app.start_slr_download();
-                    }
-
-                    app.current_page = Page::GettingStarted;
-                }
-
-                ui.add_space(20.0);
-
-                // No button
-                if ui.add_sized(
-                    [button_width, 40.0],
-                    egui::Button::new(egui::RichText::new("No, use Direct Proton").size(13.0))
-                ).clicked() {
-                    log_action("First-run setup: User chose Direct Proton (no SLR)");
-                    app.config.use_steam_runtime = false;
-                    app.config.first_run_completed = true;
-                    app.config.save();
-                    app.current_page = Page::GettingStarted;
-                }
-            });
-
-            ui.add_space(15.0);
-
-            // Show download progress if downloading
-            if is_downloading {
-                let status = app.download_status.lock().unwrap().clone();
-                let progress = *app.download_progress.lock().unwrap();
-
-                ui.add_space(5.0);
-                ui.set_max_width(max_width);
-                ui.label(&status);
-                ui.add(egui::ProgressBar::new(progress).animate(true));
+            // Get Started button
+            if ui.add_sized(
+                [200.0, 45.0],
+                egui::Button::new(egui::RichText::new("Get Started").size(16.0))
+            ).clicked() {
+                log_action("First-run setup completed");
+                app.config.first_run_completed = true;
+                app.config.save();
+                app.current_page = Page::GettingStarted;
             }
 
             ui.add_space(20.0);
 
-            // Skip for advanced users
             ui.label(
-                egui::RichText::new("Not sure? 'Yes' works for most users. You can always change this later.")
+                egui::RichText::new("Click above to begin setting up your mod manager")
                     .size(12.0)
                     .color(egui::Color32::GRAY),
             );
 
-            ui.add_space(20.0);
+            ui.add_space(30.0);
         });
     });
 }
@@ -185,98 +107,47 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.add_space(10.0);
 
         ui.label("NaK makes it easy to run Windows modding tools on Linux using Proton.");
-        ui.label(
-            egui::RichText::new("Get started by following these three simple steps:")
-                .color(egui::Color32::LIGHT_GRAY),
-        );
 
         ui.add_space(15.0);
 
         // ============================================================
-        // Step 1: Pick a Proton Version
+        // Install a Mod Manager
         // ============================================================
         ui.label(
-            egui::RichText::new("1. Pick a Proton Version")
+            egui::RichText::new("Install a Mod Manager")
                 .size(16.0)
                 .strong(),
         );
         ui.label(
-            egui::RichText::new("   NaK needs Proton to run Windows modding tools")
-                .size(12.0)
-                .color(egui::Color32::LIGHT_GRAY),
-        );
-        ui.add_space(5.0);
-        ui.label("   - Recommended: Download Proton-GE (best compatibility)");
-        ui.label("   - Alternative: Use system Proton if you prefer");
-        ui.add_space(5.0);
-        if ui.button("Open Proton Picker").clicked() {
-            log_action("Navigate to Proton Picker from Getting Started");
-            app.current_page = Page::ProtonTools;
-        }
-
-        ui.add_space(20.0);
-        ui.separator();
-        ui.add_space(10.0);
-
-        // ============================================================
-        // Step 2: Choose Your Modding Approach
-        // ============================================================
-        ui.label(
-            egui::RichText::new("2. Choose Your Modding Approach")
-                .size(16.0)
-                .strong(),
-        );
-        ui.label(
-            egui::RichText::new("   Pick the option that fits your modding style")
+            egui::RichText::new("Choose MO2 or Vortex - NaK handles all the setup automatically")
                 .size(12.0)
                 .color(egui::Color32::LIGHT_GRAY),
         );
         ui.add_space(10.0);
 
-        // Option A: Mod Managers
         ui.horizontal(|ui| {
-            if ui.button("Mod Managers").clicked() {
+            if ui.button("Go to Mod Managers").clicked() {
                 log_action("Navigate to Mod Managers from Getting Started");
                 app.current_page = Page::ModManagers;
             }
-            ui.label(
-                egui::RichText::new("Install MO2 or Vortex for full mod management")
-                    .color(egui::Color32::LIGHT_GRAY),
-            );
         });
-        ui.label("      Best for: Heavy modding with load order management, mod profiles, etc.");
-
-        ui.add_space(8.0);
-
-        // Option B: Game Modding
-        ui.horizontal(|ui| {
-            if ui.button("Game Modding").clicked() {
-                log_action("Navigate to Game Modding from Getting Started");
-                app.current_page = Page::GameFixer;
-            }
-            ui.label(
-                egui::RichText::new("Apply fixes directly to game prefixes")
-                    .color(egui::Color32::LIGHT_GRAY),
-            );
-        });
-        ui.label("      Best for: Simple modding without a dedicated mod manager");
+        ui.add_space(10.0);
+        ui.label("NaK will:");
+        ui.label("  - Create a Steam shortcut for your mod manager");
+        ui.label("  - Configure your selected Proton version automatically");
+        ui.label("  - Install required Windows dependencies");
 
         ui.add_space(20.0);
         ui.separator();
         ui.add_space(10.0);
 
         // ============================================================
-        // Step 3: Check FAQ & Known Issues
+        // FAQ & Help
         // ============================================================
         ui.label(
-            egui::RichText::new("3. Check FAQ & Known Issues")
+            egui::RichText::new("Need Help?")
                 .size(16.0)
                 .strong(),
-        );
-        ui.label(
-            egui::RichText::new("   Solutions to common problems and setup tips")
-                .size(12.0)
-                .color(egui::Color32::LIGHT_GRAY),
         );
         ui.add_space(5.0);
         if ui.button("View FAQ & Known Issues").clicked() {
@@ -290,7 +161,7 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
 
         // Support links
         ui.horizontal(|ui| {
-            ui.label("Need help?");
+            ui.label("Community:");
             if ui.link("GitHub Issues").clicked() {
                 let _ = std::process::Command::new("xdg-open")
                     .arg("https://github.com/SulfurNitride/NaK/issues")
@@ -312,201 +183,107 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
     });
 }
 
-pub fn render_marketplace(_app: &MyApp, ui: &mut egui::Ui) {
-    ui.heading("Marketplace");
-    ui.separator();
-
-    // Placeholder Grid for Marketplace items
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            for i in 1..=6 {
-                egui::Frame::group(ui.style())
-                    .rounding(egui::Rounding::same(4.0))
-                    .inner_margin(10.0)
-                    .show(ui, |ui| {
-                        ui.set_width(150.0);
-                        ui.set_height(120.0);
-                        ui.vertical_centered(|ui| {
-                            ui.label(egui::RichText::new("[Plugin]").size(16.0));
-                            ui.strong(format!("Plugin {}", i));
-                            ui.small("Description of plugin...");
-                            ui.add_space(5.0);
-                            if ui.button("Install").clicked() {}
-                        });
-                    });
-                ui.add_space(10.0);
-            }
-        });
-    });
-}
-
 pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
     ui.heading("Settings");
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         // ============================================================
-        // Storage & Cache Section
+        // Pre-Cache Downloads Section
         // ============================================================
-        egui::CollapsingHeader::new("Storage & Cache")
+        egui::CollapsingHeader::new("Pre-Cache Downloads")
             .default_open(true)
             .show(ui, |ui| {
                 ui.add_space(5.0);
 
-                // Cache storage info - only refresh every 5 seconds
-                let should_refresh = app.storage_info_last_update.elapsed().as_secs() > 5
-                    || app.cached_storage_info.is_none();
-
-                if should_refresh {
-                    app.cached_storage_info = Some(StorageManager::get_storage_info(&app.config.get_data_path()));
-                    app.storage_info_last_update = std::time::Instant::now();
-                }
-
-                let storage_info = app.cached_storage_info.clone().unwrap_or_default();
-
-                // Refresh button
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Storage Info").strong());
-                    if ui.small_button("Refresh").clicked() {
-                        app.cached_storage_info = Some(StorageManager::get_storage_info(&app.config.get_data_path()));
-                        app.storage_info_last_update = std::time::Instant::now();
-                    }
-                });
-
-                // --- Location Info ---
-                ui.horizontal(|ui| {
-                    ui.label("Data Path:");
-                    ui.monospace(&storage_info.data_path);
-                });
+                // --- Dependency Pre-Cache ---
+                ui.label(egui::RichText::new("Pre-Cache Downloads").strong());
                 ui.label(
-                    egui::RichText::new("Config stored in: ~/.config/nak/")
+                    egui::RichText::new("Download MO2, Vortex, and dependencies for offline installation")
                         .size(11.0)
                         .color(egui::Color32::GRAY),
                 );
+                ui.add_space(5.0);
 
-                // --- Usage Breakdown ---
-                if storage_info.exists {
-                    ui.add_space(5.0);
-                    ui.horizontal(|ui| {
-                        ui.label("Total Used:");
-                        ui.strong(format!("{:.2} GB", storage_info.used_space_gb));
-                        ui.label(" | Free:");
-                        ui.strong(format!("{:.2} GB", storage_info.free_space_gb));
-                    });
+                let cache_status = crate::deps::precache::get_cache_status();
+                let is_precaching = *app.is_precaching.lock().unwrap();
 
-                    ui.add_space(5.0);
-                    ui.indent("storage_breakdown", |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label("• Prefixes:");
-                            ui.strong(format!("{:.2} GB", storage_info.prefixes_size_gb));
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("• Proton Versions:");
-                            ui.strong(format!("{:.2} GB", storage_info.proton_size_gb));
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("• Cache:");
-                            ui.strong(format!("{:.2} GB", storage_info.cache_size_gb));
-                        });
-
-                        if storage_info.other_size_gb > 0.01 {
-                            ui.horizontal(|ui| {
-                                ui.label("• Other:");
-                                ui.strong(format!("{:.2} GB", storage_info.other_size_gb))
-                                  .on_hover_text("Includes logs, tmp files, and binaries");
-                            });
-                        }
-                    });
-                }
-
-                ui.add_space(15.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                // --- Cache Controls ---
-                ui.label(egui::RichText::new("Cache Configuration").strong());
-
-                let mut cache_enabled = app.cache_config.cache_enabled;
-                if ui.checkbox(&mut cache_enabled, "Enable Caching").changed() {
-                    app.cache_config.cache_enabled = cache_enabled;
-                    app.cache_config.save();
-                    log_action(&format!("Cache enabled: {}", cache_enabled));
-                }
-
-                ui.add_enabled_ui(cache_enabled, |ui| {
-                    ui.indent("cache_options", |ui| {
-                        let mut cache_deps = app.cache_config.cache_dependencies;
-                        if ui.checkbox(&mut cache_deps, "Cache Dependencies (~1.7GB)").changed() {
-                            app.cache_config.cache_dependencies = cache_deps;
-                            app.cache_config.save();
-                        }
-
-                        let mut cache_mo2 = app.cache_config.cache_mo2;
-                        if ui.checkbox(&mut cache_mo2, "Cache MO2 Downloads").changed() {
-                            app.cache_config.cache_mo2 = cache_mo2;
-                            app.cache_config.save();
-                        }
-
-                        let mut cache_vortex = app.cache_config.cache_vortex;
-                        if ui.checkbox(&mut cache_vortex, "Cache Vortex Downloads").changed() {
-                            app.cache_config.cache_vortex = cache_vortex;
-                            app.cache_config.save();
-                        }
-                    });
+                // Show dependency cache status (quick check, no network)
+                ui.horizontal(|ui| {
+                    ui.label("Dependencies:");
+                    if cache_status.is_complete() {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(100, 200, 100),
+                            format!("{} files cached (~{}MB)", cache_status.total_files(), cache_status.total_cached_mb),
+                        );
+                    } else {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 200, 100),
+                            format!(
+                                "{}/{} files (~{}MB remaining)",
+                                cache_status.cached_count(),
+                                cache_status.total_files(),
+                                cache_status.total_missing_mb
+                            ),
+                        );
+                    }
                 });
 
                 ui.add_space(5.0);
-                if ui.button("Clear Cache").clicked() {
-                    log_action("Clear cache clicked");
-                    if let Err(e) = app.cache_config.clear_cache(&app.config) {
-                        eprintln!("Failed to clear cache: {}", e);
+
+                // Pre-cache button or progress
+                if is_precaching {
+                    let progress = *app.precache_progress.lock().unwrap();
+                    let status = app.precache_status.lock().unwrap().clone();
+
+                    ui.add(egui::ProgressBar::new(progress).text(&status));
+                    ui.add_space(5.0);
+
+                    if ui.button("Cancel").clicked() {
+                        app.cancel_install.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                } else {
+                    ui.horizontal(|ui| {
+                        // Button is always enabled - it will check for MO2/Vortex updates
+                        if ui.button("Pre-Cache All").clicked() {
+                            log_action("Pre-cache all clicked");
+                            app.cancel_install.store(false, std::sync::atomic::Ordering::Relaxed);
+                            app.start_precache();
+                        }
+
+                        if cache_status.cached_count() > 0
+                            && ui.button("Clear Cache").clicked()
+                        {
+                            if let Err(e) = crate::deps::precache::clear_cache() {
+                                eprintln!("Failed to clear dependency cache: {}", e);
+                            }
+                        }
+                    });
+
+                    // Show result message if any
+                    if let Some(result) = app.precache_result.lock().unwrap().as_ref() {
+                        ui.add_space(5.0);
+                        match result {
+                            Ok(count) => {
+                                if *count > 0 {
+                                    ui.colored_label(
+                                        egui::Color32::from_rgb(100, 200, 100),
+                                        format!("Downloaded {} files!", count),
+                                    );
+                                } else {
+                                    ui.colored_label(
+                                        egui::Color32::from_rgb(100, 200, 100),
+                                        "Everything up to date!",
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                ui.colored_label(egui::Color32::RED, format!("Error: {}", e));
+                            }
+                        }
                     }
                 }
 
-                ui.add_space(15.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                // --- Migration Controls ---
-                ui.label(egui::RichText::new("Move Installation").strong());
-                ui.label("Move the entire NaK folder to a different drive (e.g., SSD).");
-
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut app.migration_path_input)
-                            .hint_text("/path/to/new/location")
-                            .desired_width(300.0),
-                    );
-
-                    if ui.button("Browse").clicked() {
-                        log_action("Browse for migration path clicked");
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            app.migration_path_input = path.to_string_lossy().to_string();
-                        }
-                    }
-                });
-
-                ui.horizontal(|ui| {
-                    let can_move = !app.migration_path_input.trim().is_empty();
-                    if ui.add_enabled(can_move, egui::Button::new("Move NaK Here")).clicked() {
-                        log_action(&format!("Move NaK to: {}", app.migration_path_input));
-                        let path = std::path::PathBuf::from(app.migration_path_input.trim());
-                        match StorageManager::move_data(&mut app.config, &path) {
-                            Ok(msg) => {
-                                crate::logging::log_info(&msg);
-                                app.migration_path_input.clear();
-                                // Force refresh storage info
-                                app.cached_storage_info = None;
-                                // Refresh prefix manager and detected prefixes (paths changed)
-                                app.prefix_manager = crate::wine::PrefixManager::new();
-                                app.detected_prefixes = app.prefix_manager.scan_prefixes();
-                            }
-                            Err(e) => {
-                                crate::logging::log_error(&format!("Migration failed: {}", e));
-                            }
-                        }
-                    }
-                });
             });
 
         ui.add_space(10.0);
@@ -521,87 +298,210 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
             .show(ui, |ui| {
                 ui.add_space(5.0);
 
-                // --- Steam Linux Runtime Toggle ---
-                ui.label(egui::RichText::new("Steam Linux Runtime (Pressure Vessel)").strong());
+                // --- Cache Location ---
+                ui.label(egui::RichText::new("Cache Location").strong());
                 ui.label(
-                    egui::RichText::new("Container runtime that provides consistent library environment")
+                    egui::RichText::new("Where to store downloaded files (MO2/Vortex installers, dependencies)")
                         .size(11.0)
                         .color(egui::Color32::GRAY),
                 );
                 ui.add_space(5.0);
 
-                let mut use_slr = app.config.use_steam_runtime;
-                if ui.checkbox(&mut use_slr, "Use Steam Linux Runtime").changed() {
-                    app.config.use_steam_runtime = use_slr;
-                    app.config.save();
-                    log_action(&format!("Steam Linux Runtime: {}", if use_slr { "enabled" } else { "disabled" }));
-                }
+                let current_cache = if app.config.cache_location.is_empty() {
+                    format!("{} (default)", AppConfig::get_default_cache_dir().display())
+                } else {
+                    app.config.cache_location.clone()
+                };
+                ui.label(format!("Current: {}", current_cache));
+                ui.add_space(5.0);
 
-                ui.indent("slr_info", |ui| {
-                    if use_slr {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(100, 200, 100),
-                            "Enabled - Launch scripts use containerized runtime",
-                        );
-                        ui.label(
-                            egui::RichText::new("Recommended for most systems")
-                                .size(11.0)
-                                .color(egui::Color32::GRAY),
-                        );
-                    } else {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(255, 200, 100),
-                            "Disabled - Launch scripts use direct Proton execution",
-                        );
-                        ui.label(
-                            egui::RichText::new("Use if you experience SLR-related errors")
-                                .size(11.0)
-                                .color(egui::Color32::GRAY),
-                        );
+                ui.horizontal(|ui| {
+                    if ui.button("Change Location").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_title("Select Cache Location")
+                            .pick_folder()
+                        {
+                            app.config.cache_location = path.to_string_lossy().to_string();
+                            app.config.save();
+                            log_action(&format!("Cache location changed to: {}", app.config.cache_location));
+                        }
+                    }
+
+                    if !app.config.cache_location.is_empty()
+                        && ui.button("Reset to Default").clicked()
+                    {
+                        app.config.cache_location = String::new();
+                        app.config.save();
+                        log_action("Cache location reset to default");
+                    }
+
+                    if ui.button("Open Cache Folder").clicked() {
+                        let cache_path = app.config.get_cache_dir();
+                        let _ = std::fs::create_dir_all(&cache_path);
+                        let _ = std::process::Command::new("xdg-open").arg(&cache_path).spawn();
                     }
                 });
+            });
 
-                ui.add_space(10.0);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-                // --- Regenerate Scripts Button ---
-                ui.label(egui::RichText::new("Regenerate Launch Scripts").strong());
+        // ============================================================
+        // Prefix Cleanup Section
+        // ============================================================
+        egui::CollapsingHeader::new("Prefix Cleanup")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.add_space(5.0);
+                ui.label(egui::RichText::new("Manage NaK-created Wine Prefixes").strong());
                 ui.label(
-                    egui::RichText::new("Update all existing installation scripts with current settings")
+                    egui::RichText::new("Clean up orphaned prefixes after removing mod managers from Steam")
                         .size(11.0)
                         .color(egui::Color32::GRAY),
                 );
-                ui.add_space(5.0);
+                ui.add_space(10.0);
 
-                if ui.button("Regenerate All Scripts").clicked() {
-                    log_action("Regenerate all scripts clicked");
-                    match crate::scripts::regenerate_all_prefix_scripts() {
-                        Ok(count) => {
-                            crate::logging::log_info(&format!("Regenerated scripts for {} prefix(es)", count));
-                        }
-                        Err(e) => {
-                            crate::logging::log_error(&format!("Failed to regenerate scripts: {}", e));
+                let managed = ManagedPrefixes::load();
+
+                if managed.prefixes.is_empty() {
+                    ui.label("No managed prefixes found.");
+                    ui.label(
+                        egui::RichText::new("Prefixes will appear here after installing mod managers via NaK.")
+                            .size(11.0)
+                            .color(egui::Color32::GRAY),
+                    );
+                } else {
+                    // Get all AppIDs currently in shortcuts.vdf
+                    let active_app_ids = get_active_shortcut_app_ids();
+
+                    let mut to_delete: Option<u32> = None;
+
+                    for prefix in &managed.prefixes {
+                        let is_active = active_app_ids.contains(&prefix.app_id);
+                        let prefix_exists = std::path::Path::new(&prefix.prefix_path).exists();
+
+                        egui::Frame::none()
+                            .fill(egui::Color32::from_rgb(35, 35, 45))
+                            .rounding(egui::Rounding::same(6.0))
+                            .inner_margin(10.0)
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    // Manager icon/type
+                                    let type_color = if prefix.manager_type == crate::config::ManagerType::MO2 {
+                                        egui::Color32::from_rgb(100, 150, 255)
+                                    } else {
+                                        egui::Color32::from_rgb(255, 150, 100)
+                                    };
+                                    ui.colored_label(type_color, format!("[{}]", prefix.manager_type));
+
+                                    // Instance name
+                                    ui.label(egui::RichText::new(&prefix.name).strong());
+
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        // Status badge
+                                        if is_active {
+                                            egui::Frame::none()
+                                                .fill(egui::Color32::from_rgb(30, 60, 30))
+                                                .rounding(egui::Rounding::same(4.0))
+                                                .inner_margin(egui::vec2(8.0, 4.0))
+                                                .show(ui, |ui| {
+                                                    ui.colored_label(
+                                                        egui::Color32::from_rgb(100, 200, 100),
+                                                        "In Use",
+                                                    );
+                                                });
+                                        } else {
+                                            egui::Frame::none()
+                                                .fill(egui::Color32::from_rgb(60, 40, 30))
+                                                .rounding(egui::Rounding::same(4.0))
+                                                .inner_margin(egui::vec2(8.0, 4.0))
+                                                .show(ui, |ui| {
+                                                    ui.colored_label(
+                                                        egui::Color32::from_rgb(255, 180, 100),
+                                                        "Removed From Steam",
+                                                    );
+                                                });
+                                        }
+                                    });
+                                });
+
+                                ui.add_space(5.0);
+
+                                // Details
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("AppID: {}", prefix.app_id))
+                                            .size(11.0)
+                                            .color(egui::Color32::GRAY),
+                                    );
+
+                                    if !prefix_exists {
+                                        ui.label(
+                                            egui::RichText::new("|")
+                                                .size(11.0)
+                                                .color(egui::Color32::DARK_GRAY),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("Prefix deleted")
+                                                .size(11.0)
+                                                .color(egui::Color32::from_rgb(255, 100, 100)),
+                                        );
+                                    }
+                                });
+
+                                // Prefix path (truncated safely for UTF-8)
+                                let path_display = truncate_path(&prefix.prefix_path, 60);
+                                ui.label(
+                                    egui::RichText::new(path_display)
+                                        .size(10.0)
+                                        .color(egui::Color32::DARK_GRAY),
+                                );
+
+                                ui.add_space(5.0);
+
+                                // Actions
+                                ui.horizontal(|ui| {
+                                    // Open folder button (always available if exists)
+                                    if prefix_exists
+                                        && ui.small_button("Open Folder").clicked()
+                                    {
+                                        let _ = std::process::Command::new("xdg-open")
+                                            .arg(&prefix.prefix_path)
+                                            .spawn();
+                                    }
+
+                                    // Delete button (only if NOT active)
+                                    if !is_active {
+                                        if prefix_exists {
+                                            if ui.small_button(egui::RichText::new("Delete Prefix").color(egui::Color32::from_rgb(255, 100, 100))).clicked() {
+                                                to_delete = Some(prefix.app_id);
+                                            }
+                                        } else {
+                                            // Just remove from tracking if prefix already deleted
+                                            if ui.small_button("Remove Entry").clicked() {
+                                                ManagedPrefixes::unregister(prefix.app_id);
+                                            }
+                                        }
+                                    }
+                                });
+                            });
+
+                        ui.add_space(8.0);
+                    }
+
+                    // Handle deletion outside the loop to avoid borrow issues
+                    if let Some(app_id) = to_delete {
+                        match ManagedPrefixes::delete_prefix(app_id) {
+                            Ok(_) => {
+                                log_action(&format!("Deleted prefix with AppID: {}", app_id));
+                            }
+                            Err(e) => {
+                                log_action(&format!("Failed to delete prefix: {}", e));
+                            }
                         }
                     }
                 }
-                ui.label(
-                    egui::RichText::new("Use after changing Steam Linux Runtime setting")
-                        .size(11.0)
-                        .color(egui::Color32::GRAY),
-                );
-
-                ui.add_space(15.0);
-                ui.separator();
-                ui.add_space(10.0);
-
-                // --- Pre-Release Updates Toggle ---
-                ui.label(egui::RichText::new("Pre-Release Updates").strong());
-                ui.label(
-                    egui::RichText::new("Get notified about pre-release versions (beta/testing builds)")
-                        .size(11.0)
-                        .color(egui::Color32::GRAY),
-                );
-                ui.add_space(5.0);
-
             });
 
         ui.add_space(10.0);
@@ -628,8 +528,8 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     }
 
                     if ui.button("Open Logs Folder").clicked() {
-                        let config = AppConfig::load();
-                        let logs_path = config.get_data_path().join("logs");
+                        // Logs are now in current working directory
+                        let logs_path = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
                         let _ = std::process::Command::new("xdg-open").arg(&logs_path).spawn();
                     }
                 });
@@ -811,4 +711,43 @@ pub fn render_updater(app: &mut MyApp, ui: &mut egui::Ui) {
             }
         });
     });
+}
+
+/// Safely truncate a path string for display (UTF-8 safe)
+fn truncate_path(path: &str, max_chars: usize) -> String {
+    let char_count = path.chars().count();
+    if char_count <= max_chars {
+        path.to_string()
+    } else {
+        // Take the last (max_chars - 3) characters and prepend "..."
+        let skip = char_count.saturating_sub(max_chars - 3);
+        let truncated: String = path.chars().skip(skip).collect();
+        format!("...{}", truncated)
+    }
+}
+
+/// Get all AppIDs currently in Steam's shortcuts.vdf
+fn get_active_shortcut_app_ids() -> HashSet<u32> {
+    let mut app_ids = HashSet::new();
+
+    // Find Steam path
+    if let Some(steam_path) = crate::steam::find_steam_path() {
+        // Find all user directories in userdata
+        let userdata_path = std::path::Path::new(&steam_path).join("userdata");
+        if let Ok(entries) = std::fs::read_dir(&userdata_path) {
+            for entry in entries.flatten() {
+                let shortcuts_path = entry.path().join("config/shortcuts.vdf");
+                if shortcuts_path.exists() {
+                    // Try to load shortcuts file
+                    if let Ok(shortcuts) = ShortcutsVdf::parse(&shortcuts_path) {
+                        for shortcut in &shortcuts.shortcuts {
+                            app_ids.insert(shortcut.appid);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    app_ids
 }

@@ -1,39 +1,18 @@
 //! UI components and rendering
 
-mod game_fixer;
 mod mod_managers;
 mod pages;
-mod proton_tools;
 mod sidebar;
 
-pub use game_fixer::render_game_fixer;
 pub use mod_managers::render_mod_managers;
-pub use pages::{render_first_run_setup, render_getting_started, render_marketplace, render_settings, render_updater};
-pub use proton_tools::render_proton_tools;
+pub use pages::{render_first_run_setup, render_getting_started, render_settings, render_updater};
 pub use sidebar::render_sidebar;
 
 use eframe::egui;
 use std::sync::atomic::Ordering;
 
 use crate::app::MyApp;
-use crate::logging::{log_action, log_error, log_info};
-use crate::wine::{delete_cachyos_proton, delete_ge_proton};
-
-// ============================================================================
-// UI Extension Trait
-// ============================================================================
-
-pub trait UiExt {
-    fn subheading(&mut self, text: &str);
-}
-
-impl UiExt for egui::Ui {
-    fn subheading(&mut self, text: &str) {
-        self.add_space(10.0);
-        self.label(egui::RichText::new(text).size(16.0).strong());
-        self.add_space(5.0);
-    }
-}
+use crate::logging::{log_error, log_info};
 
 // ============================================================================
 // eframe::App Implementation
@@ -47,7 +26,7 @@ impl eframe::App for MyApp {
         }
 
         if self.should_refresh_proton {
-            self.refresh_proton_versions();
+            self.refresh_steam_protons();
             self.should_refresh_proton = false;
         }
 
@@ -102,14 +81,9 @@ impl eframe::App for MyApp {
                 crate::app::Page::ModManagers => {
                     render_mod_managers(self, ui);
                 }
-                crate::app::Page::GameFixer => {
-                    render_game_fixer(self, ui);
-                }
                 _ => {
                     ui.add_enabled_ui(!is_busy, |ui| match self.current_page {
                         crate::app::Page::GettingStarted => render_getting_started(self, ui),
-                        crate::app::Page::Marketplace => render_marketplace(self, ui),
-                        crate::app::Page::ProtonTools => render_proton_tools(self, ui),
                         crate::app::Page::Settings => render_settings(self, ui),
                         crate::app::Page::Updater => render_updater(self, ui),
                         _ => {}
@@ -122,100 +96,88 @@ impl eframe::App for MyApp {
 
 /// Render confirmation dialogs for destructive actions
 fn render_confirmation_dialogs(app: &mut MyApp, ctx: &egui::Context) {
-    // Prefix deletion confirmation
-    if let Some(prefix_name) = app.pending_prefix_delete.clone() {
-        egui::Window::new("Confirm Delete")
+    // Steam-native migration notice (shown once for users with legacy data)
+    if app.show_steam_migration_popup {
+        egui::Window::new("NaK Has Changed")
             .collapsible(false)
             .resizable(false)
+            .default_width(500.0)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.add_space(10.0);
-                    ui.label(egui::RichText::new("Delete Prefix?").size(18.0).strong());
-                    ui.add_space(10.0);
-                    ui.label(format!("Are you sure you want to delete '{}'?", prefix_name));
-                    ui.label(egui::RichText::new("This will permanently remove all data in this prefix.")
-                        .color(egui::Color32::from_rgb(255, 150, 150)));
+                    ui.label(egui::RichText::new("NaK Now Uses Steam Integration").size(20.0).strong());
                     ui.add_space(15.0);
+                });
 
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            app.pending_prefix_delete = None;
+                ui.label("NaK has moved to Steam-native integration. Your mod managers are now added as non-Steam games and run through Steam's Proton.");
+                ui.add_space(10.0);
+
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgb(50, 40, 30))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("What This Means:").strong());
+                        ui.add_space(5.0);
+                        ui.label("- Old NaK prefixes and Protons are no longer used");
+                        ui.label("- New installations create Steam shortcuts");
+                        ui.label("- Proton versions are managed through Steam");
+                    });
+
+                ui.add_space(15.0);
+
+                let legacy_path = app.config.get_data_path();
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgb(60, 50, 40))
+                    .rounding(egui::Rounding::same(6.0))
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new("Recommended: Delete Old NaK Data").strong().color(egui::Color32::from_rgb(255, 200, 100)));
+                        ui.add_space(5.0);
+                        ui.label(format!("Your old NaK folder at {} contains data from the previous version.", legacy_path.display()));
+                        ui.label("You can safely delete it to start fresh with the new system.");
+                        ui.add_space(5.0);
+                        ui.label(egui::RichText::new("Or keep it if you want to use an older NaK version.")
+                            .size(11.0)
+                            .color(egui::Color32::GRAY));
+                    });
+
+                ui.add_space(15.0);
+
+                ui.horizontal(|ui| {
+                    let nak_folder = app.config.get_data_path();
+
+                    if ui.button("Open NaK Folder").clicked() {
+                        let _ = std::process::Command::new("xdg-open")
+                            .arg(&nak_folder)
+                            .spawn();
+                    }
+
+                    ui.add_space(10.0);
+
+                    if ui.button(egui::RichText::new("Delete Old Data").color(egui::Color32::from_rgb(255, 150, 150))).clicked() {
+                        // Delete the old NaK data folder entirely
+                        if let Err(e) = std::fs::remove_dir_all(&nak_folder) {
+                            log_error(&format!("Failed to delete {}: {}", nak_folder.display(), e));
+                        } else {
+                            log_info(&format!("Deleted old NaK folder: {}", nak_folder.display()));
                         }
-                        ui.add_space(20.0);
-                        if ui.button(egui::RichText::new("Delete").color(egui::Color32::RED)).clicked() {
-                            log_action(&format!("Confirmed delete prefix: {}", prefix_name));
+                        app.show_steam_migration_popup = false;
+                        app.config.steam_migration_shown = true;
+                        app.config.save();
+                    }
 
-                            // Check if this prefix is the active NXM handler before deleting
-                            let prefix_path = app.config.get_prefixes_path().join(&prefix_name).join("pfx");
-                            let prefix_path_str = prefix_path.to_string_lossy().to_string();
-                            let is_active_nxm = app.config.active_nxm_prefix.as_ref() == Some(&prefix_path_str);
-
-                            if let Err(e) = app.prefix_manager.delete_prefix(&prefix_name) {
-                                log_error(&format!("Failed to delete prefix '{}': {}", prefix_name, e));
-                            } else {
-                                log_info(&format!("Prefix '{}' deleted successfully", prefix_name));
-
-                                // If this was the active NXM prefix, clear the NXM handler state
-                                if is_active_nxm {
-                                    log_info("Cleared active NXM handler (deleted prefix was active)");
-                                    app.config.active_nxm_prefix = None;
-                                    app.config.save();
-
-                                    // Also remove the active_nxm_game symlink
-                                    let nxm_link = app.config.get_data_path().join("active_nxm_game");
-                                    if nxm_link.exists() || std::fs::symlink_metadata(&nxm_link).is_ok() {
-                                        let _ = std::fs::remove_file(&nxm_link);
-                                    }
-                                }
-
-                                app.detected_prefixes = app.prefix_manager.scan_prefixes();
-                            }
-                            app.pending_prefix_delete = None;
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Got It, Keep Data").clicked() {
+                            app.show_steam_migration_popup = false;
+                            app.config.steam_migration_shown = true;
+                            app.config.save();
                         }
                     });
-                    ui.add_space(10.0);
                 });
-            });
-    }
 
-    // Proton deletion confirmation
-    if let Some((proton_name, proton_type)) = app.pending_proton_delete.clone() {
-        egui::Window::new("Confirm Uninstall")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);
-                    ui.label(egui::RichText::new("Uninstall Proton?").size(18.0).strong());
-                    ui.add_space(10.0);
-                    ui.label(format!("Are you sure you want to uninstall '{}'?", proton_name));
-                    ui.add_space(15.0);
-
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            app.pending_proton_delete = None;
-                        }
-                        ui.add_space(20.0);
-                        if ui.button(egui::RichText::new("Uninstall").color(egui::Color32::RED)).clicked() {
-                            log_action(&format!("Confirmed uninstall proton: {} ({})", proton_name, proton_type));
-                            let result = if proton_type == "ge" {
-                                delete_ge_proton(&proton_name)
-                            } else {
-                                delete_cachyos_proton(&proton_name)
-                            };
-                            if let Err(e) = result {
-                                log_error(&format!("Failed to uninstall '{}': {}", proton_name, e));
-                            } else {
-                                log_info(&format!("Proton '{}' uninstalled successfully", proton_name));
-                                app.should_refresh_proton = true;
-                            }
-                            app.pending_proton_delete = None;
-                        }
-                    });
-                    ui.add_space(10.0);
-                });
+                ui.add_space(10.0);
             });
     }
 }

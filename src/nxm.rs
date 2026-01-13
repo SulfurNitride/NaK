@@ -1,18 +1,30 @@
+//! NXM URL Handler for Steam-native integration
+//!
+//! Registers NaK as the system's nxm:// URL handler and routes
+//! NXM links to the active mod manager instance via direct Proton launch.
+//! If the mod manager isn't running, it launches via Steam first.
+
 use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::config::AppConfig;
+use crate::logging::{log_install, log_warning};
 
 pub struct NxmHandler;
 
 impl NxmHandler {
+    /// Get the path to config files
+    fn config_dir() -> PathBuf {
+        AppConfig::get_config_dir()
+    }
+
+    /// Set up the NXM handler system (desktop file and handler script)
     pub fn setup() -> Result<(), Box<dyn Error>> {
         let home = std::env::var("HOME")?;
-        let config = AppConfig::load();
-        let nak_dir = config.get_data_path();
+        let nak_dir = Self::config_dir();
         let script_path = nak_dir.join("nxm_handler.sh");
         let applications_dir = PathBuf::from(format!("{}/.local/share/applications", home));
         let desktop_path = applications_dir.join("nak-nxm-handler.desktop");
@@ -35,77 +47,136 @@ impl NxmHandler {
             }
         }
 
-        // 1. Create the Handler Script
-        // Uses relative path from script location to find active_nxm_game symlink
-        // active_nxm_game points to prefix directory (e.g., $DATA_PATH/Prefixes/mo2_xxx)
-        // which contains manager_link symlink to the install directory
-        // Supports both MO2 (via nxmhandler.exe) and Vortex mod managers
-        let script_content = r#"#!/bin/bash
-# NaK Global NXM Handler
-# Forwards nxm:// links to the active mod manager instance (MO2 or Vortex)
+        // Create the NXM handler script (Direct Proton launch version)
+        let script_content = r##"#!/bin/bash
+# NaK Global NXM Handler (Direct Proton Launch)
+# Forwards nxm:// links to the active mod manager instance directly via Proton
+# This bypasses Steam's URL scheme to avoid the security confirmation dialog
+# If the mod manager isn't running, it launches it via Steam first
 
-# Derive paths relative to script location (portable after NaK folder moves)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ACTIVE_LINK="$SCRIPT_DIR/active_nxm_game"
+NAK_CONFIG_DIR="$HOME/.config/nak"
+ACTIVE_EXE_FILE="$NAK_CONFIG_DIR/active_nxm_exe"
+ACTIVE_PREFIX_FILE="$NAK_CONFIG_DIR/active_nxm_prefix"
+ACTIVE_APPID_FILE="$NAK_CONFIG_DIR/active_nxm_appid"
+NXM_URL="$1"
 
-if [ ! -L "$ACTIVE_LINK" ]; then
-    zenity --error --text="No active mod manager instance selected in NaK!\n\nGo to NaK → Mod Managers and click 'Activate NXM' on your preferred prefix." --title="NaK Error"
-    exit 1
-fi
-
-# Check if symlink target exists (prefix might have been deleted)
-if [ ! -e "$ACTIVE_LINK" ]; then
-    zenity --error --text="Active NXM prefix no longer exists!\n\nThe prefix was likely deleted. Go to NaK → Mod Managers and click 'Activate NXM' on another prefix." --title="NaK Error"
-    exit 1
-fi
-
-# Get prefix directory and install directory via manager_link
-PREFIX_DIR=$(readlink -f "$ACTIVE_LINK")
-MANAGER_LINK="$PREFIX_DIR/manager_link"
-
-if [ ! -L "$MANAGER_LINK" ]; then
-    zenity --error --text="manager_link not found in prefix.\n\nPrefix: $PREFIX_DIR\n\nTry clicking 'Regenerate Scripts' in NaK for this prefix." --title="NaK Error"
-    exit 1
-fi
-
-# Check if manager_link target exists (mod manager folder might have been deleted/moved)
-if [ ! -e "$MANAGER_LINK" ]; then
-    BROKEN_TARGET=$(readlink "$MANAGER_LINK")
-    zenity --error --text="Mod manager folder no longer exists!\n\nExpected location: $BROKEN_TARGET\n\nEither restore the folder or delete this prefix in NaK and set up a new one." --title="NaK Error"
-    exit 1
-fi
-
-INSTALL_DIR=$(readlink -f "$MANAGER_LINK")
-
-# Detect mod manager type and find appropriate launcher
-if [ -f "$INSTALL_DIR/nxmhandler.exe" ]; then
-    # MO2 installation - use Handle NXM symlink or fall back to Launch MO2
-    if [ -f "$INSTALL_DIR/Handle NXM" ]; then
-        LAUNCHER="$INSTALL_DIR/Handle NXM"
-    elif [ -f "$INSTALL_DIR/Launch MO2" ]; then
-        LAUNCHER="$INSTALL_DIR/Launch MO2"
+# Check if handler is configured
+if [ ! -f "$ACTIVE_EXE_FILE" ] || [ ! -f "$ACTIVE_PREFIX_FILE" ]; then
+    # Check if only old appid file exists (from old NXM Toggle script)
+    if [ -f "$ACTIVE_APPID_FILE" ]; then
+        zenity --error --text="NXM handler needs to be reconfigured!\n\nYou have an old NXM configuration.\n\nRun the 'NXM Toggle.sh' script in your mod manager's 'NaK Tools' folder to reconfigure." --title="NaK Update Required"
     else
-        zenity --error --text="MO2 detected but no launch script found.\n\nLocation: $INSTALL_DIR\n\nTry clicking 'Regenerate Scripts' in NaK." --title="NaK Error"
-        exit 1
+        zenity --error --text="No active mod manager instance configured!\n\nRun the 'NXM Toggle.sh' script in your mod manager's 'NaK Tools' folder to enable NXM handling." --title="NaK Error"
     fi
-elif [ -f "$INSTALL_DIR/Vortex.exe" ]; then
-    # Vortex installation - use Handle NXM symlink or fall back to Launch Vortex
-    if [ -f "$INSTALL_DIR/Handle NXM" ]; then
-        LAUNCHER="$INSTALL_DIR/Handle NXM"
-    elif [ -f "$INSTALL_DIR/Launch Vortex" ]; then
-        LAUNCHER="$INSTALL_DIR/Launch Vortex"
-    else
-        zenity --error --text="Vortex detected but no launch script found.\n\nLocation: $INSTALL_DIR\n\nTry clicking 'Regenerate Scripts' in NaK." --title="NaK Error"
-        exit 1
-    fi
+    exit 1
+fi
+
+NXM_EXE=$(cat "$ACTIVE_EXE_FILE")
+WINEPREFIX=$(cat "$ACTIVE_PREFIX_FILE")
+
+if [ -z "$NXM_EXE" ] || [ -z "$WINEPREFIX" ]; then
+    zenity --error --text="Invalid NXM configuration!\n\nThe configuration files are empty.\n\nRun the 'NXM Toggle.sh' script in your mod manager's 'NaK Tools' folder to reconfigure." --title="NaK Error"
+    exit 1
+fi
+
+if [ ! -f "$NXM_EXE" ]; then
+    zenity --error --text="NXM handler executable not found!\n\nPath: $NXM_EXE\n\nThe mod manager may have been moved or deleted." --title="NaK Error"
+    exit 1
+fi
+
+if [ ! -d "$WINEPREFIX" ]; then
+    zenity --error --text="Wine prefix not found!\n\nPath: $WINEPREFIX\n\nThe prefix may have been moved or deleted." --title="NaK Error"
+    exit 1
+fi
+
+# Find Steam path
+if [ -d "$HOME/.steam/steam" ]; then
+    STEAM_PATH="$HOME/.steam/steam"
+elif [ -d "$HOME/.local/share/Steam" ]; then
+    STEAM_PATH="$HOME/.local/share/Steam"
 else
-    zenity --error --text="Could not detect mod manager type.\n\nLocation: $INSTALL_DIR\n\nExpected to find nxmhandler.exe (MO2) or Vortex.exe" --title="NaK Error"
+    zenity --error --text="Steam installation not found!" --title="NaK Error"
     exit 1
 fi
 
-# Run the launcher with the NXM link
-"$LAUNCHER" "$1"
-"#;
+# Read Proton path from NXM config
+ACTIVE_PROTON_FILE="$NAK_CONFIG_DIR/active_nxm_proton"
+if [ ! -f "$ACTIVE_PROTON_FILE" ]; then
+    zenity --error --text="NXM Proton configuration missing!\n\nRun the 'NXM Toggle.sh' script in your mod manager's 'NaK Tools' folder to reconfigure." --title="NaK Error"
+    exit 1
+fi
+
+PROTON_PATH=$(cat "$ACTIVE_PROTON_FILE")
+PROTON_BIN="$PROTON_PATH/proton"
+
+if [ ! -f "$PROTON_BIN" ]; then
+    zenity --error --text="Proton binary not found!\n\nPath: $PROTON_BIN\n\nThe Proton may have been moved or deleted. Run 'NXM Toggle.sh' again after reinstalling." --title="NaK Error"
+    exit 1
+fi
+
+# Determine the mod manager type and process name
+NXM_DIR=$(dirname "$NXM_EXE")
+if [ -f "$NXM_DIR/ModOrganizer.exe" ]; then
+    MOD_MANAGER="MO2"
+    PROCESS_NAME="ModOrganizer.exe"
+elif [ -f "$NXM_DIR/Vortex.exe" ]; then
+    MOD_MANAGER="Vortex"
+    PROCESS_NAME="Vortex.exe"
+else
+    MOD_MANAGER="Unknown"
+    PROCESS_NAME=""
+fi
+
+# Check if mod manager is already running (look for wine process with the exe name)
+is_running() {
+    pgrep -f "$PROCESS_NAME" > /dev/null 2>&1
+}
+
+# If mod manager isn't running, launch it via Steam first
+if [ -n "$PROCESS_NAME" ] && ! is_running; then
+    echo "NaK: $MOD_MANAGER is not running, launching via Steam..."
+
+    # Read AppID and calculate 64-bit Game ID
+    if [ -f "$ACTIVE_APPID_FILE" ]; then
+        APPID=$(cat "$ACTIVE_APPID_FILE")
+        if [ -n "$APPID" ]; then
+            # Convert 32-bit AppID to 64-bit Game ID: (appid << 32) | 0x02000000
+            GAME_ID=$(python3 -c "print(($APPID << 32) | 0x02000000)")
+
+            # Launch via Steam
+            xdg-open "steam://rungameid/$GAME_ID"
+
+            # Wait for mod manager to start (up to 30 seconds)
+            echo "NaK: Waiting for $MOD_MANAGER to start..."
+            for i in {1..30}; do
+                sleep 1
+                if is_running; then
+                    echo "NaK: $MOD_MANAGER is now running"
+                    echo "NaK: Waiting for $MOD_MANAGER to fully initialize..."
+                    sleep 8  # Give it time to fully initialize IPC server
+                    break
+                fi
+            done
+
+            if ! is_running; then
+                zenity --warning --text="$MOD_MANAGER may not have started properly.\n\nThe NXM link will still be processed, but you may need to start $MOD_MANAGER manually." --title="NaK Warning"
+            fi
+        fi
+    fi
+fi
+
+# Set up environment for Proton
+export WINEPREFIX
+export STEAM_COMPAT_DATA_PATH="${WINEPREFIX%/pfx}"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
+export WINEDLLOVERRIDES="winemenubuilder.exe="
+
+# Launch nxmhandler.exe directly with Proton
+echo "NaK: Handling NXM link via direct Proton launch..."
+echo "  EXE: $NXM_EXE"
+echo "  URL: $NXM_URL"
+"$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
+"##;
 
         let mut file = fs::File::create(&script_path)?;
         file.write_all(script_content.as_bytes())?;
@@ -113,17 +184,18 @@ fi
         perms.set_mode(0o755);
         fs::set_permissions(&script_path, perms)?;
 
-        // 2. Create Desktop Entry
+        // Create Desktop Entry
         let desktop_content = format!(
             r#"[Desktop Entry]
 Type=Application
 Name=NaK NXM Handler
-Comment=Handle Nexus Mods links via NaK
+Comment=Handle Nexus Mods links via NaK (Direct Proton)
 Exec="{}" %u
 Icon=utilities-terminal
 Terminal=false
 Categories=Game;Utility;
 MimeType=x-scheme-handler/nxm;
+NoDisplay=true
 "#,
             script_path.to_string_lossy()
         );
@@ -131,28 +203,19 @@ MimeType=x-scheme-handler/nxm;
         let mut dfile = fs::File::create(&desktop_path)?;
         dfile.write_all(desktop_content.as_bytes())?;
 
-        // 3. Register Mime Type (xdg-mime)
-        std::process::Command::new("xdg-mime")
+        // Register Mime Type (xdg-mime)
+        let status = std::process::Command::new("xdg-mime")
             .arg("default")
             .arg("nak-nxm-handler.desktop")
             .arg("x-scheme-handler/nxm")
-            .spawn()?;
+            .status()?;
 
-        println!("NXM Handler registered.");
-        Ok(())
-    }
-
-    /// Set active NXM instance - takes prefix base path (e.g., $DATA_PATH/Prefixes/mo2_xxx)
-    pub fn set_active_instance(prefix_base: &Path) -> Result<(), Box<dyn Error>> {
-        let config = AppConfig::load();
-        let link_path = config.get_data_path().join("active_nxm_game");
-
-        if link_path.exists() || fs::symlink_metadata(&link_path).is_ok() {
-            let _ = fs::remove_file(&link_path);
+        if status.success() {
+            log_install("NXM Handler registered successfully (Direct Proton)");
+        } else {
+            log_warning("Failed to register NXM handler with xdg-mime");
         }
 
-        std::os::unix::fs::symlink(prefix_base, &link_path)?;
-        println!("Set active NXM instance to {:?}", prefix_base);
         Ok(())
     }
 }

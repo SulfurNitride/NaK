@@ -5,14 +5,12 @@ use std::sync::atomic::Ordering;
 use std::thread;
 
 use crate::app::{InstallWizard, ModManagerView, MyApp, WizardStep};
-use crate::config::AppConfig;
 use crate::installers::{
-    apply_dpi, apply_wine_registry_settings, install_mo2, install_vortex, kill_wineserver,
+    apply_dpi, get_available_disk_space, install_mo2, install_vortex, kill_wineserver,
     launch_dpi_test_app, setup_existing_mo2, setup_existing_vortex, TaskContext, DPI_PRESETS,
+    MIN_REQUIRED_DISK_SPACE_GB,
 };
 use crate::logging::log_action;
-use crate::nxm::NxmHandler;
-use crate::scripts::ScriptGenerator;
 
 pub fn render_mod_managers(app: &mut MyApp, ui: &mut egui::Ui) {
     let is_busy = *app.is_installing_manager.lock().unwrap();
@@ -34,28 +32,16 @@ pub fn render_mod_managers(app: &mut MyApp, ui: &mut egui::Ui) {
     // Main Content
     egui::ScrollArea::vertical().show(ui, |ui| match app.mod_manager_view {
         ModManagerView::Dashboard => render_dashboard(app, ui),
-        ModManagerView::PrefixManager => render_prefix_manager(app, ui),
         ModManagerView::Mo2Manager => render_manager_view(app, ui, "MO2"),
         ModManagerView::VortexManager => render_manager_view(app, ui, "Vortex"),
     });
 }
 
 fn render_dashboard(app: &mut MyApp, ui: &mut egui::Ui) {
-    ui.label("Select a manager to configure:");
+    ui.label("Select a mod manager to install:");
     ui.add_space(10.0);
 
     let button_size = egui::vec2(ui.available_width(), 80.0);
-
-    if ui
-        .add_sized(
-            button_size,
-            egui::Button::new(egui::RichText::new("🍷 Prefix Manager").heading()),
-        )
-        .clicked()
-    {
-        app.mod_manager_view = ModManagerView::PrefixManager;
-    }
-    ui.add_space(10.0);
 
     if ui
         .add_sized(
@@ -66,7 +52,6 @@ fn render_dashboard(app: &mut MyApp, ui: &mut egui::Ui) {
     {
         app.mod_manager_view = ModManagerView::Mo2Manager;
         app.install_wizard.manager_type = "MO2".to_string();
-        app.install_wizard.use_slr = app.config.use_steam_runtime;
     }
     ui.add_space(10.0);
 
@@ -79,239 +64,26 @@ fn render_dashboard(app: &mut MyApp, ui: &mut egui::Ui) {
     {
         app.mod_manager_view = ModManagerView::VortexManager;
         app.install_wizard.manager_type = "Vortex".to_string();
-        app.install_wizard.use_slr = app.config.use_steam_runtime;
     }
-}
 
-fn render_prefix_manager(app: &mut MyApp, ui: &mut egui::Ui) {
-    ui.heading("Prefix Manager");
-    ui.label("Manage your Wine prefixes directly.");
-    ui.add_space(5.0);
-    ui.horizontal(|ui| {
-        if ui.button("Scan for New Prefixes").clicked() {
-            app.detected_prefixes = app.prefix_manager.scan_prefixes();
-        }
-    });
-
+    ui.add_space(20.0);
+    ui.separator();
     ui.add_space(10.0);
 
-    // Clone prefixes to safely iterate while mutating app later
-    let prefixes = app.detected_prefixes.clone();
-
-    if prefixes.is_empty() {
-        ui.add_space(10.0);
-        egui::Frame::none()
-            .fill(egui::Color32::from_rgb(40, 40, 50))
-            .rounding(egui::Rounding::same(8.0))
-            .inner_margin(15.0)
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new("No prefixes detected!").size(16.0).strong());
-                ui.add_space(8.0);
-                ui.label("To get started, install MO2 or Vortex from the Mod Managers page.");
-                ui.add_space(5.0);
-                ui.label(
-                    egui::RichText::new("You can have multiple MO2 instances and multiple Vortex instances.")
-                        .color(egui::Color32::LIGHT_GRAY)
-                        .size(12.0),
-                );
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    if ui.button("Install MO2").clicked() {
-                        app.mod_manager_view = crate::app::ModManagerView::Mo2Manager;
-                        app.install_wizard.manager_type = "MO2".to_string();
-                        app.install_wizard.use_slr = app.config.use_steam_runtime;
-                    }
-                    if ui.button("Install Vortex").clicked() {
-                        app.mod_manager_view = crate::app::ModManagerView::VortexManager;
-                        app.install_wizard.manager_type = "Vortex".to_string();
-                        app.install_wizard.use_slr = app.config.use_steam_runtime;
-                    }
-                });
-            });
-    }
-
-    for prefix in &prefixes {
-        egui::Frame::group(ui.style())
-            .rounding(egui::Rounding::same(6.0))
-            .fill(egui::Color32::from_gray(32))
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(60)))
-            .inner_margin(10.0)
-            .show(ui, |ui| {
-                // Header: Name + Orphan Status
-                ui.horizontal(|ui| {
-                    ui.heading(&prefix.name);
-                    if prefix.is_orphaned {
-                        ui.add_space(10.0);
-                        ui.colored_label(egui::Color32::RED, "Orphaned");
-                    }
-                });
-
-                // Path
-                ui.label(egui::RichText::new(prefix.path.to_string_lossy()).color(egui::Color32::from_gray(180)).size(12.0));
-                ui.add_space(5.0);
-
-                // Actions
-                ui.horizontal(|ui| {
-                    let winetricks_ready = app.winetricks_path.lock().unwrap().is_some();
-
-                    if ui.add_enabled(winetricks_ready, egui::Button::new("Winetricks")).clicked() {
-                        launch_winetricks(app, prefix.path.clone());
-                    }
-
-                    if ui.button("Open Folder").clicked() {
-                        let _ = std::process::Command::new("xdg-open")
-                            .arg(&prefix.path)
-                            .spawn();
-                    }
-
-                    render_nxm_toggle(app, ui, prefix);
-
-                    // Regenerate Script Button
-                    let prefix_base = prefix.path.parent().unwrap();
-                    let manager_link = prefix_base.join("manager_link");
-                    let is_managed = manager_link.exists() || std::fs::symlink_metadata(&manager_link).is_ok();
-
-                    // Fix Game Registry button (for MO2 global instances)
-                    let registry_fix_script = prefix_base.join("game_registry_fix.sh");
-                    if registry_fix_script.exists()
-                        && ui.button("Fix Registry").on_hover_text("Run game registry fix (for global instances)").clicked()
-                    {
-                        // Launch the registry fix script in a terminal
-                        let script_path = registry_fix_script.to_string_lossy().to_string();
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(format!(
-                                "x-terminal-emulator -e '{}' || gnome-terminal -- '{}' || konsole -e '{}' || xterm -e '{}'",
-                                script_path, script_path, script_path, script_path
-                            ))
-                            .spawn();
-                    }
-
-                    if is_managed && ui.button("Regenerate Scripts").clicked() {
-                        // Resolve target to pass correct exe path
-                        let target = std::fs::read_link(&manager_link).unwrap_or(manager_link.clone());
-                        regenerate_script(app, prefix, &target);
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Delete").on_hover_text("Delete Prefix").clicked() {
-                            app.pending_prefix_delete = Some(prefix.name.clone());
-                        }
-                    });
-                });
-
-                // SLR toggle row (below main actions)
-                let prefix_base = prefix.path.parent().unwrap();
-                let manager_link = prefix_base.join("manager_link");
-                let is_managed = manager_link.exists() || std::fs::symlink_metadata(&manager_link).is_ok();
-
-                if is_managed {
-                    let script_path = prefix_base.join("start.sh");
-                    let current_slr = ScriptGenerator::script_uses_slr(&script_path);
-
-                    ui.horizontal(|ui| {
-                        ui.label("SLR:");
-                        match current_slr {
-                            Some(true) => {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(100, 200, 100),
-                                    "Enabled",
-                                );
-                                if ui.small_button("Disable SLR").on_hover_text("Regenerate scripts without Steam Linux Runtime").clicked() {
-                                    let target = std::fs::read_link(&manager_link).unwrap_or(manager_link.clone());
-                                    regenerate_script_with_slr(app, prefix, &target, false);
-                                }
-                            }
-                            Some(false) => {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(255, 200, 100),
-                                    "Disabled",
-                                );
-                                let slr_available = crate::wine::runtime::is_runtime_installed();
-                                if ui.add_enabled(slr_available, egui::Button::new("Enable SLR").small())
-                                    .on_hover_text(if slr_available {
-                                        "Regenerate scripts with Steam Linux Runtime"
-                                    } else {
-                                        "SLR not installed - download in Proton Picker"
-                                    })
-                                    .clicked()
-                                {
-                                    let target = std::fs::read_link(&manager_link).unwrap_or(manager_link.clone());
-                                    regenerate_script_with_slr(app, prefix, &target, true);
-                                }
-                            }
-                            None => {
-                                ui.colored_label(
-                                    egui::Color32::GRAY,
-                                    "Unknown",
-                                );
-                            }
-                        }
-                    });
-
-                    // DPI Settings row
-                    render_dpi_settings(app, ui, prefix);
-                }
-            });
-        ui.add_space(8.0);
-    }
-}
-
-/// Render DPI settings for a prefix in the prefix manager
-fn render_dpi_settings(app: &mut MyApp, ui: &mut egui::Ui, prefix: &crate::wine::NakPrefix) {
-    // Get proton for DPI operations
-    let proton = match app.config.selected_proton.as_ref() {
-        Some(name) => app.proton_versions.iter().find(|p| &p.name == name).cloned(),
-        None => None,
-    };
-
-    // Clone prefix path for use in closures
-    let prefix_path = prefix.path.clone();
-    let prefix_name = prefix.name.clone();
-
-    ui.horizontal(|ui| {
-        ui.label("DPI:");
-
-        if let Some(proton) = &proton {
-            // Display preset buttons with percentage and value
-            for (dpi_value, label) in DPI_PRESETS {
-                let btn_text = format!("{} ({})", label, dpi_value);
-                if ui.small_button(&btn_text).on_hover_text(format!("Set DPI to {}", dpi_value)).clicked() {
-                    // Kill any running processes
-                    kill_wineserver(&prefix_path, proton);
-
-                    // Apply the new DPI
-                    if let Err(e) = apply_dpi(&prefix_path, proton, *dpi_value) {
-                        crate::logging::log_error(&format!("Failed to apply DPI {}: {}", dpi_value, e));
-                    } else {
-                        crate::logging::log_info(&format!("Set DPI to {} for {}", dpi_value, prefix_name));
-                    }
-                }
-            }
-
-            // Custom DPI input
-            ui.add_space(10.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut app.prefix_custom_dpi_input)
-                    .desired_width(50.0)
-                    .hint_text("DPI")
+    // Info about Steam-native integration
+    egui::Frame::none()
+        .fill(egui::Color32::from_rgb(40, 50, 60))
+        .rounding(egui::Rounding::same(6.0))
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("Steam Integration").strong());
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("Mod managers are installed as Steam shortcuts. After installation, launch them from your Steam library.")
+                    .size(12.0)
+                    .color(egui::Color32::GRAY),
             );
-            if ui.small_button("Set").on_hover_text("Apply custom DPI (72-480)").clicked() {
-                if let Ok(custom_dpi) = app.prefix_custom_dpi_input.trim().parse::<u32>() {
-                    if (72..=480).contains(&custom_dpi) {
-                        kill_wineserver(&prefix_path, proton);
-                        if let Err(e) = apply_dpi(&prefix_path, proton, custom_dpi) {
-                            crate::logging::log_error(&format!("Failed to apply DPI {}: {}", custom_dpi, e));
-                        } else {
-                            crate::logging::log_info(&format!("Set DPI to {} for {}", custom_dpi, prefix_name));
-                        }
-                    }
-                }
-            }
-        } else {
-            ui.colored_label(egui::Color32::GRAY, "No Proton selected");
-        }
-    });
+        });
 }
 
 fn render_manager_view(app: &mut MyApp, ui: &mut egui::Ui, manager_name: &str) {
@@ -322,7 +94,17 @@ fn render_manager_view(app: &mut MyApp, ui: &mut egui::Ui, manager_name: &str) {
     let is_busy = *app.is_installing_manager.lock().unwrap();
     let status = app.install_status.lock().unwrap().clone();
     let progress = *app.install_progress.lock().unwrap();
-    let proton_selected = app.config.selected_proton.is_some();
+
+    // Check for install result and update wizard state
+    if !is_busy && status.contains("Complete!") {
+        // Read the result values from the install thread
+        if let Some(app_id) = app.install_result_app_id.lock().unwrap().take() {
+            app.install_wizard.installed_app_id = Some(app_id);
+        }
+        if let Some(prefix_path) = app.install_result_prefix_path.lock().unwrap().take() {
+            app.install_wizard.installed_prefix_path = Some(prefix_path);
+        }
+    }
 
     // Render Wizard
     let action = render_install_wizard(
@@ -330,8 +112,8 @@ fn render_manager_view(app: &mut MyApp, ui: &mut egui::Ui, manager_name: &str) {
         is_busy,
         &status,
         progress,
-        proton_selected,
         manager_name,
+        &app.steam_protons,
         ui
     );
 
@@ -342,8 +124,6 @@ fn render_manager_view(app: &mut MyApp, ui: &mut egui::Ui, manager_name: &str) {
             app.install_wizard = InstallWizard::default();
             // Ensure we are back on the right manager page if reset changes things (it shouldn't here)
             app.install_wizard.manager_type = manager_name.to_string();
-            // Initialize SLR toggle from config
-            app.install_wizard.use_slr = app.config.use_steam_runtime;
             // Clear installation status to prevent state detection issues
             *app.install_status.lock().unwrap() = String::new();
             *app.install_progress.lock().unwrap() = 0.0;
@@ -385,8 +165,8 @@ fn render_install_wizard(
     is_busy: bool,
     status: &str,
     _progress: f32,
-    proton_selected: bool,
     manager_name: &str,
+    steam_protons: &[crate::steam::SteamProton],
     ui: &mut egui::Ui
 ) -> WizardAction {
     let mut action = WizardAction::None;
@@ -410,6 +190,7 @@ fn render_install_wizard(
     }
 
     // Handle installation completion states
+    // Check when install finishes (from ProtonSelect step where "Start Installation" is clicked)
     if !is_busy && wizard.step != WizardStep::Finished && wizard.step != WizardStep::Selection && wizard.step != WizardStep::DpiSetup {
         if status.contains("Cancelled") {
             // Installation was cancelled - reset wizard to allow retry
@@ -423,7 +204,7 @@ fn render_install_wizard(
             // Installation failed with error
             wizard.last_install_error = Some(status.to_string());
             wizard.step = WizardStep::Finished;
-        } else if status.contains("Complete!") {
+        } else if status.contains("Complete!") || status.contains("Installed!") || status.contains("Setup Complete!") {
             // Installation succeeded - move to DPI setup
             wizard.last_install_error = None;
             wizard.step = WizardStep::DpiSetup;
@@ -434,7 +215,7 @@ fn render_install_wizard(
         WizardStep::Selection => {
             // Allow buttons to expand
             let btn_size = egui::vec2(ui.available_width() / 2.0 - 10.0, 50.0);
-            
+
             ui.horizontal(|ui| {
                 if ui.add_sized(btn_size, egui::Button::new(format!("Install New {}", manager_name))).clicked() {
                     wizard.install_type = "New".to_string();
@@ -450,9 +231,9 @@ fn render_install_wizard(
             ui.heading("Step 1: Instance Name");
             ui.label("Give your installation a unique name. This will be used to identify the prefix folder.");
             ui.add_space(5.0);
-            
+
             ui.text_edit_singleline(&mut wizard.name);
-            
+
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
@@ -506,38 +287,39 @@ fn render_install_wizard(
                 ui.colored_label(egui::Color32::GREEN, "Path looks good");
             }
 
+            // Disk space warning and override
+            if wizard.low_disk_space && !wizard.path.is_empty() {
+                ui.add_space(10.0);
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgb(80, 50, 30))
+                    .rounding(egui::Rounding::same(4.0))
+                    .inner_margin(10.0)
+                    .show(ui, |ui| {
+                        let required = if wizard.install_type == "Linked" { 1.0 } else { MIN_REQUIRED_DISK_SPACE_GB };
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 180, 100),
+                            format!(
+                                "⚠ Low disk space: {:.1}GB available, {:.0}GB recommended",
+                                wizard.available_disk_gb, required
+                            ),
+                        );
+                        ui.label(
+                            egui::RichText::new("Installation may fail or cause issues with insufficient space.")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(200, 180, 150)),
+                        );
+                        ui.checkbox(
+                            &mut wizard.disk_space_override,
+                            "I understand and want to proceed anyway",
+                        );
+                    });
+            }
+
             ui.add_space(15.0);
             ui.separator();
             ui.add_space(10.0);
 
-            // SLR toggle
-            let slr_available = crate::wine::runtime::is_runtime_installed();
-            ui.horizontal(|ui| {
-                ui.label("Use Steam Linux Runtime (SLR):");
-                if slr_available {
-                    ui.checkbox(&mut wizard.use_slr, "");
-                    if wizard.use_slr {
-                        ui.colored_label(egui::Color32::from_rgb(100, 200, 100), "Enabled");
-                    } else {
-                        ui.colored_label(egui::Color32::from_rgb(255, 200, 100), "Disabled");
-                    }
-                } else {
-                    wizard.use_slr = false;
-                    ui.colored_label(egui::Color32::GRAY, "Not installed");
-                    ui.label("(Download in Proton Picker)");
-                }
-            });
-            ui.label(egui::RichText::new("SLR provides better compatibility but might cause unexpected issues.").small().weak());
-
             // Show warning if no Proton selected
-            if !proton_selected {
-                ui.add_space(5.0);
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 150, 100),
-                    "⚠ Please select a Proton version in 'Proton Picker' first",
-                );
-            }
-
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
@@ -546,21 +328,136 @@ fn render_install_wizard(
 
                 // Proceed logic
                 let mut can_proceed = !wizard.path.trim().is_empty();
-                
+
                 if let Some(err) = &wizard.validation_error {
-                        if err.contains("not empty") {
-                            // Allow if forced
-                            if !wizard.force_install {
-                                can_proceed = false;
-                            }
-                        } else {
-                            // Block on other errors (like doesn't exist for Existing install)
+                    if err.contains("not empty") {
+                        // Allow if forced
+                        if !wizard.force_install {
                             can_proceed = false;
                         }
+                    } else {
+                        // Block on other errors (like doesn't exist for Existing install)
+                        can_proceed = false;
+                    }
                 }
-                
-                if ui.add_enabled(can_proceed && proton_selected, egui::Button::new(if wizard.install_type == "New" { "Start Installation" } else { "Setup Instance" }))
-                    .on_disabled_hover_text(if !proton_selected { "Please select a Proton version in 'Proton Picker' first."} else { "Please resolve the path issues." })
+
+                // Block if low disk space and override not checked
+                if wizard.low_disk_space && !wizard.disk_space_override {
+                    can_proceed = false;
+                }
+
+                let hover_text = if wizard.low_disk_space && !wizard.disk_space_override {
+                    "Please acknowledge the low disk space warning to proceed."
+                } else {
+                    "Please resolve the path issues."
+                };
+
+                if ui.add_enabled(can_proceed, egui::Button::new("Next"))
+                    .on_disabled_hover_text(hover_text)
+                    .clicked()
+                {
+                    wizard.step = WizardStep::ProtonSelect;
+                }
+            });
+        },
+        WizardStep::ProtonSelect => {
+            ui.heading("Step 3: Select Proton Version");
+            ui.label("Choose which Proton version to use for this mod manager.");
+            ui.add_space(10.0);
+
+            if steam_protons.is_empty() {
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 150, 100),
+                    "No Proton versions found in Steam!",
+                );
+                ui.add_space(5.0);
+                ui.label("Please install a Proton version through Steam or ProtonUp-Qt.");
+                ui.add_space(5.0);
+                if ui.button("Open ProtonUp-Qt (Flathub)").clicked() {
+                    let _ = std::process::Command::new("xdg-open")
+                        .arg("https://flathub.org/apps/net.davidotek.pupgui2")
+                        .spawn();
+                }
+            } else {
+                ui.label(egui::RichText::new("Available Proton Versions:").strong());
+                ui.add_space(5.0);
+
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        for proton in steam_protons {
+                            let is_selected = wizard.selected_proton.as_ref() == Some(&proton.config_name);
+
+                            let mut frame = egui::Frame::none()
+                                .inner_margin(8.0)
+                                .rounding(egui::Rounding::same(4.0));
+
+                            if is_selected {
+                                frame = frame.fill(egui::Color32::from_rgb(50, 80, 50));
+                            }
+
+                            frame.show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    let radio = ui.radio(is_selected, "");
+
+                                    ui.vertical(|ui| {
+                                        let name_text = if proton.is_experimental {
+                                            egui::RichText::new(&proton.name).strong().color(egui::Color32::from_rgb(150, 200, 255))
+                                        } else if proton.name.contains("GE-Proton") {
+                                            egui::RichText::new(&proton.name).strong().color(egui::Color32::from_rgb(255, 200, 100))
+                                        } else {
+                                            egui::RichText::new(&proton.name).strong()
+                                        };
+                                        ui.label(name_text);
+
+                                        let desc = if proton.is_experimental {
+                                            "Valve's experimental branch - Good for most games"
+                                        } else if proton.name.contains("GE-Proton") {
+                                            "GloriousEggroll - Extra patches for modding tools"
+                                        } else if proton.is_steam_proton {
+                                            "Steam's built-in Proton version"
+                                        } else {
+                                            "Custom Proton version"
+                                        };
+                                        ui.label(egui::RichText::new(desc).size(11.0).color(egui::Color32::GRAY));
+                                    });
+
+                                    if radio.clicked() || ui.interact(ui.min_rect(), ui.id().with(&proton.name), egui::Sense::click()).clicked() {
+                                        wizard.selected_proton = Some(proton.config_name.clone());
+                                    }
+                                });
+                            });
+                        }
+                    });
+            }
+
+            ui.add_space(15.0);
+
+            // Recommendation box
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(40, 50, 60))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(10.0)
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("💡 Recommendation").strong());
+                    ui.label("GE-Proton is recommended for modding tools like MO2 and Vortex.");
+                    ui.label("Install it via ProtonUp-Qt if you don't have it.");
+                });
+
+            ui.add_space(15.0);
+            ui.horizontal(|ui| {
+                if ui.button("Back").clicked() {
+                    wizard.step = WizardStep::PathInput;
+                }
+
+                let can_proceed = wizard.selected_proton.is_some();
+                let button_label = match wizard.install_type.as_str() {
+                    "New" | "Linked" => "Start Installation",
+                    _ => "Setup Instance",
+                };
+
+                if ui.add_enabled(can_proceed, egui::Button::new(button_label))
+                    .on_disabled_hover_text("Please select a Proton version.")
                     .clicked()
                 {
                     *action_ref = WizardAction::Start;
@@ -568,7 +465,7 @@ fn render_install_wizard(
             });
         },
         WizardStep::DpiSetup => {
-            ui.heading("Step 3: DPI Scaling");
+            ui.heading("Step 4: DPI Scaling");
             ui.label("Configure display scaling for your mod manager.");
             ui.add_space(5.0);
 
@@ -705,8 +602,8 @@ fn render_install_wizard(
                     ui.label(format!("Error: {}", error_msg));
                     ui.add_space(10.0);
                     ui.label(egui::RichText::new("Please check the logs for more details:").strong());
-                    let config = AppConfig::load();
-                    ui.label(config.get_data_path().join("logs").to_string_lossy().to_string());
+                    let logs_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                    ui.label(format!("{}/nak_*.log", logs_dir.display()));
                     ui.add_space(20.0);
 
                     ui.horizontal(|ui| {
@@ -725,36 +622,55 @@ fn render_install_wizard(
                     ui.label(format!("{} has been set up successfully.", manager_name));
                     ui.add_space(15.0);
 
-                    // Build paths
-                    let prefix_name = format!(
-                        "{}_{}",
-                        wizard.manager_type.to_lowercase(),
-                        wizard.name.to_lowercase().replace(' ', "_")
-                    );
-                    let config = AppConfig::load();
-                    let prefix_path = config.get_prefixes_path().join(&prefix_name);
-                    let script_path = prefix_path.join("start.sh");
+                    // Steam status
+                    // status is passed as a parameter to render_install_wizard
+                    if status.contains("restarted") {
+                        egui::Frame::none()
+                            .fill(egui::Color32::from_rgb(40, 60, 40))
+                            .rounding(egui::Rounding::same(6.0))
+                            .inner_margin(12.0)
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new("Steam has been restarted").strong().color(egui::Color32::from_rgb(100, 200, 100)));
+                                ui.add_space(4.0);
+                                ui.label("Your shortcut should now appear in your Steam library.");
+                            });
+                    } else if status.contains("manually") {
+                        egui::Frame::none()
+                            .fill(egui::Color32::from_rgb(60, 50, 40))
+                            .rounding(egui::Rounding::same(6.0))
+                            .inner_margin(12.0)
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new("Please restart Steam").strong().color(egui::Color32::from_rgb(255, 200, 100)));
+                                ui.add_space(8.0);
+                                ui.label("Steam needs to be restarted for the shortcut to appear.");
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    if ui.button("Restart Steam Now").clicked() {
+                                        if let Err(e) = crate::steam::restart_steam() {
+                                            crate::logging::log_error(&format!("Failed to restart Steam: {}", e));
+                                        }
+                                    }
+                                });
+                            });
+                    }
+
+                    ui.add_space(15.0);
 
                     // How to launch
                     ui.label(egui::RichText::new("How to Launch").strong().size(14.0));
                     ui.add_space(4.0);
-                    ui.label("Double-click the shortcut in your mod manager folder:");
-                    ui.label(egui::RichText::new(format!("{}/Launch {}", wizard.path, manager_name)).monospace().color(egui::Color32::from_rgb(150, 200, 255)));
-                    ui.add_space(6.0);
-                    ui.label("Or run the script directly:");
-                    ui.label(egui::RichText::new(script_path.to_string_lossy().to_string()).monospace().size(11.0).color(egui::Color32::from_rgb(150, 200, 255)));
+                    ui.label(format!("Find '{}' in your Steam library under Non-Steam Games.", wizard.name));
                     ui.add_space(6.0);
                     ui.colored_label(
-                        egui::Color32::from_rgb(255, 200, 100),
-                        "Do NOT launch the .exe directly - it won't work correctly!",
+                        egui::Color32::from_rgb(150, 200, 255),
+                        "Click Play in Steam to launch the mod manager.",
                     );
 
                     ui.add_space(15.0);
 
-                    // Installation paths
-                    ui.label(egui::RichText::new("Installation Paths").strong());
+                    // Installation location
+                    ui.label(egui::RichText::new("Installation Location").strong());
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new(format!("Prefix:  {}", prefix_path.display())).monospace().size(11.0));
                     ui.label(egui::RichText::new(format!("{}:  {}", manager_name, &wizard.path)).monospace().size(11.0));
 
                     ui.add_space(15.0);
@@ -762,8 +678,8 @@ fn render_install_wizard(
                     // Steam Deck tip
                     ui.label(egui::RichText::new("Steam Deck / Game Mode").strong());
                     ui.add_space(4.0);
-                    ui.label("Add the script above to Steam as a non-Steam game");
-                    ui.label("to launch your mod manager from Game Mode.");
+                    ui.label("The shortcut will automatically appear in Game Mode!");
+                    ui.label("You can also add it to your favorites for quick access.");
 
                     ui.add_space(20.0);
 
@@ -781,30 +697,46 @@ fn render_install_wizard(
 fn validate_path(wizard: &mut InstallWizard) {
     let path = std::path::Path::new(&wizard.path);
     wizard.validation_error = None; // clear first
-    
+    wizard.low_disk_space = false;
+    wizard.available_disk_gb = 0.0;
+
     if !path.exists() {
-        // If "New", non-existent is fine (we create it). If "Existing", it must exist.
+        // If "New" or "Linked", non-existent is fine (we create it). If "Existing", it must exist.
         if wizard.install_type == "Existing" {
-             wizard.validation_error = Some("Path does not exist!".to_string());
-             return;
+            wizard.validation_error = Some("Path does not exist!".to_string());
+            return;
         }
     }
 
-    if wizard.install_type == "New" {
+    // Check disk space for new installations (not for "Existing" setups)
+    if wizard.install_type != "Existing" {
+        // Use parent directory if path doesn't exist yet
+        let check_path = if path.exists() { path } else { path.parent().unwrap_or(path) };
+        if let Some(available) = get_available_disk_space(check_path) {
+            wizard.available_disk_gb = available;
+            // For linked installs, we need less space (no deps)
+            let required = if wizard.install_type == "Linked" { 1.0 } else { MIN_REQUIRED_DISK_SPACE_GB };
+            if available < required {
+                wizard.low_disk_space = true;
+            }
+        }
+    }
+
+    if wizard.install_type == "New" || wizard.install_type == "Linked" {
         if path.exists() {
-             // Check emptiness
-             if let Ok(read_dir) = std::fs::read_dir(path) {
-                 if read_dir.count() > 0 {
-                      wizard.validation_error = Some("Warning: Directory is not empty!".to_string());
-                 }
-             }
+            // Check emptiness
+            if let Ok(read_dir) = std::fs::read_dir(path) {
+                if read_dir.count() > 0 {
+                    wizard.validation_error = Some("Warning: Directory is not empty!".to_string());
+                }
+            }
         }
     } else {
         // Existing
         // Check for Executable
         let exe_name = if wizard.manager_type == "MO2" { "ModOrganizer.exe" } else { "Vortex.exe" };
         let has_exe = path.join(exe_name).exists() || (wizard.manager_type == "Vortex" && path.join("Vortex").join(exe_name).exists());
-        
+
         if !has_exe {
             wizard.validation_error = Some(format!("Could not find {} in selected folder.", exe_name));
         }
@@ -820,75 +752,120 @@ fn start_installation(app: &mut MyApp) {
 
     log_action(&format!("Starting {} {} for {}", wizard.install_type, wizard.manager_type, wizard.name));
 
-    // Apply the wizard's SLR choice to the config (so script generation uses it)
-    app.config.use_steam_runtime = wizard.use_slr;
-    app.config.save();
-
     // Setup Variables
     let status_arc = app.install_status.clone();
     let busy_arc = app.is_installing_manager.clone();
     let logs_arc = app.logs.clone();
     let progress_arc = app.install_progress.clone();
     let cancel_arc = app.cancel_install.clone();
+    let result_app_id_arc = app.install_result_app_id.clone();
+    let result_prefix_path_arc = app.install_result_prefix_path.clone();
 
-    let wt_path = app.winetricks_path.lock().unwrap().clone().unwrap();
-    let selected_name = app.config.selected_proton.as_ref().unwrap().clone();
-    let proton = app.proton_versions.iter().find(|p| p.name == selected_name).cloned();
+    // Clear previous result
+    *result_app_id_arc.lock().unwrap() = None;
+    *result_prefix_path_arc.lock().unwrap() = None;
+
+    // Get the selected Steam Proton from the wizard
+    let selected_proton_name = match &wizard.selected_proton {
+        Some(name) => name.clone(),
+        None => {
+            wizard.last_install_error = Some("No Proton version selected".to_string());
+            return;
+        }
+    };
+    let steam_proton = app.steam_protons.iter().find(|p| p.config_name == selected_proton_name).cloned();
+    if steam_proton.is_none() {
+        wizard.last_install_error = Some("Selected Proton not found".to_string());
+        return;
+    }
+    let steam_proton = steam_proton.unwrap();
 
     // Clone data needed for the thread before moving
     let instance_name = wizard.name.clone();
     let install_path = std::path::PathBuf::from(&wizard.path);
     let manager_type = wizard.manager_type.clone();
     let install_type = wizard.install_type.clone();
+    let skip_disk_check = wizard.disk_space_override;
+    let proton_config_name = selected_proton_name.clone();
     
     // We can't update a field in `app.install_wizard` directly from the thread.
     // The thread can only update `Arc<Mutex<String>>` for status/logs/progress.
     // We use `app.install_status` to signal error, and then `render_install_wizard`
     // checks for the "Error: " prefix and sets `last_install_error` in the main thread.
 
-    if let Some(proton_info) = proton {
-        *busy_arc.lock().unwrap() = true;
-        *status_arc.lock().unwrap() = format!("Preparing to install {}...", manager_type);
-        *progress_arc.lock().unwrap() = 0.0;
-        cancel_arc.store(false, Ordering::Relaxed);
+    *busy_arc.lock().unwrap() = true;
+    *status_arc.lock().unwrap() = format!("Preparing to install {}...", manager_type);
+    *progress_arc.lock().unwrap() = 0.0;
+    cancel_arc.store(false, Ordering::Relaxed);
 
-        thread::spawn(move || {
-            let cb_status = status_arc.clone();
-            let cb_logs = logs_arc.clone();
-            let cb_prog = progress_arc.clone();
+    thread::spawn(move || {
+        let cb_status = status_arc.clone();
+        let cb_logs = logs_arc.clone();
+        let cb_prog = progress_arc.clone();
 
-            struct BusyGuard(std::sync::Arc<std::sync::Mutex<bool>>);
-            impl Drop for BusyGuard {
-                fn drop(&mut self) {
-                    *self.0.lock().unwrap() = false;
+        struct BusyGuard(std::sync::Arc<std::sync::Mutex<bool>>);
+        impl Drop for BusyGuard {
+            fn drop(&mut self) {
+                *self.0.lock().unwrap() = false;
+            }
+        }
+        let _guard = BusyGuard(busy_arc.clone());
+
+        let ctx = TaskContext::new(
+            move |msg| *cb_status.lock().unwrap() = msg,
+            move |msg| cb_logs.lock().unwrap().push(msg),
+            move |p| *cb_prog.lock().unwrap() = p,
+            cancel_arc,
+        );
+
+        // Run the installation and capture the result
+        let install_result: Result<(u32, std::path::PathBuf), String> = match (manager_type.as_str(), install_type.as_str()) {
+            ("MO2", "New") => install_mo2(&instance_name, install_path, &steam_proton, ctx, skip_disk_check)
+                .map(|r| (r.app_id, r.prefix_path))
+                .map_err(|e| e.to_string()),
+            ("MO2", "Existing") => setup_existing_mo2(&instance_name, install_path, &steam_proton, ctx)
+                .map(|r| (r.app_id, r.prefix_path))
+                .map_err(|e| e.to_string()),
+            ("Vortex", "New") => install_vortex(&instance_name, install_path, &steam_proton, ctx, skip_disk_check)
+                .map(|r| (r.app_id, r.prefix_path))
+                .map_err(|e| e.to_string()),
+            ("Vortex", "Existing") => setup_existing_vortex(&instance_name, install_path, &steam_proton, ctx)
+                .map(|r| (r.app_id, r.prefix_path))
+                .map_err(|e| e.to_string()),
+            _ => Err("Unknown installation type".to_string()),
+        };
+
+        match install_result {
+            Ok((app_id, prefix_path)) => {
+                // Store the result for DPI setup
+                *result_app_id_arc.lock().unwrap() = Some(app_id);
+                *result_prefix_path_arc.lock().unwrap() = Some(prefix_path);
+
+                // Apply the selected Proton version via Steam's config
+                *status_arc.lock().unwrap() = "Applying Proton compatibility settings...".to_string();
+                if let Err(e) = crate::steam::set_compat_tool(app_id, &proton_config_name) {
+                    crate::logging::log_warning(&format!("Failed to set Proton compat tool: {}", e));
+                } else {
+                    crate::logging::log_info(&format!("Set Proton '{}' for AppID {}", proton_config_name, app_id));
+                }
+
+                // Auto-restart Steam so the shortcut appears
+                *status_arc.lock().unwrap() = "Restarting Steam...".to_string();
+                match crate::steam::restart_steam() {
+                    Ok(_) => {
+                        *status_arc.lock().unwrap() = "Installation Complete! Steam has been restarted.".to_string();
+                    }
+                    Err(e) => {
+                        crate::logging::log_warning(&format!("Failed to restart Steam automatically: {}", e));
+                        *status_arc.lock().unwrap() = "Installation Complete! Please restart Steam manually.".to_string();
+                    }
                 }
             }
-            let _guard = BusyGuard(busy_arc.clone());
-
-            let ctx = TaskContext::new(
-                move |msg| *cb_status.lock().unwrap() = msg,
-                move |msg| cb_logs.lock().unwrap().push(msg),
-                move |p| *cb_prog.lock().unwrap() = p,
-                cancel_arc,
-                wt_path,
-            );
-
-            let result = match (manager_type.as_str(), install_type.as_str()) {
-                ("MO2", "New") => install_mo2(&instance_name, install_path, &proton_info, ctx),
-                ("MO2", "Existing") => setup_existing_mo2(&instance_name, install_path, &proton_info, ctx),
-                ("Vortex", "New") => install_vortex(&instance_name, install_path, &proton_info, ctx),
-                ("Vortex", "Existing") => setup_existing_vortex(&instance_name, install_path, &proton_info, ctx),
-                _ => Err("Unknown installation type".into()),
-            };
-
-            if let Err(e) = result {
+            Err(e) => {
                 *status_arc.lock().unwrap() = format!("Error: {}", e);
-                // Instead of setting wizard_error_clone, we'll let render_install_wizard react to status_arc
-            } else {
-                 *status_arc.lock().unwrap() = "Installation Complete!".to_string();
             }
-        });
-    }
+        }
+    });
 }
 
 // =============================================================================
@@ -896,21 +873,21 @@ fn start_installation(app: &mut MyApp) {
 // =============================================================================
 
 /// Get the prefix path for the current wizard installation
+/// With Steam-native integration, this uses the stored path from installation
 fn get_wizard_prefix_path(app: &MyApp) -> Option<std::path::PathBuf> {
-    let instance_name = &app.install_wizard.name;
-    let manager_type = &app.install_wizard.manager_type;
-    if instance_name.is_empty() {
-        return None;
+    // Use the stored prefix path from the installation result
+    if let Some(ref prefix_path) = app.install_wizard.installed_prefix_path {
+        return Some(prefix_path.clone());
     }
 
-    // Prefix name format: mo2_{name} or vortex_{name}
-    let prefix_name = format!(
-        "{}_{}",
-        manager_type.to_lowercase(),
-        instance_name.to_lowercase().replace(' ', "_")
-    );
+    // Fallback: try to compute from primary Steam path + AppID
+    if let Some(app_id) = app.install_wizard.installed_app_id {
+        if let Some(steam_path) = crate::steam::find_steam_path() {
+            return Some(steam_path.join("steamapps/compatdata").join(app_id.to_string()).join("pfx"));
+        }
+    }
 
-    Some(app.config.get_prefixes_path().join(&prefix_name).join("pfx"))
+    None
 }
 
 /// Handle applying a new DPI value
@@ -928,7 +905,7 @@ fn handle_apply_dpi(app: &mut MyApp, dpi_value: u32) {
 
     // Get proton
     let proton = match app.config.selected_proton.as_ref() {
-        Some(name) => app.proton_versions.iter().find(|p| &p.name == name).cloned(),
+        Some(name) => app.steam_protons.iter().find(|p| &p.name == name).cloned(),
         None => None,
     };
 
@@ -968,7 +945,7 @@ fn handle_launch_test_app(app: &mut MyApp, app_name: &str) {
 
     // Get proton
     let proton = match app.config.selected_proton.as_ref() {
-        Some(name) => app.proton_versions.iter().find(|p| &p.name == name).cloned(),
+        Some(name) => app.steam_protons.iter().find(|p| &p.name == name).cloned(),
         None => None,
     };
 
@@ -1009,7 +986,7 @@ fn handle_confirm_dpi(app: &mut MyApp) {
 
     // Get proton
     let proton = match app.config.selected_proton.as_ref() {
-        Some(name) => app.proton_versions.iter().find(|p| &p.name == name).cloned(),
+        Some(name) => app.steam_protons.iter().find(|p| &p.name == name).cloned(),
         None => None,
     };
 
@@ -1032,274 +1009,3 @@ fn handle_confirm_dpi(app: &mut MyApp) {
 }
 
 // Helper to launch winetricks
-fn launch_winetricks(app: &MyApp, prefix_path: std::path::PathBuf) {
-    let wt_path = app.winetricks_path.lock().unwrap().clone().unwrap();
-    let mut wine_bin = None;
-    let mut wineserver_bin = None;
-    let mut wine_path_env = None;
-
-    if let Some(selected_name) = &app.config.selected_proton {
-        if let Some(proton) = app.proton_versions.iter().find(|p| &p.name == selected_name) {
-            let bin_dir = proton.path.join("files").join("bin");
-            let wine_exec = bin_dir.join("wine");
-            let server_exec = bin_dir.join("wineserver");
-
-            if wine_exec.exists() {
-                wine_bin = Some(wine_exec);
-                wineserver_bin = Some(server_exec);
-                if let Ok(current_path) = std::env::var("PATH") {
-                    wine_path_env = Some(format!("{}:{}", bin_dir.to_string_lossy(), current_path));
-                }
-            }
-        }
-    }
-
-    thread::spawn(move || {
-        let mut cmd = std::process::Command::new(wt_path);
-        cmd.arg("--gui").env("WINEPREFIX", prefix_path);
-
-        if let Some(w) = wine_bin { cmd.env("WINE", w); }
-        if let Some(ws) = wineserver_bin { cmd.env("WINESERVER", ws); }
-        if let Some(p) = wine_path_env { cmd.env("PATH", p); }
-
-        if let Err(e) = cmd.spawn() {
-            eprintln!("Failed to launch winetricks: {}", e);
-        }
-    });
-}
-
-fn render_nxm_toggle(app: &mut MyApp, ui: &mut egui::Ui, prefix: &crate::wine::NakPrefix) {
-    let prefix_base = prefix.path.parent().unwrap();
-    let manager_link = prefix_base.join("manager_link");
-    let nxm_script = prefix_base.join("nxm_handler.sh");
-
-    // Only show NXM toggle if prefix has nxm_handler.sh (MO2 with nxmhandler.exe)
-    let has_nxm = nxm_script.exists();
-    let is_linked = manager_link.exists() || std::fs::symlink_metadata(&manager_link).is_ok();
-
-    let path_str = prefix.path.to_string_lossy().to_string();
-    let is_active = app.config.active_nxm_prefix.as_ref() == Some(&path_str);
-
-    if !has_nxm {
-        return; // No NXM handler for this prefix (Vortex or MO2 without nxmhandler.exe)
-    }
-
-    if is_active {
-        ui.colored_label(egui::Color32::GREEN, "Active NXM");
-    } else if ui
-        .add_enabled(is_linked, egui::Button::new("Activate NXM"))
-        .on_disabled_hover_text("Not a NaK-managed MO2/Vortex prefix")
-        .clicked()
-    {
-        // Pass prefix_base to set_active_instance (it contains nxm_handler.sh)
-        if let Err(e) = NxmHandler::set_active_instance(prefix_base) {
-            eprintln!("Failed to set active instance: {}", e);
-        } else {
-            app.config.active_nxm_prefix = Some(path_str);
-            app.config.save();
-        }
-    }
-}
-
-fn regenerate_script(app: &MyApp, prefix: &crate::wine::NakPrefix, exe_path: &std::path::Path) {
-    let selected_name = app.config.selected_proton.clone().unwrap_or_default();
-    let proton = app.proton_versions.iter().find(|p| p.name == selected_name);
-
-    if let Some(proton_info) = proton {
-        let mut final_exe_path = exe_path.to_path_buf();
-        
-        // If link points to a directory, look for known executables inside
-        if final_exe_path.is_dir() {
-            let try_mo2 = final_exe_path.join("ModOrganizer.exe");
-            let try_vortex = final_exe_path.join("Vortex.exe");
-            let try_vortex_sub = final_exe_path.join("Vortex").join("Vortex.exe"); // Standard Vortex path
-            
-            if try_mo2.exists() {
-                final_exe_path = try_mo2;
-            } else if try_vortex.exists() {
-                final_exe_path = try_vortex;
-            } else if try_vortex_sub.exists() {
-                final_exe_path = try_vortex_sub;
-            }
-        }
-
-        let exe_name = final_exe_path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        let prefix_base = prefix.path.parent().unwrap(); // ~/NaK/Prefixes/Name
-
-        // We output the script to the prefix base folder (where .start.sh usually lives)
-        let output_dir = prefix_base;
-
-        // 1. Generate Launch Script
-        let result = if exe_name.contains("modorganizer") {
-             ScriptGenerator::generate_mo2_launch_script(&prefix.path, &final_exe_path, &proton_info.path, prefix_base, output_dir)
-        } else if exe_name.contains("vortex") {
-             ScriptGenerator::generate_vortex_launch_script(&prefix.path, &final_exe_path, &proton_info.path, prefix_base, output_dir)
-        } else {
-             Err("Unknown manager executable. Link must point to ModOrganizer.exe or Vortex.exe".into())
-        };
-
-        match result {
-             Ok(path) => {
-                 crate::logging::log_info(&format!("Regenerated start.sh for {} at {:?}", prefix.name, path));
-                 
-                 // 2. Generate Kill Script
-                 if let Err(e) = ScriptGenerator::generate_kill_prefix_script(&prefix.path, &proton_info.path, output_dir) {
-                     crate::logging::log_error(&format!("Failed to regenerate kill script: {}", e));
-                 } else {
-                     crate::logging::log_info("Regenerated kill script.");
-                 }
-
-                 // 3. Generate Registry Fix Script
-                 // Use prefix name as instance name (e.g. mo2_skyrim)
-                 if let Err(e) = ScriptGenerator::generate_fix_game_registry_script(&prefix.path, &proton_info.path, &prefix.name, output_dir) {
-                     crate::logging::log_error(&format!("Failed to regenerate registry script: {}", e));
-                 } else {
-                     crate::logging::log_info("Regenerated registry fix script.");
-                 }
-
-                 // 4. Generate NXM Handler Script (for both MO2 and Vortex)
-                 let nxm_result = if exe_name.contains("modorganizer") {
-                     ScriptGenerator::generate_mo2_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
-                 } else {
-                     ScriptGenerator::generate_vortex_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
-                 };
-                 match &nxm_result {
-                     Ok(_) => crate::logging::log_info("Regenerated NXM handler script."),
-                     Err(e) => crate::logging::log_error(&format!("Failed to regenerate NXM script: {}", e)),
-                 }
-
-                 // 5. Re-apply Wine Registry Settings (includes HIGHDPIAWARE fix)
-                 if let Err(e) = apply_wine_registry_settings(&prefix.path, proton_info, &|msg| {
-                     crate::logging::log_info(&msg);
-                 }) {
-                     crate::logging::log_error(&format!("Failed to apply Wine registry settings: {}", e));
-                 } else {
-                     crate::logging::log_info("Applied Wine registry settings (HIGHDPIAWARE, DLL overrides, etc.)");
-                 }
-
-                 // Update "Launch [Manager]" and "Handle NXM" symlinks in the install directory
-                 if let Some(install_dir) = final_exe_path.parent() {
-                     let link_name = if exe_name.contains("modorganizer") { "Launch MO2" } else { "Launch Vortex" };
-                     let link_path = install_dir.join(link_name);
-
-                     if link_path.exists() || std::fs::symlink_metadata(&link_path).is_ok() {
-                         let _ = std::fs::remove_file(&link_path);
-                     }
-                     if let Err(e) = std::os::unix::fs::symlink(&path, &link_path) {
-                         crate::logging::log_error(&format!("Failed to update Launch symlink: {}", e));
-                     } else {
-                         crate::logging::log_info("Updated Launch symlink.");
-                     }
-
-                     // Update Handle NXM symlink
-                     if let Ok(nxm_script) = nxm_result {
-                         let nxm_link = install_dir.join("Handle NXM");
-                         if nxm_link.exists() || std::fs::symlink_metadata(&nxm_link).is_ok() {
-                             let _ = std::fs::remove_file(&nxm_link);
-                         }
-                         if let Err(e) = std::os::unix::fs::symlink(&nxm_script, &nxm_link) {
-                             crate::logging::log_error(&format!("Failed to update Handle NXM symlink: {}", e));
-                         } else {
-                             crate::logging::log_info("Updated Handle NXM symlink.");
-                         }
-                     }
-                 }
-             }
-             Err(e) => crate::logging::log_error(&format!("Failed to regenerate script: {}", e)),
-        }
-    } else {
-         crate::logging::log_error("No Proton version selected! Please select one in Proton Picker.");
-    }
-}
-
-/// Regenerate scripts with explicit SLR setting (for per-prefix SLR toggle)
-fn regenerate_script_with_slr(app: &MyApp, prefix: &crate::wine::NakPrefix, exe_path: &std::path::Path, use_slr: bool) {
-    let selected_name = app.config.selected_proton.clone().unwrap_or_default();
-    let proton = app.proton_versions.iter().find(|p| p.name == selected_name);
-
-    if let Some(proton_info) = proton {
-        let mut final_exe_path = exe_path.to_path_buf();
-
-        // If link points to a directory, look for known executables inside
-        if final_exe_path.is_dir() {
-            let try_mo2 = final_exe_path.join("ModOrganizer.exe");
-            let try_vortex = final_exe_path.join("Vortex.exe");
-            let try_vortex_sub = final_exe_path.join("Vortex").join("Vortex.exe");
-
-            if try_mo2.exists() {
-                final_exe_path = try_mo2;
-            } else if try_vortex.exists() {
-                final_exe_path = try_vortex;
-            } else if try_vortex_sub.exists() {
-                final_exe_path = try_vortex_sub;
-            }
-        }
-
-        let exe_name = final_exe_path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        let prefix_base = prefix.path.parent().unwrap();
-        let output_dir = prefix_base;
-
-        // Generate Launch Script with explicit SLR setting
-        let result = if exe_name.contains("modorganizer") {
-            ScriptGenerator::generate_mo2_launch_script_with_slr(
-                &prefix.path, &final_exe_path, &proton_info.path, prefix_base, output_dir, use_slr
-            )
-        } else if exe_name.contains("vortex") {
-            ScriptGenerator::generate_vortex_launch_script_with_slr(
-                &prefix.path, &final_exe_path, &proton_info.path, prefix_base, output_dir, use_slr
-            )
-        } else {
-            Err("Unknown manager executable".into())
-        };
-
-        match result {
-            Ok(path) => {
-                let mode = if use_slr { "SLR enabled" } else { "SLR disabled" };
-                crate::logging::log_info(&format!("Regenerated start.sh for {} ({}) at {:?}", prefix.name, mode, path));
-
-                // Also regenerate kill and registry scripts
-                let _ = ScriptGenerator::generate_kill_prefix_script(&prefix.path, &proton_info.path, output_dir);
-                let _ = ScriptGenerator::generate_fix_game_registry_script(&prefix.path, &proton_info.path, &prefix.name, output_dir);
-
-                // Generate NXM Handler Script
-                let nxm_result = if exe_name.contains("modorganizer") {
-                    ScriptGenerator::generate_mo2_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
-                } else {
-                    ScriptGenerator::generate_vortex_nxm_script(&prefix.path, &final_exe_path, &proton_info.path, output_dir)
-                };
-                if let Err(e) = &nxm_result {
-                    crate::logging::log_error(&format!("Failed to regenerate NXM script: {}", e));
-                }
-
-                // Re-apply Wine Registry Settings (includes HIGHDPIAWARE fix)
-                if let Err(e) = apply_wine_registry_settings(&prefix.path, proton_info, &|msg| {
-                    crate::logging::log_info(&msg);
-                }) {
-                    crate::logging::log_error(&format!("Failed to apply Wine registry settings: {}", e));
-                }
-
-                // Update symlinks in install directory
-                if let Some(install_dir) = final_exe_path.parent() {
-                    let link_name = if exe_name.contains("modorganizer") { "Launch MO2" } else { "Launch Vortex" };
-                    let link_path = install_dir.join(link_name);
-                    if link_path.exists() || std::fs::symlink_metadata(&link_path).is_ok() {
-                        let _ = std::fs::remove_file(&link_path);
-                    }
-                    let _ = std::os::unix::fs::symlink(&path, &link_path);
-
-                    // Update Handle NXM symlink
-                    if let Ok(nxm_script) = nxm_result {
-                        let nxm_link = install_dir.join("Handle NXM");
-                        if nxm_link.exists() || std::fs::symlink_metadata(&nxm_link).is_ok() {
-                            let _ = std::fs::remove_file(&nxm_link);
-                        }
-                        let _ = std::os::unix::fs::symlink(&nxm_script, &nxm_link);
-                    }
-                }
-            }
-            Err(e) => crate::logging::log_error(&format!("Failed to regenerate script: {}", e)),
-        }
-    } else {
-        crate::logging::log_error("No Proton version selected!");
-    }
-}

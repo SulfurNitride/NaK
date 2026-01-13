@@ -1,46 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io;
-use std::path::{Path, PathBuf};
-
-/// Move a directory, handling cross-device moves by copying + deleting
-fn move_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
-    // Try rename first (fast, same filesystem)
-    match fs::rename(src, dst) {
-        Ok(()) => return Ok(()),
-        Err(e) if e.raw_os_error() == Some(18) => {
-            // EXDEV (18) = cross-device link, need to copy + delete
-        }
-        Err(e) => return Err(e),
-    }
-
-    // Cross-device move: recursive copy then delete
-    copy_dir_all(src, dst)?;
-    fs::remove_dir_all(src)?;
-    Ok(())
-}
-
-/// Recursively copy a directory
-fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_all(&src_path, &dst_path)?;
-        } else if src_path.is_symlink() {
-            // Preserve symlinks
-            let target = fs::read_link(&src_path)?;
-            let _ = fs::remove_file(&dst_path); // Remove if exists
-            std::os::unix::fs::symlink(target, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-    Ok(())
-}
+use std::path::PathBuf;
 
 fn get_home() -> String {
     std::env::var("HOME").unwrap_or_default()
@@ -57,31 +18,30 @@ fn default_data_path() -> String {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub selected_proton: Option<String>,
-    pub active_nxm_prefix: Option<String>,
-    /// Whether to use Steam Linux Runtime (pressure-vessel) for launching
-    #[serde(default = "default_true")]
-    pub use_steam_runtime: bool,
     /// Whether the first-run setup has been completed
     #[serde(default)]
     pub first_run_completed: bool,
-    /// Path to NaK data folder (Prefixes, ProtonGE, cache, etc.)
-    /// Defaults to ~/NaK
+    /// Path to NaK data folder (legacy ~/NaK - used for migration detection)
     #[serde(default = "default_data_path")]
     pub data_path: String,
-}
-
-fn default_true() -> bool {
-    true
+    /// Whether the Steam-native migration popup has been shown
+    /// (shown once when user has legacy NaK prefixes)
+    #[serde(default)]
+    pub steam_migration_shown: bool,
+    /// Custom cache location (for downloads, tmp files during install)
+    /// If empty/not set, uses ~/.cache/nak/
+    #[serde(default)]
+    pub cache_location: String,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             selected_proton: None,
-            active_nxm_prefix: None,
-            use_steam_runtime: true,
             first_run_completed: false,
             data_path: default_data_path(),
+            steam_migration_shown: false,
+            cache_location: String::new(),
         }
     }
 }
@@ -140,86 +100,120 @@ impl AppConfig {
         }
     }
 
-    /// Get the NaK data directory path
+    /// Get the NaK data directory path (legacy ~/NaK - used for migration detection)
     pub fn get_data_path(&self) -> PathBuf {
         PathBuf::from(&self.data_path)
     }
 
-    /// Get path to Prefixes directory
+    /// Get the NaK config directory (~/.config/nak/)
+    pub fn get_config_dir() -> PathBuf {
+        PathBuf::from(format!("{}/.config/nak", get_home()))
+    }
+
+    /// Get the default cache directory (~/.cache/nak/)
+    pub fn get_default_cache_dir() -> PathBuf {
+        PathBuf::from(format!("{}/.cache/nak", get_home()))
+    }
+
+    /// Get the cache directory (custom location or default ~/.cache/nak/)
+    pub fn get_cache_dir(&self) -> PathBuf {
+        if self.cache_location.is_empty() {
+            Self::get_default_cache_dir()
+        } else {
+            PathBuf::from(&self.cache_location)
+        }
+    }
+
+    /// Get path to tmp directory (~/.cache/nak/tmp/)
+    pub fn get_tmp_path() -> PathBuf {
+        let config = Self::load();
+        config.get_cache_dir().join("tmp")
+    }
+
+    /// Get path to Prefixes directory (legacy - for migration detection only)
     pub fn get_prefixes_path(&self) -> PathBuf {
         self.get_data_path().join("Prefixes")
     }
-
-    /// Get path to cache directory
-    pub fn get_cache_path(&self) -> PathBuf {
-        self.get_data_path().join("cache")
-    }
 }
 
 // ============================================================================
-// Cache Config - also stored in ~/.config/nak/
+// Managed Prefixes - tracks NaK-created Steam prefixes for cleanup
+// Stored in ~/.config/nak/managed_prefixes.json
 // ============================================================================
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CacheConfig {
-    pub cache_enabled: bool,
-    pub cache_dependencies: bool,
-    pub cache_mo2: bool,
-    pub cache_vortex: bool,
-    #[serde(default)]
-    pub cache_location: String, // Deprecated - now uses AppConfig::get_cache_path()
+/// Type of mod manager
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManagerType {
+    MO2,
+    Vortex,
 }
 
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            cache_enabled: true,
-            cache_dependencies: true,
-            cache_mo2: true,
-            cache_vortex: true,
-            cache_location: String::new(),
+impl std::fmt::Display for ManagerType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ManagerType::MO2 => write!(f, "MO2"),
+            ManagerType::Vortex => write!(f, "Vortex"),
         }
     }
 }
 
-impl CacheConfig {
-    fn get_config_path() -> PathBuf {
-        PathBuf::from(format!("{}/.config/nak/cache_config.json", get_home()))
+impl ManagerType {
+    /// Get the display name for this manager type
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ManagerType::MO2 => "MO2",
+            ManagerType::Vortex => "Vortex",
+        }
+    }
+}
+
+/// A single managed prefix entry
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ManagedPrefix {
+    /// Steam AppID for the non-Steam game shortcut
+    pub app_id: u32,
+    /// User-chosen instance name (e.g., "MO2 - Skyrim")
+    pub name: String,
+    /// Path to the compatdata prefix folder
+    pub prefix_path: String,
+    /// Path to the mod manager installation
+    pub install_path: String,
+    /// Type of mod manager (MO2 or Vortex)
+    pub manager_type: ManagerType,
+    /// Steam library path where this prefix lives
+    pub library_path: String,
+    /// When this prefix was created
+    pub created: DateTime<Utc>,
+}
+
+/// Container for all managed prefixes
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ManagedPrefixes {
+    pub prefixes: Vec<ManagedPrefix>,
+}
+
+impl ManagedPrefixes {
+    /// Get the path to managed_prefixes.json
+    fn get_path() -> PathBuf {
+        AppConfig::get_config_dir().join("managed_prefixes.json")
     }
 
-    fn get_legacy_path() -> PathBuf {
-        PathBuf::from(format!("{}/NaK/cache_config.json", get_home()))
-    }
-
+    /// Load managed prefixes from disk
     pub fn load() -> Self {
-        let config_path = Self::get_config_path();
-        let legacy_path = Self::get_legacy_path();
-
-        // Try new location first
-        if config_path.exists() {
-            if let Ok(content) = fs::read_to_string(&config_path) {
-                if let Ok(config) = serde_json::from_str(&content) {
-                    return config;
+        let path = Self::get_path();
+        if path.exists() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(prefixes) = serde_json::from_str(&content) {
+                    return prefixes;
                 }
             }
         }
-
-        // Try legacy location and migrate
-        if legacy_path.exists() {
-            if let Ok(content) = fs::read_to_string(&legacy_path) {
-                if let Ok(config) = serde_json::from_str::<CacheConfig>(&content) {
-                    config.save();
-                    let _ = fs::remove_file(&legacy_path);
-                    return config;
-                }
-            }
-        }
-
         Self::default()
     }
 
+    /// Save managed prefixes to disk
     pub fn save(&self) {
-        let path = Self::get_config_path();
+        let path = Self::get_path();
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -228,206 +222,102 @@ impl CacheConfig {
         }
     }
 
-    /// Clear the cache directory
-    pub fn clear_cache(&self, app_config: &AppConfig) -> Result<(), std::io::Error> {
-        let cache_dir = app_config.get_cache_path();
-        if cache_dir.exists() {
-            fs::remove_dir_all(&cache_dir)?;
-            fs::create_dir_all(&cache_dir)?;
-        }
-        Ok(())
-    }
-}
+    /// Register a new managed prefix
+    pub fn register(
+        app_id: u32,
+        name: &str,
+        prefix_path: &str,
+        install_path: &str,
+        manager_type: ManagerType,
+        library_path: &str,
+    ) {
+        let mut prefixes = Self::load();
 
-// ============================================================================
-// Storage Manager - for storage info and data path migration
-// ============================================================================
+        // Remove any existing entry with the same app_id (shouldn't happen, but just in case)
+        prefixes.prefixes.retain(|p| p.app_id != app_id);
 
-pub struct StorageManager;
+        prefixes.prefixes.push(ManagedPrefix {
+            app_id,
+            name: name.to_string(),
+            prefix_path: prefix_path.to_string(),
+            install_path: install_path.to_string(),
+            manager_type,
+            library_path: library_path.to_string(),
+            created: Utc::now(),
+        });
 
-impl StorageManager {
-    /// Get storage info for a given data path
-    pub fn get_storage_info(data_path: &Path) -> StorageInfo {
-        let exists = data_path.exists();
-
-        let (free_space_gb, used_space_gb, cache_size_gb, proton_size_gb, prefixes_size_gb, other_size_gb) =
-            if exists {
-                let free = Self::get_free_space(data_path);
-                let used = Self::get_directory_size(data_path);
-
-                let cache_size = Self::get_directory_size(&data_path.join("cache"));
-                let proton_size = Self::get_directory_size(&data_path.join("ProtonGE"));
-                let prefixes_size = Self::get_directory_size(&data_path.join("Prefixes"));
-
-                let known_sum = cache_size + proton_size + prefixes_size;
-                let other_size = (used - known_sum).max(0.0);
-
-                (free, used, cache_size, proton_size, prefixes_size, other_size)
-            } else {
-                (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-            };
-
-        StorageInfo {
-            data_path: data_path.to_string_lossy().to_string(),
-            exists,
-            free_space_gb,
-            used_space_gb,
-            cache_size_gb,
-            proton_size_gb,
-            prefixes_size_gb,
-            other_size_gb,
-        }
+        prefixes.save();
     }
 
-    /// Get free space on a path in GB
-    fn get_free_space(path: &Path) -> f64 {
-        use std::process::Command;
-
-        if let Ok(output) = Command::new("df").arg("-B1").arg(path).output() {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                if let Some(line) = output_str.lines().nth(1) {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 4 {
-                        if let Ok(bytes) = parts[3].parse::<u64>() {
-                            return bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-                        }
-                    }
-                }
-            }
-        }
-        0.0
+    /// Remove a managed prefix entry (does NOT delete files)
+    pub fn unregister(app_id: u32) {
+        let mut prefixes = Self::load();
+        prefixes.prefixes.retain(|p| p.app_id != app_id);
+        prefixes.save();
     }
 
-    /// Get directory size in GB using du
-    fn get_directory_size(path: &Path) -> f64 {
-        use std::process::Command;
+    /// Get a prefix by app_id
+    pub fn get_by_app_id(&self, app_id: u32) -> Option<&ManagedPrefix> {
+        self.prefixes.iter().find(|p| p.app_id == app_id)
+    }
 
+    /// Get the size of a prefix directory in bytes
+    #[allow(dead_code)]
+    pub fn get_prefix_size(prefix_path: &str) -> u64 {
+        let path = PathBuf::from(prefix_path);
         if !path.exists() {
-            return 0.0;
+            return 0;
         }
 
-        if let Ok(output) = Command::new("du").arg("-sb").arg(path).output() {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                if let Some(size_str) = output_str.split_whitespace().next() {
-                    if let Ok(bytes) = size_str.parse::<u64>() {
-                        return bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        fn dir_size(path: &PathBuf) -> u64 {
+            let mut size = 0;
+            if let Ok(entries) = fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    if entry_path.is_dir() {
+                        size += dir_size(&entry_path);
+                    } else if let Ok(metadata) = entry.metadata() {
+                        size += metadata.len();
                     }
                 }
             }
+            size
         }
-        0.0
+
+        dir_size(&path)
     }
 
-    /// Validate a storage location
-    pub fn validate_location(location: &Path) -> Result<(), String> {
-        // Create parent if it doesn't exist
-        if !location.exists() {
-            if let Err(e) = fs::create_dir_all(location) {
-                return Err(format!("Cannot create directory: {}", e));
-            }
-        }
+    /// Format bytes as human-readable size
+    #[allow(dead_code)]
+    pub fn format_size(bytes: u64) -> String {
+        const KB: u64 = 1024;
+        const MB: u64 = KB * 1024;
+        const GB: u64 = MB * 1024;
 
-        if !location.is_dir() {
-            return Err(format!("Location is not a directory: {}", location.display()));
-        }
-
-        // Check write permission
-        let test_file = location.join(".nak_write_test");
-        if fs::write(&test_file, "test").is_err() {
-            return Err(format!("No write permission for: {}", location.display()));
-        }
-        let _ = fs::remove_file(&test_file);
-
-        // Check space
-        let free_gb = Self::get_free_space(location);
-        if free_gb < 5.0 {
-            return Err(format!(
-                "Insufficient space: {:.2}GB available (minimum 5GB recommended)",
-                free_gb
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Move NaK data to a new location
-    pub fn move_data(config: &mut AppConfig, new_location: &Path) -> Result<String, String> {
-        let target_nak = new_location.join("NaK");
-
-        // Validate target
-        Self::validate_location(new_location)?;
-
-        // Check if target NaK folder already exists
-        if target_nak.exists() {
-            // Check if it's empty or only has hidden files (safe to overwrite)
-            let is_empty = match fs::read_dir(&target_nak) {
-                Ok(entries) => entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        // Filter out hidden files (starting with .)
-                        !e.file_name().to_string_lossy().starts_with('.')
-                    })
-                    .count() == 0,
-                Err(_) => false,
-            };
-
-            if is_empty {
-                // Empty folder - safe to remove and proceed
-                let _ = fs::remove_dir_all(&target_nak);
-            } else {
-                return Err(format!(
-                    "Target location already has a NaK folder with data: {}\n\
-                    Please remove it manually or choose a different location.",
-                    target_nak.display()
-                ));
-            }
-        }
-
-        let current_path = config.get_data_path();
-
-        // Move the data
-        if current_path.exists() {
-            move_dir_all(&current_path, &target_nak)
-                .map_err(|e| format!("Failed to move NaK folder: {}", e))?;
+        if bytes >= GB {
+            format!("{:.1} GB", bytes as f64 / GB as f64)
+        } else if bytes >= MB {
+            format!("{:.1} MB", bytes as f64 / MB as f64)
+        } else if bytes >= KB {
+            format!("{:.1} KB", bytes as f64 / KB as f64)
         } else {
-            // No existing data, just create the new directory
-            fs::create_dir_all(&target_nak)
-                .map_err(|e| format!("Failed to create NaK directory: {}", e))?;
+            format!("{} B", bytes)
         }
-
-        // Update config
-        config.data_path = target_nak.to_string_lossy().to_string();
-        config.save();
-
-        // Fix all symlinks that have absolute paths (they now point to old location)
-        // This updates manager_link, convenience symlinks in mod manager folders, etc.
-        if let Err(e) = crate::scripts::fix_symlinks_after_move() {
-            eprintln!("Warning: Failed to fix symlinks after move: {}", e);
-        }
-
-        // Regenerate NXM handler - the .desktop file has absolute path to the script
-        // which needs to be updated to the new location
-        if let Err(e) = crate::nxm::NxmHandler::setup() {
-            eprintln!("Warning: Failed to regenerate NXM handler: {}", e);
-        }
-
-        Ok(format!(
-            "Successfully moved NaK data to {}",
-            target_nak.display()
-        ))
     }
-}
 
-#[derive(Clone, Default)]
-pub struct StorageInfo {
-    pub data_path: String,
-    pub exists: bool,
-    pub free_space_gb: f64,
-    pub used_space_gb: f64,
-    pub cache_size_gb: f64,
-    pub proton_size_gb: f64,
-    pub prefixes_size_gb: f64,
-    pub other_size_gb: f64,
+    /// Delete a prefix directory and unregister it
+    pub fn delete_prefix(app_id: u32) -> Result<(), String> {
+        let prefixes = Self::load();
+        if let Some(prefix) = prefixes.get_by_app_id(app_id) {
+            let path = PathBuf::from(&prefix.prefix_path);
+            if path.exists() {
+                fs::remove_dir_all(&path)
+                    .map_err(|e| format!("Failed to delete prefix: {}", e))?;
+            }
+            Self::unregister(app_id);
+            Ok(())
+        } else {
+            Err("Prefix not found".to_string())
+        }
+    }
 }

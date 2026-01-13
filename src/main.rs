@@ -6,15 +6,14 @@ use eframe::egui;
 
 mod app;
 mod config;
-mod games;
+mod deps;
 mod installers;
 mod logging;
 mod nxm;
-mod scripts;
+mod steam;
 mod ui;
 mod updater;
 mod utils;
-mod wine;
 
 use app::MyApp;
 use logging::{init_logger, log_info};

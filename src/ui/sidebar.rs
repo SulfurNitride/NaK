@@ -72,16 +72,12 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
     let navigation_buttons = [
         (Page::GettingStarted, "Getting Started"),
         (Page::ModManagers, "Mod Managers"),
-        (Page::GameFixer, "Game Modding"),
-        (Page::Marketplace, "Marketplace"),
-        (Page::ProtonTools, "Proton Picker"),
         (Page::Settings, "Settings"),
         (Page::Updater, if update_available { "Version (NEW!)" } else { "Version" }),
     ];
 
     for (page, label) in navigation_buttons {
         let is_selected = app.current_page == page;
-        let is_enabled_page = page != Page::Marketplace; // Disable Marketplace
 
         // Highlight Version button if update available
         let button = if page == Page::Updater && update_available {
@@ -92,7 +88,7 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
         };
 
         if ui
-            .add_enabled(!is_selected && is_enabled_page && is_enabled, button)
+            .add_enabled(!is_selected && is_enabled, button)
             .clicked()
         {
             app.current_page = page;
