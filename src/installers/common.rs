@@ -419,7 +419,9 @@ if [ ! -d "$GAME_PATH" ]; then
 fi
 
 # Convert to Wine path
-WINE_PATH="Z:${{GAME_PATH//\//\\}}"
+WINE_PATH_DISPLAY="Z:${{GAME_PATH//\//\\}}"
+# Double backslashes for .reg file format
+WINE_PATH_REG="Z:${{GAME_PATH//\//\\\\}}"
 
 echo ""
 echo "=================================================="
@@ -427,7 +429,7 @@ echo "Registry Fix Details"
 echo "=================================================="
 echo "Game: $GAME_NAME"
 echo "Linux Path: $GAME_PATH"
-echo "Wine Path: $WINE_PATH"
+echo "Wine Path: $WINE_PATH_DISPLAY"
 echo "Registry Key: HKLM\\$REG_PATH"
 echo "Value: $VALUE_NAME"
 echo "=================================================="
@@ -445,10 +447,10 @@ cat > "$REG_FILE" << EOF
 Windows Registry Editor Version 5.00
 
 [HKEY_LOCAL_MACHINE\\$REG_PATH]
-"$VALUE_NAME"="$WINE_PATH"
+"$VALUE_NAME"="$WINE_PATH_REG"
 
 [HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\${{REG_PATH#Software\\}}]
-"$VALUE_NAME"="$WINE_PATH"
+"$VALUE_NAME"="$WINE_PATH_REG"
 EOF
 
 echo "Applying registry fix..."
