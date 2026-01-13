@@ -279,7 +279,7 @@ pub fn create_nak_tools_folder(
     log_install("Created NXM Toggle script");
 
     // 4. Create Fix Game Registry script
-    let registry_script = generate_fix_registry_script(manager_name, prefix_path);
+    let registry_script = generate_fix_registry_script(manager_name, prefix_path, proton_path);
     write_script(&tools_dir.join("Fix Game Registry.sh"), &registry_script)?;
     log_install("Created Fix Game Registry script");
 
@@ -323,8 +323,9 @@ fn write_script(path: &Path, content: &str) -> Result<(), InstallError> {
 }
 
 /// Generate Fix Game Registry script for Steam-native installs
-fn generate_fix_registry_script(manager_name: &str, prefix_path: &Path) -> String {
+fn generate_fix_registry_script(manager_name: &str, prefix_path: &Path, proton_path: &Path) -> String {
     let prefix_str = prefix_path.display();
+    let proton_str = proton_path.display();
     format!(r#"#!/bin/bash
 # NaK Fix Game Registry Script
 # For Steam-native {} installation
@@ -351,6 +352,15 @@ if [ ! -t 0 ]; then
 fi
 
 PREFIX="{}"
+PROTON_PATH="{}"
+WINE_BIN="$PROTON_PATH/files/bin/wine"
+
+# Check if Proton wine exists
+if [ ! -x "$WINE_BIN" ]; then
+    echo "ERROR: Proton wine not found at: $WINE_BIN"
+    echo "The Proton installation may have been moved or deleted."
+    exit 1
+fi
 
 echo "=================================================="
 echo "NaK Game Registry Fixer"
@@ -442,7 +452,7 @@ Windows Registry Editor Version 5.00
 EOF
 
 echo "Applying registry fix..."
-WINEPREFIX="$PREFIX" wine regedit "$REG_FILE" 2>/dev/null
+WINEPREFIX="$PREFIX" "$WINE_BIN" regedit "$REG_FILE" 2>/dev/null
 
 if [ $? -eq 0 ]; then
     echo ""
@@ -455,7 +465,7 @@ fi
 rm -f "$REG_FILE"
 echo ""
 echo "Done! You may need to restart {} for changes to take effect."
-"#, manager_name, manager_name, prefix_str, manager_name)
+"#, manager_name, manager_name, prefix_str, proton_str, manager_name)
 }
 
 /// Generate NXM Toggle script
