@@ -240,6 +240,234 @@ fn find_prefix_username(users_dir: &Path) -> String {
 }
 
 // ============================================================================
+// Prefix Documents Setup
+// ============================================================================
+
+/// Set up the Prefix Documents folder in NaK Tools
+///
+/// Creates a real "Prefix Documents" folder in NaK Tools, then replaces the
+/// prefix's Documents folder with a symlink pointing to it. This makes saves
+/// and configs easily accessible from NaK Tools.
+fn setup_prefix_documents(tools_dir: &Path, prefix_path: &Path) {
+    // Create the real Prefix Documents folder in NaK Tools
+    let prefix_docs = tools_dir.join("Prefix Documents");
+    if let Err(e) = fs::create_dir_all(&prefix_docs) {
+        log_warning(&format!("Failed to create Prefix Documents folder: {}", e));
+        return;
+    }
+
+    // Find the prefix Documents folder
+    let users_dir = prefix_path.join("drive_c/users");
+    let username = find_prefix_username(&users_dir);
+    let wine_docs = users_dir.join(&username).join("Documents");
+
+    // If Documents exists and is a real directory (not a symlink), move its contents
+    if wine_docs.exists() && !wine_docs.is_symlink() {
+        // Move existing contents to Prefix Documents
+        if let Ok(entries) = fs::read_dir(&wine_docs) {
+            for entry in entries.flatten() {
+                let src = entry.path();
+                let dest = prefix_docs.join(entry.file_name());
+                if let Err(_) = fs::rename(&src, &dest) {
+                    // If rename fails (cross-device), try copy
+                    if src.is_dir() {
+                        let _ = copy_dir_recursive(&src, &dest);
+                    } else {
+                        let _ = fs::copy(&src, &dest);
+                    }
+                }
+            }
+        }
+        // Remove the original Documents folder
+        let _ = fs::remove_dir_all(&wine_docs);
+    } else if wine_docs.is_symlink() {
+        // Already a symlink, remove it
+        let _ = fs::remove_file(&wine_docs);
+    }
+
+    // Ensure parent directory exists
+    if let Some(parent) = wine_docs.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    // Create symlink: prefix Documents -> NaK Tools/Prefix Documents
+    if let Err(e) = std::os::unix::fs::symlink(&prefix_docs, &wine_docs) {
+        log_warning(&format!("Failed to create Documents symlink: {}", e));
+    } else {
+        log_install("Set up Prefix Documents (accessible from NaK Tools)");
+    }
+}
+
+/// Set up the Vortex Data folder in NaK Tools (Vortex only)
+///
+/// Creates a real "Vortex Data" folder in NaK Tools, then replaces the
+/// prefix's AppData/Roaming/Vortex folder with a symlink pointing to it.
+/// This makes mod staging folders easily accessible from NaK Tools.
+fn setup_vortex_data(tools_dir: &Path, prefix_path: &Path) {
+    // Create the real Vortex Data folder in NaK Tools
+    let vortex_data = tools_dir.join("Vortex Data");
+    if let Err(e) = fs::create_dir_all(&vortex_data) {
+        log_warning(&format!("Failed to create Vortex Data folder: {}", e));
+        return;
+    }
+
+    // Find the prefix Vortex folder (AppData/Roaming/Vortex)
+    let users_dir = prefix_path.join("drive_c/users");
+    let username = find_prefix_username(&users_dir);
+    let roaming_vortex = users_dir.join(&username).join("AppData/Roaming/Vortex");
+
+    // If Vortex folder exists and is a real directory (not a symlink), move its contents
+    if roaming_vortex.exists() && !roaming_vortex.is_symlink() {
+        // Move existing contents to Vortex Data
+        if let Ok(entries) = fs::read_dir(&roaming_vortex) {
+            for entry in entries.flatten() {
+                let src = entry.path();
+                let dest = vortex_data.join(entry.file_name());
+                if let Err(_) = fs::rename(&src, &dest) {
+                    // If rename fails (cross-device), try copy
+                    if src.is_dir() {
+                        let _ = copy_dir_recursive(&src, &dest);
+                    } else {
+                        let _ = fs::copy(&src, &dest);
+                    }
+                }
+            }
+        }
+        // Remove the original Vortex folder
+        let _ = fs::remove_dir_all(&roaming_vortex);
+    } else if roaming_vortex.is_symlink() {
+        // Already a symlink, remove it
+        let _ = fs::remove_file(&roaming_vortex);
+    }
+
+    // Ensure parent directory exists (AppData/Roaming)
+    if let Some(parent) = roaming_vortex.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    // Create symlink: prefix AppData/Roaming/Vortex -> NaK Tools/Vortex Data
+    if let Err(e) = std::os::unix::fs::symlink(&vortex_data, &roaming_vortex) {
+        log_warning(&format!("Failed to create Vortex Data symlink: {}", e));
+    } else {
+        log_install("Set up Vortex Data (mods accessible from NaK Tools)");
+    }
+}
+
+/// Recursively copy a directory
+fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dest_path)?;
+        } else {
+            fs::copy(&src_path, &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Auto-Import Game Saves
+// ============================================================================
+
+/// Game save folder configuration
+struct GameSaveConfig {
+    /// Steam AppID
+    app_id: u32,
+    /// Folder name in My Games
+    my_games_folder: &'static str,
+}
+
+/// List of supported games with their Steam AppIDs and My Games folder names
+const GAME_SAVE_CONFIGS: &[GameSaveConfig] = &[
+    GameSaveConfig { app_id: 933480, my_games_folder: "Enderal" },
+    GameSaveConfig { app_id: 976620, my_games_folder: "Enderal Special Edition" },
+    GameSaveConfig { app_id: 22300, my_games_folder: "Fallout3" },
+    GameSaveConfig { app_id: 377160, my_games_folder: "Fallout4" },
+    GameSaveConfig { app_id: 611660, my_games_folder: "Fallout4VR" },
+    GameSaveConfig { app_id: 22380, my_games_folder: "FalloutNV" },
+    GameSaveConfig { app_id: 22320, my_games_folder: "Morrowind" },
+    GameSaveConfig { app_id: 22330, my_games_folder: "Oblivion" },
+    GameSaveConfig { app_id: 72850, my_games_folder: "Skyrim" },
+    GameSaveConfig { app_id: 489830, my_games_folder: "Skyrim Special Edition" },
+    GameSaveConfig { app_id: 611670, my_games_folder: "Skyrim VR" },
+    GameSaveConfig { app_id: 1716740, my_games_folder: "Starfield" },
+];
+
+/// Auto-import game saves from Steam game prefixes
+///
+/// Finds existing save folders in Steam game prefixes and symlinks them
+/// into the mod manager's Prefix Documents/My Games folder.
+pub fn auto_import_game_saves(tools_dir: &Path) {
+    let prefix_docs = tools_dir.join("Prefix Documents");
+    let my_games_dir = prefix_docs.join("My Games");
+
+    // Create My Games folder if it doesn't exist
+    if let Err(e) = fs::create_dir_all(&my_games_dir) {
+        log_warning(&format!("Failed to create My Games folder: {}", e));
+        return;
+    }
+
+    // Find Steam path
+    let steam_path = match crate::steam::find_steam_path() {
+        Some(p) => p,
+        None => {
+            log_warning("Could not find Steam path for save import");
+            return;
+        }
+    };
+
+    let compatdata_dir = steam_path.join("steamapps/compatdata");
+    let mut imported_count = 0;
+
+    for game in GAME_SAVE_CONFIGS {
+        // Check if game prefix exists
+        let game_prefix = compatdata_dir.join(game.app_id.to_string()).join("pfx");
+        if !game_prefix.exists() {
+            continue;
+        }
+
+        // Find the game's My Games folder in the Steam prefix
+        let users_dir = game_prefix.join("drive_c/users");
+        let username = find_prefix_username(&users_dir);
+        let source_saves = users_dir
+            .join(&username)
+            .join("Documents/My Games")
+            .join(game.my_games_folder);
+
+        if !source_saves.exists() || !source_saves.is_dir() {
+            continue;
+        }
+
+        // Target location in mod manager's Prefix Documents
+        let target_saves = my_games_dir.join(game.my_games_folder);
+
+        // Skip if target already exists (don't overwrite user's setup)
+        if target_saves.exists() || target_saves.is_symlink() {
+            continue;
+        }
+
+        // Create symlink to the game's saves
+        match std::os::unix::fs::symlink(&source_saves, &target_saves) {
+            Ok(()) => {
+                log_install(&format!("Imported saves: {}", game.my_games_folder));
+                imported_count += 1;
+            }
+            Err(e) => {
+                log_warning(&format!("Failed to import {}: {}", game.my_games_folder, e));
+            }
+        }
+    }
+
+    if imported_count > 0 {
+        log_install(&format!("Auto-imported {} game save folder(s)", imported_count));
+    }
+}
+
+// ============================================================================
 // Disk Space Validation
 // ============================================================================
 
@@ -337,34 +565,45 @@ pub fn create_nak_tools_folder(
         log_install("Created Wine Prefix symlink");
     }
 
-    // === All scripts go in NaK Tools folder for better organization ===
+    // 2. Set up Prefix Documents folder (real folder in NaK Tools, symlinked from prefix)
+    setup_prefix_documents(&tools_dir, prefix_path);
 
-    // 2. Download and create dxvk.conf (non-fatal if download fails)
+    // 3. Set up Vortex Data folder (for Vortex only - mods/staging accessible from NaK Tools)
+    if manager_type == ManagerType::Vortex {
+        setup_vortex_data(&tools_dir, prefix_path);
+    }
+
+    // 4. Auto-import game saves from Steam game prefixes
+    auto_import_game_saves(&tools_dir);
+
+    // === All scripts and configs go in NaK Tools folder ===
+
+    // 5. Download and create dxvk.conf (non-fatal if download fails)
     if let Err(e) = download_and_create_dxvk_conf(install_dir) {
         log_warning(&format!("Could not create dxvk.conf: {}", e));
     }
 
-    // 3. Create Launch script
+    // 6. Create Launch script
     let launch_script = generate_steam_launch_script(app_id, manager_name);
     write_script(&tools_dir.join(format!("Launch {}.sh", manager_name)), &launch_script)?;
     log_install(&format!("Created Launch {} script", manager_name));
 
-    // 4. Create NXM Toggle script
+    // 7. Create NXM Toggle script
     let nxm_script = generate_nxm_toggle_script(app_id, manager_name, install_dir, prefix_path, proton_path);
     write_script(&tools_dir.join("NXM Toggle.sh"), &nxm_script)?;
     log_install("Created NXM Toggle script");
 
-    // 5. Create Fix Game Registry script
+    // 8. Create Fix Game Registry script
     let registry_script = generate_fix_registry_script(manager_name, prefix_path, proton_path);
     write_script(&tools_dir.join("Fix Game Registry.sh"), &registry_script)?;
     log_install("Created Fix Game Registry script");
 
-    // 6. Create Import Saves script
+    // 9. Create Import Saves script (for manual import of non-Steam games)
     let import_script = generate_import_saves_script(prefix_path);
     write_script(&tools_dir.join("Import Saves.sh"), &import_script)?;
     log_install("Created Import Saves script");
 
-    // 7. Create Winetricks GUI script
+    // 10. Create Winetricks GUI script
     let winetricks_script = generate_winetricks_gui_script(prefix_path);
     write_script(&tools_dir.join("Winetricks.sh"), &winetricks_script)?;
     log_install("Created Winetricks GUI script");

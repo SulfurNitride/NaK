@@ -344,6 +344,21 @@ pub const STANDARD_DEPS: &[Dependency] = &[
         register_dlls: &[],
         installed_check: "dotnet.exe",
     },
+    // .NET Desktop Runtime 10.0
+    Dependency {
+        id: "dotnetdesktop10",
+        name: ".NET Desktop Runtime 10.0",
+        dep_type: DepType::ExeInstaller {
+            args: &["/quiet", "/norestart"],
+        },
+        urls: DepUrls {
+            x86: "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.2/windowsdesktop-runtime-10.0.2-win-x86.exe",
+            x64: Some("https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.2/windowsdesktop-runtime-10.0.2-win-x64.exe"),
+        },
+        dll_overrides: &[],
+        register_dlls: &[],
+        installed_check: "dotnet.exe",
+    },
     // VKD3D-Proton (Vulkan D3D12) - Skipped, Proton includes vkd3d
     Dependency {
         id: "vkd3d",
