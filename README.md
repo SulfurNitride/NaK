@@ -1,4 +1,5 @@
-<img width="2556" height="1756" alt="image" src="https://github.com/user-attachments/assets/6dacba74-f43d-4dd5-8faa-e0a23edeb817" />
+<img width="1700" height="1756" alt="image" src="https://github.com/user-attachments/assets/2710203f-ea4c-48b9-9c22-ccb0f6fa7084" />
+
 
 NaK, is a sodium and potassium alloy. Highly reactive.
 
@@ -18,8 +19,8 @@ Download the latest version from the [releases](https://github.com/SulfurNitride
 
 Requirements:
 - Steam... (Flatpak steam needs testing!)
-- A proton!
+- A proton, I recommend using a GE 10+ from either ProtonPlus or ProtonUp-QT
 
 My YT: https://www.youtube.com/@sulfurnitride
 
-Made with AI via Claude Code. In the meantime I'm learning rust when I can. Heres the current [playlist](https://www.youtube.com/watch?v=XRcdnokYx74&list=PLB52iltb95qIMAQNma2nHP7Og9c9mqAXl&pp=gAQB)
+Made with AI via Claude Code. In the meantime I'm learning rust when I can. Heres the current [playlist](https://www.youtube.com/watch?v=XRcdnokYx74&list=PLB52iltb95qIMAQNma2nHP7Og9c9mqAXl&pp=gAQB).
