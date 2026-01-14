@@ -903,9 +903,9 @@ fn handle_apply_dpi(app: &mut MyApp, dpi_value: u32) {
         }
     };
 
-    // Get proton
-    let proton = match app.config.selected_proton.as_ref() {
-        Some(name) => app.steam_protons.iter().find(|p| &p.name == name).cloned(),
+    // Get proton from wizard selection (not app.config.selected_proton)
+    let proton = match app.install_wizard.selected_proton.as_ref() {
+        Some(name) => app.steam_protons.iter().find(|p| &p.config_name == name).cloned(),
         None => None,
     };
 
@@ -943,9 +943,9 @@ fn handle_launch_test_app(app: &mut MyApp, app_name: &str) {
         }
     };
 
-    // Get proton
-    let proton = match app.config.selected_proton.as_ref() {
-        Some(name) => app.steam_protons.iter().find(|p| &p.name == name).cloned(),
+    // Get proton from wizard selection (not app.config.selected_proton)
+    let proton = match app.install_wizard.selected_proton.as_ref() {
+        Some(name) => app.steam_protons.iter().find(|p| &p.config_name == name).cloned(),
         None => None,
     };
 
@@ -984,9 +984,9 @@ fn handle_confirm_dpi(app: &mut MyApp) {
         }
     };
 
-    // Get proton
-    let proton = match app.config.selected_proton.as_ref() {
-        Some(name) => app.steam_protons.iter().find(|p| &p.name == name).cloned(),
+    // Get proton from wizard selection (not app.config.selected_proton)
+    let proton = match app.install_wizard.selected_proton.as_ref() {
+        Some(name) => app.steam_protons.iter().find(|p| &p.config_name == name).cloned(),
         None => None,
     };
 

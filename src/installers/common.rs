@@ -268,7 +268,7 @@ fn setup_prefix_documents(tools_dir: &Path, prefix_path: &Path) {
             for entry in entries.flatten() {
                 let src = entry.path();
                 let dest = prefix_docs.join(entry.file_name());
-                if let Err(_) = fs::rename(&src, &dest) {
+                if fs::rename(&src, &dest).is_err() {
                     // If rename fails (cross-device), try copy
                     if src.is_dir() {
                         let _ = copy_dir_recursive(&src, &dest);
@@ -298,6 +298,59 @@ fn setup_prefix_documents(tools_dir: &Path, prefix_path: &Path) {
     }
 }
 
+/// Create the Vortex Staging Guide text file (Vortex only)
+///
+/// This guide helps users understand where to place their mod staging folders
+/// to avoid EXDEV (cross-device link) errors with hardlink deployment.
+fn create_vortex_staging_guide(tools_dir: &Path) {
+    let guide_path = tools_dir.join("Vortex Staging Guide.txt");
+
+    // Get username for examples
+    let username = std::env::var("USER").unwrap_or_else(|_| "user".to_string());
+
+    let guide_content = format!(r#"================================================================================
+                    VORTEX MOD STAGING FOLDER GUIDE
+================================================================================
+
+Choose your staging folder location based on WHERE YOUR GAME IS INSTALLED:
+
+
+1. STEAM GAMES (in ~/.steam/steam/steamapps/common/)
+   ─────────────────────────────────────────────────
+   Staging folder: Z:\home\{username}\.steam\steam\steamapps\Vortex Mods\{{game}}
+
+   Example for Skyrim SE:
+   Z:\home\{username}\.steam\steam\steamapps\Vortex Mods\Skyrim Special Edition
+
+
+2. GAMES ON YOUR HOME DRIVE (anywhere in /home/{username}/)
+   ────────────────────────────────────────────────────────
+   Staging folder: Z:\home\{username}\Games\{{game}}
+
+   Example for Cyberpunk:
+   Z:\home\{username}\Games\Cyberpunk 2077
+
+
+3. GAMES ON A SECONDARY DRIVE (e.g., /mnt/games/, /run/media/...)
+   ───────────────────────────────────────────────────────────────
+   Staging folder: Put it ON THE SAME DRIVE as the game!
+
+   Example: Game at /mnt/games/SteamLibrary/steamapps/common/Skyrim
+   Staging: Z:\mnt\games\Vortex Mods\Skyrim
+
+
+================================================================================
+For more help, visit: https://github.com/SulfurNitride/NaK
+================================================================================
+"#, username = username);
+
+    if let Err(e) = fs::write(&guide_path, guide_content) {
+        log_warning(&format!("Failed to create Vortex Staging Guide: {}", e));
+    } else {
+        log_install("Created Vortex Staging Guide");
+    }
+}
+
 /// Set up the Vortex Data folder in NaK Tools (Vortex only)
 ///
 /// Creates a real "Vortex Data" folder in NaK Tools, then replaces the
@@ -323,7 +376,7 @@ fn setup_vortex_data(tools_dir: &Path, prefix_path: &Path) {
             for entry in entries.flatten() {
                 let src = entry.path();
                 let dest = vortex_data.join(entry.file_name());
-                if let Err(_) = fs::rename(&src, &dest) {
+                if fs::rename(&src, &dest).is_err() {
                     // If rename fails (cross-device), try copy
                     if src.is_dir() {
                         let _ = copy_dir_recursive(&src, &dest);
@@ -571,6 +624,8 @@ pub fn create_nak_tools_folder(
     // 3. Set up Vortex Data folder (for Vortex only - mods/staging accessible from NaK Tools)
     if manager_type == ManagerType::Vortex {
         setup_vortex_data(&tools_dir, prefix_path);
+        // 3b. Create Vortex staging guide (explains hardlink requirements)
+        create_vortex_staging_guide(&tools_dir);
     }
 
     // 4. Auto-import game saves from Steam game prefixes

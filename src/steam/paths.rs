@@ -55,7 +55,10 @@ pub fn find_userdata_path() -> Option<PathBuf> {
             if path.is_dir() {
                 // Check if it's a numeric user ID directory
                 if let Some(name) = path.file_name() {
-                    if name.to_string_lossy().chars().all(|c| c.is_ascii_digit()) {
+                    let name_str = name.to_string_lossy();
+                    // Skip "0" folder - it's a special Steam folder for offline/anonymous mode
+                    // Real user IDs are large numbers (Steam3 ID format)
+                    if name_str != "0" && name_str.chars().all(|c| c.is_ascii_digit()) {
                         user_dirs.push(path);
                     }
                 }

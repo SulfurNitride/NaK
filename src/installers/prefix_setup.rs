@@ -90,6 +90,23 @@ pub fn install_all_dependencies(
     }
 
     // =========================================================================
+    // Auto-detect and register installed games
+    // =========================================================================
+    ctx.set_status("Detecting installed games...".to_string());
+    ctx.log("Auto-detecting installed Steam games...".to_string());
+    log_install("Auto-detecting installed games for registry");
+
+    let game_log_cb = {
+        let ctx = ctx.clone();
+        move |msg: String| ctx.log(msg)
+    };
+    auto_apply_game_registries(prefix_root, install_proton, &game_log_cb);
+
+    if ctx.is_cancelled() {
+        return Err("Cancelled".into());
+    }
+
+    // =========================================================================
     // Standard Dependencies via Native System (NO WINETRICKS!)
     // =========================================================================
     // Critical dependencies that MUST succeed - failure stops the entire installation
@@ -292,6 +309,240 @@ const APPDATA_GAMES: &[&str] = &[
     "Skyrim",
     "Skyrim Special Edition",
 ];
+
+// ============================================================================
+// Game Registry Configuration (for auto-detection)
+// ============================================================================
+
+/// Game registry configuration for auto-detection
+struct GameRegistryConfig {
+    /// Display name
+    name: &'static str,
+    /// Steam App ID
+    app_id: &'static str,
+    /// Registry key path (under HKLM\Software\)
+    reg_path: &'static str,
+    /// Registry value name for install path
+    value_name: &'static str,
+    /// Expected folder name in steamapps/common/
+    steam_folder: &'static str,
+}
+
+/// All supported games with their registry configurations
+const GAME_REGISTRY_CONFIGS: &[GameRegistryConfig] = &[
+    GameRegistryConfig {
+        name: "Enderal",
+        app_id: "933480",
+        reg_path: r"Software\SureAI\Enderal",
+        value_name: "Install_Path",
+        steam_folder: "Enderal",
+    },
+    GameRegistryConfig {
+        name: "Enderal Special Edition",
+        app_id: "976620",
+        reg_path: r"Software\SureAI\Enderal SE",
+        value_name: "installed path",
+        steam_folder: "Enderal Special Edition",
+    },
+    GameRegistryConfig {
+        name: "Fallout 3",
+        app_id: "22300",
+        reg_path: r"Software\Bethesda Softworks\Fallout3",
+        value_name: "Installed Path",
+        steam_folder: "Fallout 3",
+    },
+    GameRegistryConfig {
+        name: "Fallout 4",
+        app_id: "377160",
+        reg_path: r"Software\Bethesda Softworks\Fallout4",
+        value_name: "Installed Path",
+        steam_folder: "Fallout 4",
+    },
+    GameRegistryConfig {
+        name: "Fallout 4 VR",
+        app_id: "611660",
+        reg_path: r"Software\Bethesda Softworks\Fallout 4 VR",
+        value_name: "Installed Path",
+        steam_folder: "Fallout 4 VR",
+    },
+    GameRegistryConfig {
+        name: "Fallout New Vegas",
+        app_id: "22380",
+        reg_path: r"Software\Bethesda Softworks\FalloutNV",
+        value_name: "Installed Path",
+        steam_folder: "Fallout New Vegas",
+    },
+    GameRegistryConfig {
+        name: "Morrowind",
+        app_id: "22320",
+        reg_path: r"Software\Bethesda Softworks\Morrowind",
+        value_name: "Installed Path",
+        steam_folder: "Morrowind",
+    },
+    GameRegistryConfig {
+        name: "Oblivion",
+        app_id: "22330",
+        reg_path: r"Software\Bethesda Softworks\Oblivion",
+        value_name: "Installed Path",
+        steam_folder: "Oblivion",
+    },
+    GameRegistryConfig {
+        name: "Skyrim",
+        app_id: "72850",
+        reg_path: r"Software\Bethesda Softworks\Skyrim",
+        value_name: "Installed Path",
+        steam_folder: "Skyrim",
+    },
+    GameRegistryConfig {
+        name: "Skyrim Special Edition",
+        app_id: "489830",
+        reg_path: r"Software\Bethesda Softworks\Skyrim Special Edition",
+        value_name: "Installed Path",
+        steam_folder: "Skyrim Special Edition",
+    },
+    GameRegistryConfig {
+        name: "Skyrim VR",
+        app_id: "611670",
+        reg_path: r"Software\Bethesda Softworks\Skyrim VR",
+        value_name: "Installed Path",
+        steam_folder: "Skyrim VR",
+    },
+    GameRegistryConfig {
+        name: "Starfield",
+        app_id: "1716740",
+        reg_path: r"Software\Bethesda Softworks\Starfield",
+        value_name: "Installed Path",
+        steam_folder: "Starfield",
+    },
+];
+
+/// Find the installation path for a game in Steam library folders
+fn find_steam_game_install(steam_path: &Path, steam_folder: &str) -> Option<PathBuf> {
+    // Check main steamapps first
+    let main_path = steam_path.join("steamapps/common").join(steam_folder);
+    if main_path.exists() {
+        return Some(main_path);
+    }
+
+    // Check library folders
+    let library_vdf = steam_path.join("steamapps/libraryfolders.vdf");
+    if let Ok(content) = fs::read_to_string(&library_vdf) {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("\"path\"") {
+                if let Some(path_str) = trimmed.split('"').nth(3) {
+                    let game_path = PathBuf::from(path_str)
+                        .join("steamapps/common")
+                        .join(steam_folder);
+                    if game_path.exists() {
+                        return Some(game_path);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Auto-detect installed Steam games and apply registry entries
+///
+/// This scans Steam library folders for installed games and automatically
+/// adds the registry entries so mod managers can detect them.
+pub fn auto_apply_game_registries(
+    prefix_path: &Path,
+    proton: &SteamProton,
+    log_callback: &impl Fn(String),
+) {
+    let steam_path = match detect_steam_path_checked() {
+        Some(p) => PathBuf::from(p),
+        None => {
+            log_warning("Could not find Steam path for game registry auto-detection");
+            return;
+        }
+    };
+
+    let wine_bin = proton.path.join("files/bin/wine");
+    if !wine_bin.exists() {
+        log_warning("Wine binary not found, skipping game registry auto-detection");
+        return;
+    }
+
+    let mut applied_count = 0;
+
+    for game in GAME_REGISTRY_CONFIGS {
+        // Check if game is installed
+        let game_path = match find_steam_game_install(&steam_path, game.steam_folder) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        log_callback(format!("Found {}, applying registry...", game.name));
+
+        // Convert Linux path to Wine Z: drive path with escaped backslashes for .reg file
+        let linux_path = game_path.to_string_lossy();
+        let wine_path_reg = format!("Z:{}", linux_path.replace('/', "\\\\"));
+
+        // Create .reg file content
+        let reg_content = format!(
+            r#"Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\{}]
+"{}"="{}"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\{}]
+"{}"="{}"
+"#,
+            game.reg_path,
+            game.value_name,
+            wine_path_reg,
+            game.reg_path.strip_prefix("Software\\").unwrap_or(game.reg_path),
+            game.value_name,
+            wine_path_reg,
+        );
+
+        // Write temp .reg file
+        let tmp_dir = AppConfig::get_tmp_path();
+        let reg_file = tmp_dir.join(format!("game_reg_{}.reg", game.app_id));
+
+        if let Err(e) = fs::write(&reg_file, &reg_content) {
+            log_warning(&format!("Failed to write registry file for {}: {}", game.name, e));
+            continue;
+        }
+
+        // Apply registry
+        let status = Command::new(&wine_bin)
+            .arg("regedit")
+            .arg(&reg_file)
+            .env("WINEPREFIX", prefix_path)
+            .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d")
+            .env("PROTON_USE_XALIA", "0")
+            .status();
+
+        let _ = fs::remove_file(&reg_file);
+
+        match status {
+            Ok(s) if s.success() => {
+                log_install(&format!("Applied registry for {} -> {:?}", game.name, game_path));
+                applied_count += 1;
+            }
+            Ok(s) => {
+                log_warning(&format!(
+                    "Registry for {} may have failed (exit code: {:?})",
+                    game.name,
+                    s.code()
+                ));
+            }
+            Err(e) => {
+                log_warning(&format!("Failed to apply registry for {}: {}", game.name, e));
+            }
+        }
+    }
+
+    if applied_count > 0 {
+        log_callback(format!("Auto-configured {} game(s) in registry", applied_count));
+        log_install(&format!("Auto-applied registry for {} detected game(s)", applied_count));
+    }
+}
 
 /// Find the Steam prefix for a game by App ID
 fn find_steam_game_prefix(steam_path: &Path, app_id: &str) -> Option<PathBuf> {
