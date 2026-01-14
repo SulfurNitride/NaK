@@ -736,6 +736,13 @@ fn get_active_shortcut_app_ids() -> HashSet<u32> {
         let userdata_path = std::path::Path::new(&steam_path).join("userdata");
         if let Ok(entries) = std::fs::read_dir(&userdata_path) {
             for entry in entries.flatten() {
+                // Skip "0" folder - it's a special Steam folder for offline/anonymous mode
+                if let Some(name) = entry.path().file_name() {
+                    if name.to_string_lossy() == "0" {
+                        continue;
+                    }
+                }
+
                 let shortcuts_path = entry.path().join("config/shortcuts.vdf");
                 if shortcuts_path.exists() {
                     // Try to load shortcuts file
