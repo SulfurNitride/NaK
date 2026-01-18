@@ -25,6 +25,7 @@ pub fn get_shortcuts_vdf_path() -> Option<PathBuf> {
     Some(userdata.join("config/shortcuts.vdf"))
 }
 
+
 /// A Steam non-Steam game shortcut
 #[derive(Clone, Debug)]
 pub struct Shortcut {

@@ -1,6 +1,8 @@
 //! Sidebar navigation
 
 use crate::app::{MyApp, Page};
+use crate::logging::log_action;
+use crate::steam::get_steam_accounts;
 use eframe::egui;
 
 pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, is_enabled: bool) {
@@ -28,6 +30,54 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
         ui.separator();
     } else if let Some(path) = &app.steam_path {
         ui.small(format!("Steam: {}", path));
+
+        // Steam Account picker
+        let accounts = get_steam_accounts();
+        if !accounts.is_empty() {
+            ui.horizontal(|ui| {
+                ui.small("Account:");
+
+                if accounts.len() == 1 {
+                    // Single account - just show name
+                    ui.small(egui::RichText::new(&accounts[0].persona_name).strong());
+                } else {
+                    // Multiple accounts - show dropdown
+                    let current_account = if app.config.selected_steam_account.is_empty() {
+                        accounts.first().map(|a| a.account_id.clone()).unwrap_or_default()
+                    } else {
+                        app.config.selected_steam_account.clone()
+                    };
+
+                    let current_display = accounts
+                        .iter()
+                        .find(|a| a.account_id == current_account)
+                        .map(|a| a.persona_name.as_str())
+                        .unwrap_or("Auto");
+
+                    egui::ComboBox::from_id_salt("sidebar_steam_account")
+                        .selected_text(current_display)
+                        .width(100.0)
+                        .show_ui(ui, |ui| {
+                            for account in &accounts {
+                                let is_selected = app.config.selected_steam_account == account.account_id
+                                    || (app.config.selected_steam_account.is_empty() && account.most_recent);
+
+                                let label = if account.most_recent {
+                                    format!("{} ★", account.persona_name)
+                                } else {
+                                    account.persona_name.clone()
+                                };
+
+                                if ui.selectable_label(is_selected, &label).clicked() {
+                                    app.config.selected_steam_account = account.account_id.clone();
+                                    app.config.save();
+                                    log_action(&format!("Steam account: {}", account.persona_name));
+                                }
+                            }
+                        });
+                }
+            });
+        }
         ui.add_space(2.0);
     }
 

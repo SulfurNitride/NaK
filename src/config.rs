@@ -7,6 +7,21 @@ fn get_home() -> String {
     std::env::var("HOME").unwrap_or_default()
 }
 
+/// Normalize a path for compatibility with pressure-vessel/Steam container.
+///
+/// On Fedora Atomic/Bazzite/Silverblue, $HOME is `/var/home/user` but `/home`
+/// is a symlink to `/var/home`. Pressure-vessel exposes `/home` but may not
+/// properly handle paths that explicitly use `/var/home/`. This function
+/// converts such paths to use `/home/` instead for maximum compatibility.
+pub fn normalize_path_for_steam(path: &str) -> String {
+    // Convert /var/home/user/... to /home/user/...
+    if let Some(stripped) = path.strip_prefix("/var/home/") {
+        format!("/home/{}", stripped)
+    } else {
+        path.to_string()
+    }
+}
+
 fn default_data_path() -> String {
     format!("{}/NaK", get_home())
 }
@@ -32,6 +47,10 @@ pub struct AppConfig {
     /// If empty/not set, uses ~/.cache/nak/
     #[serde(default)]
     pub cache_location: String,
+    /// Selected Steam account ID (Steam3 format, e.g., "910757758")
+    /// If empty/not set, uses the most recently active account
+    #[serde(default)]
+    pub selected_steam_account: String,
 }
 
 impl Default for AppConfig {
@@ -42,6 +61,7 @@ impl Default for AppConfig {
             data_path: default_data_path(),
             steam_migration_shown: false,
             cache_location: String::new(),
+            selected_steam_account: String::new(),
         }
     }
 }
@@ -184,6 +204,10 @@ pub struct ManagedPrefix {
     pub library_path: String,
     /// When this prefix was created
     pub created: DateTime<Utc>,
+    /// Proton config_name used for this instance (for script regeneration)
+    /// Optional for backward compatibility with existing installs
+    #[serde(default)]
+    pub proton_config_name: Option<String>,
 }
 
 /// Container for all managed prefixes
@@ -230,6 +254,7 @@ impl ManagedPrefixes {
         install_path: &str,
         manager_type: ManagerType,
         library_path: &str,
+        proton_config_name: Option<&str>,
     ) {
         let mut prefixes = Self::load();
 
@@ -244,8 +269,18 @@ impl ManagedPrefixes {
             manager_type,
             library_path: library_path.to_string(),
             created: Utc::now(),
+            proton_config_name: proton_config_name.map(|s| s.to_string()),
         });
 
+        prefixes.save();
+    }
+
+    /// Update the Proton config name for an existing prefix
+    pub fn update_proton(app_id: u32, proton_config_name: &str) {
+        let mut prefixes = Self::load();
+        if let Some(prefix) = prefixes.prefixes.iter_mut().find(|p| p.app_id == app_id) {
+            prefix.proton_config_name = Some(proton_config_name.to_string());
+        }
         prefixes.save();
     }
 

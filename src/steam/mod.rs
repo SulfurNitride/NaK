@@ -9,7 +9,10 @@ mod proton;
 mod shortcuts;
 
 // Re-export path detection utilities
-pub use paths::{detect_steam_path, detect_steam_path_checked, find_steam_path, find_userdata_path};
+pub use paths::{
+    detect_steam_path, detect_steam_path_checked, find_steam_path, find_userdata_path,
+    get_steam_accounts,
+};
 
 // Re-export Steam integration components
 pub use config::set_compat_tool;
@@ -127,7 +130,11 @@ pub fn generate_launch_options(dxvk_conf_path: Option<&std::path::Path>) -> Stri
     let mounts = detect_extra_mounts();
 
     let dxvk_part = match dxvk_conf_path {
-        Some(path) => format!("DXVK_CONFIG_FILE=\"{}\"", path.display()),
+        // Normalize path for Bazzite/Fedora Atomic compatibility
+        Some(path) => format!(
+            "DXVK_CONFIG_FILE=\"{}\"",
+            crate::config::normalize_path_for_steam(&path.to_string_lossy())
+        ),
         None => String::new(),
     };
 
@@ -216,6 +223,12 @@ pub fn add_mod_manager_shortcut(
     proton_name: &str,
     dxvk_conf_path: Option<&std::path::Path>,
 ) -> Result<SteamShortcutResult, Box<dyn std::error::Error>> {
+    // Normalize paths for Bazzite/Fedora Atomic compatibility
+    // On these systems, $HOME is /var/home/user but /home is a symlink to /var/home
+    // Pressure-vessel exposes /home but may not properly handle /var/home paths
+    let exe_path = crate::config::normalize_path_for_steam(exe_path);
+    let start_dir = crate::config::normalize_path_for_steam(start_dir);
+
     // 1. Load existing shortcuts
     let mut vdf = ShortcutsVdf::load()?;
 
@@ -226,7 +239,7 @@ pub fn add_mod_manager_shortcut(
     }
 
     // 3. Create the shortcut
-    let shortcut = Shortcut::new(name, exe_path, start_dir)
+    let shortcut = Shortcut::new(name, &exe_path, &start_dir)
         .with_tag("NaK")
         .with_launch_options(&launch_options);
 

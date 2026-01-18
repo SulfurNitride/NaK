@@ -5,7 +5,7 @@ mod mo2;
 mod prefix_setup;
 mod vortex;
 
-pub use common::{get_available_disk_space, MIN_REQUIRED_DISK_SPACE_GB};
+pub use common::{get_available_disk_space, regenerate_nak_tools_scripts, MIN_REQUIRED_DISK_SPACE_GB};
 pub use mo2::{install_mo2, setup_existing_mo2};
 pub use prefix_setup::{
     apply_dpi, create_game_folders,
@@ -125,8 +125,6 @@ pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
 "dinput.dll"="native,builtin"
 "dinput8"="native,builtin"
 "dinput8.dll"="native,builtin"
-"mscoree.dll"="native,builtin"
-"mscoree"="native,builtin"
 
 [HKEY_CURRENT_USER\Software\Wine]
 "ShowDotFiles"="Y"
@@ -199,6 +197,54 @@ pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\Software\Wine\AppDefaults\FO3Edit64.exe]
 "Version"="winxp"
+
+; =============================================================================
+; Native file browser integration (opens folders in native file manager)
+; =============================================================================
+[HKEY_CLASSES_ROOT\Folder\shell\explore\command]
+@="C:\\windows\\system32\\winebrowser.exe -nohome \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\explore\command]
+@="C:\\windows\\system32\\winebrowser.exe -nohome \"%1\""
+
+[HKEY_CLASSES_ROOT\Folder\shell\open\command]
+@="C:\\windows\\system32\\winebrowser.exe -nohome \"%1\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\open\command]
+@="C:\\windows\\system32\\winebrowser.exe -nohome \"%1\""
+
+; =============================================================================
+; Native text editor integration (opens text files in native editor)
+; =============================================================================
+[HKEY_CLASSES_ROOT\txtfile\shell\open\command]
+@="C:\\windows\\system32\\winebrowser.exe \"%1\""
+
+[HKEY_CLASSES_ROOT\inifile\shell\open\command]
+@="C:\\windows\\system32\\winebrowser.exe \"%1\""
+
+[HKEY_CLASSES_ROOT\.txt]
+@="txtfile"
+
+[HKEY_CLASSES_ROOT\.ini]
+@="inifile"
+
+[HKEY_CLASSES_ROOT\.cfg]
+@="txtfile"
+
+[HKEY_CLASSES_ROOT\.log]
+@="txtfile"
+
+[HKEY_CLASSES_ROOT\.xml]
+@="txtfile"
+
+[HKEY_CLASSES_ROOT\.json]
+@="txtfile"
+
+[HKEY_CLASSES_ROOT\.yml]
+@="txtfile"
+
+[HKEY_CLASSES_ROOT\.yaml]
+@="txtfile"
 "#;
 
 // ============================================================================
@@ -242,7 +288,7 @@ pub fn apply_wine_registry_settings(
             .env("WINESERVER", &wineserver_bin)
             .env("PATH", &path_env)
             .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
-            .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d")
+            .env("WINEDLLOVERRIDES", "mshtml=d")
             .env("PROTON_USE_XALIA", "0");
     };
 

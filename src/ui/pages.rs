@@ -376,6 +376,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     let active_app_ids = get_active_shortcut_app_ids();
 
                     let mut to_delete: Option<u32> = None;
+                    let mut to_update: Option<crate::config::ManagedPrefix> = None;
 
                     for prefix in &managed.prefixes {
                         let is_active = active_app_ids.contains(&prefix.app_id);
@@ -471,18 +472,24 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                                             .spawn();
                                     }
 
+                                    // Update Scripts button (only if prefix exists and NaK Tools exists)
+                                    let tools_dir = std::path::Path::new(&prefix.install_path).join("NaK Tools");
+                                    if prefix_exists && tools_dir.exists()
+                                        && ui.small_button("Update Scripts").clicked()
+                                    {
+                                        to_update = Some(prefix.clone());
+                                    }
+
                                     // Delete button (only if NOT active)
-                                    if !is_active {
-                                        if prefix_exists {
-                                            if ui.small_button(egui::RichText::new("Delete Prefix").color(egui::Color32::from_rgb(255, 100, 100))).clicked() {
-                                                to_delete = Some(prefix.app_id);
-                                            }
-                                        } else {
-                                            // Just remove from tracking if prefix already deleted
-                                            if ui.small_button("Remove Entry").clicked() {
-                                                ManagedPrefixes::unregister(prefix.app_id);
-                                            }
-                                        }
+                                    if !is_active && prefix_exists
+                                        && ui.small_button(egui::RichText::new("Delete Prefix").color(egui::Color32::from_rgb(255, 100, 100))).clicked()
+                                    {
+                                        to_delete = Some(prefix.app_id);
+                                    } else if !is_active && !prefix_exists
+                                        && ui.small_button("Remove Entry").clicked()
+                                    {
+                                        // Just remove from tracking if prefix already deleted
+                                        ManagedPrefixes::unregister(prefix.app_id);
                                     }
                                 });
                             });
@@ -499,6 +506,43 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                             Err(e) => {
                                 log_action(&format!("Failed to delete prefix: {}", e));
                             }
+                        }
+                    }
+
+                    // Handle script regeneration outside the loop
+                    if let Some(prefix) = to_update {
+                        // Find the Proton to use - prefer the stored one, fallback to first available
+                        let proton_config_name = prefix.proton_config_name.as_deref()
+                            .or_else(|| app.steam_protons.first().map(|p| p.config_name.as_str()));
+
+                        if let Some(proton_name) = proton_config_name {
+                            if let Some(proton) = app.steam_protons.iter().find(|p| p.config_name == proton_name) {
+                                let install_path = std::path::Path::new(&prefix.install_path);
+                                let prefix_path = std::path::Path::new(&prefix.prefix_path);
+
+                                match crate::installers::regenerate_nak_tools_scripts(
+                                    prefix.manager_type,
+                                    install_path,
+                                    prefix_path,
+                                    prefix.app_id,
+                                    &proton.path,
+                                ) {
+                                    Ok(_) => {
+                                        log_action(&format!("Updated scripts for {} (AppID: {})", prefix.name, prefix.app_id));
+                                        // Update the stored Proton config name if it wasn't set
+                                        if prefix.proton_config_name.is_none() {
+                                            ManagedPrefixes::update_proton(prefix.app_id, &proton.config_name);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log_action(&format!("Failed to update scripts: {}", e));
+                                    }
+                                }
+                            } else {
+                                log_action(&format!("Proton '{}' not found - cannot update scripts", proton_name));
+                            }
+                        } else {
+                            log_action("No Proton available - cannot update scripts");
                         }
                     }
                 }

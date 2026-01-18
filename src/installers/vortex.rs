@@ -244,6 +244,7 @@ pub fn install_vortex(
         actual_install_dir.to_str().unwrap_or(""),
         crate::config::ManagerType::Vortex,
         primary_steam_path.to_str().unwrap_or(""),
+        Some(&proton.config_name),
     );
     log_install("Registered prefix for cleanup tracking");
 
@@ -330,6 +331,7 @@ pub fn setup_existing_vortex(
         actual_install_dir.to_str().unwrap_or(""),
         crate::config::ManagerType::Vortex,
         primary_steam_path.to_str().unwrap_or(""),
+        Some(&proton.config_name),
     );
     log_install("Registered prefix for cleanup tracking");
 

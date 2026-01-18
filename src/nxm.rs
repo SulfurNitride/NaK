@@ -232,14 +232,40 @@ export STEAM_COMPAT_DATA_PATH="${WINEPREFIX%/pfx}"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
 export WINEDLLOVERRIDES="winemenubuilder.exe="
 
-# Launch mod manager with NXM link via Proton
-echo "NaK: Handling NXM link via direct Proton launch..."
+# Launch mod manager with NXM link
+echo "NaK: Handling NXM link..."
 echo "  EXE: $NXM_EXE"
 echo "  URL: $NXM_URL"
-if [ -n "$NXM_ARGS" ]; then
-    "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
+
+# If mod manager is already running, use wine directly to connect to existing wineserver
+# This prevents opening a new instance
+if is_running; then
+    echo "NaK: $MOD_MANAGER is running, using existing wineserver..."
+    WINE_BIN="$PROTON_PATH/files/bin/wine64"
+    if [ ! -f "$WINE_BIN" ]; then
+        WINE_BIN="$PROTON_PATH/files/bin/wine"
+    fi
+    if [ -f "$WINE_BIN" ]; then
+        if [ -n "$NXM_ARGS" ]; then
+            "$WINE_BIN" "$NXM_EXE" $NXM_ARGS "$NXM_URL"
+        else
+            "$WINE_BIN" "$NXM_EXE" "$NXM_URL"
+        fi
+    else
+        echo "NaK: Wine binary not found, falling back to Proton..."
+        if [ -n "$NXM_ARGS" ]; then
+            "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
+        else
+            "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
+        fi
+    fi
 else
-    "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
+    echo "NaK: Launching via Proton..."
+    if [ -n "$NXM_ARGS" ]; then
+        "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
+    else
+        "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
+    fi
 fi
 "##;
 
@@ -250,17 +276,23 @@ fi
         fs::set_permissions(&script_path, perms)?;
 
         // Create Desktop Entry
+        // Note: According to XDG spec, Exec paths with special chars should be quoted,
+        // but some implementations have issues with quotes. Since our path is in
+        // ~/.config/nak/ (no spaces), we don't need quotes.
         let desktop_content = format!(
             r#"[Desktop Entry]
 Type=Application
+Version=1.1
 Name=NaK NXM Handler
-Comment=Handle Nexus Mods links via NaK (Direct Proton)
-Exec="{}" %u
-Icon=utilities-terminal
+GenericName=Nexus Mods Link Handler
+Comment=Handle Nexus Mods nxm:// links via NaK
+Exec={} %u
+Icon=applications-games
 Terminal=false
 Categories=Game;Utility;
 MimeType=x-scheme-handler/nxm;
-NoDisplay=true
+StartupNotify=false
+NoDisplay=false
 "#,
             script_path.to_string_lossy()
         );
@@ -268,19 +300,180 @@ NoDisplay=true
         let mut dfile = fs::File::create(&desktop_path)?;
         dfile.write_all(desktop_content.as_bytes())?;
 
-        // Register Mime Type (xdg-mime)
+        // Update desktop database so the app appears in application pickers
+        // This is required for new installations - without it, the app won't
+        // show up when users try to select an application to handle nxm:// links
+        let db_result = std::process::Command::new("update-desktop-database")
+            .arg(&applications_dir)
+            .status();
+
+        if let Err(e) = db_result {
+            log_warning(&format!("Failed to run update-desktop-database: {}", e));
+        }
+
+        // Register MIME type in user's mimeapps.list (XDG standard location)
+        // This ensures the handler is set even if xdg-mime has issues
+        let mimeapps_path = PathBuf::from(format!("{}/.config/mimeapps.list", home));
+        Self::add_mime_association(&mimeapps_path, "x-scheme-handler/nxm", "nak-nxm-handler.desktop");
+
+        // Also try the legacy location some systems still use
+        let legacy_mimeapps = applications_dir.join("mimeapps.list");
+        Self::add_mime_association(&legacy_mimeapps, "x-scheme-handler/nxm", "nak-nxm-handler.desktop");
+
+        // Register with xdg-mime as well (belt and suspenders approach)
         let status = std::process::Command::new("xdg-mime")
             .arg("default")
             .arg("nak-nxm-handler.desktop")
             .arg("x-scheme-handler/nxm")
-            .status()?;
+            .status();
 
-        if status.success() {
-            log_install("NXM Handler registered successfully (Direct Proton)");
-        } else {
-            log_warning("Failed to register NXM handler with xdg-mime");
+        match status {
+            Ok(s) if s.success() => {
+                log_install("NXM Handler registered successfully (Direct Proton)");
+            }
+            Ok(_) => {
+                // xdg-mime failed but we also wrote to mimeapps.list directly
+                log_warning("xdg-mime returned error, but handler was registered via mimeapps.list");
+            }
+            Err(e) => {
+                log_warning(&format!("xdg-mime not available ({}), handler registered via mimeapps.list", e));
+            }
         }
 
+        // Fix Flatpak browser permissions for NXM handler access
+        Self::fix_flatpak_browsers();
+
         Ok(())
+    }
+
+    /// Add a MIME type association to a mimeapps.list file
+    fn add_mime_association(path: &PathBuf, mime_type: &str, desktop_file: &str) {
+        // Read existing content or start fresh
+        let content = fs::read_to_string(path).unwrap_or_default();
+
+        let entry = format!("{}={}", mime_type, desktop_file);
+        let section_header = "[Default Applications]";
+
+        // Check if already correctly set
+        if content.contains(&entry) {
+            return;
+        }
+
+        let new_content = if content.contains(section_header) {
+            // Section exists - check if mime type is already there
+            let mut lines: Vec<&str> = content.lines().collect();
+            let mut found = false;
+            let mut in_section = false;
+
+            for line in &mut lines {
+                if line.starts_with('[') {
+                    in_section = *line == section_header;
+                } else if in_section && line.starts_with(&format!("{}=", mime_type)) {
+                    // Update existing entry - but we can't mutate through &str
+                    found = true;
+                    break;
+                }
+            }
+
+            if found {
+                // Replace the existing entry
+                content
+                    .lines()
+                    .map(|line| {
+                        if line.starts_with(&format!("{}=", mime_type)) {
+                            entry.clone()
+                        } else {
+                            line.to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                // Add entry after section header
+                content.replace(section_header, &format!("{}\n{}", section_header, entry))
+            }
+        } else {
+            // No section - add it
+            if content.is_empty() {
+                format!("{}\n{}\n", section_header, entry)
+            } else {
+                format!("{}\n\n{}\n{}\n", content.trim_end(), section_header, entry)
+            }
+        };
+
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        let _ = fs::write(path, new_content);
+    }
+
+    /// Fix Flatpak browser permissions for NXM handling
+    ///
+    /// Flatpak browsers are sandboxed and can't launch external scripts or access
+    /// removable media by default. This adds the necessary overrides.
+    pub fn fix_flatpak_browsers() {
+        const FLATPAK_BROWSERS: &[&str] = &[
+            "com.brave.Browser",
+            "com.google.Chrome",
+            "org.chromium.Chromium",
+            "com.github.nickvergessen.nickvergessen_chromium",
+            "org.mozilla.firefox",
+            "one.ablaze.floorp",
+            "net.waterfox.waterfox",
+            "app.zen_browser.zen",
+        ];
+
+        // Check if flatpak command exists
+        let flatpak_check = std::process::Command::new("flatpak")
+            .arg("--version")
+            .output();
+
+        if flatpak_check.is_err() {
+            // Flatpak not installed, nothing to do
+            return;
+        }
+
+        // Get list of installed flatpaks
+        let installed = match std::process::Command::new("flatpak")
+            .args(["list", "--app", "--columns=application"])
+            .output()
+        {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).to_string(),
+            Err(_) => return,
+        };
+
+        let mut fixed_count = 0;
+
+        for browser_id in FLATPAK_BROWSERS {
+            if installed.contains(browser_id) {
+                // Apply the necessary overrides
+                let result = std::process::Command::new("flatpak")
+                    .args([
+                        "override",
+                        "--user",
+                        browser_id,
+                        "--filesystem=home",
+                        "--filesystem=/run/media/",
+                        "--talk-name=org.freedesktop.portal.*",
+                    ])
+                    .status();
+
+                if let Ok(status) = result {
+                    if status.success() {
+                        log_install(&format!("Fixed Flatpak permissions for {}", browser_id));
+                        fixed_count += 1;
+                    }
+                }
+            }
+        }
+
+        if fixed_count > 0 {
+            log_install(&format!(
+                "Applied Flatpak NXM handler permissions to {} browser(s)",
+                fixed_count
+            ));
+        }
     }
 }

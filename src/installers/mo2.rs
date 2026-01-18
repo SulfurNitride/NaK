@@ -194,6 +194,7 @@ pub fn install_mo2(
         install_path.to_str().unwrap_or(""),
         crate::config::ManagerType::MO2,
         steam_path.to_str().unwrap_or(""),
+        Some(&proton.config_name),
     );
     log_install("Registered prefix for cleanup tracking");
 
@@ -287,6 +288,7 @@ pub fn setup_existing_mo2(
         existing_path.to_str().unwrap_or(""),
         crate::config::ManagerType::MO2,
         steam_path.to_str().unwrap_or(""),
+        Some(&proton.config_name),
     );
     log_install("Registered prefix for cleanup tracking");
 

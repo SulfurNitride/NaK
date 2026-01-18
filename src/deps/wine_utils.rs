@@ -49,7 +49,7 @@ where
         .env("STEAM_COMPAT_DATA_PATH", compat_data)
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_path)
         .env("PROTON_USE_XALIA", "0")
-        .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d");
+        .env("WINEDLLOVERRIDES", "mshtml=d");
 
     cmd.status()
 }
@@ -78,7 +78,7 @@ where
         .env("STEAM_COMPAT_DATA_PATH", compat_data)
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_path)
         .env("PROTON_USE_XALIA", "0")
-        .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d");
+        .env("WINEDLLOVERRIDES", "mshtml=d");
 
     cmd.spawn()
 }
@@ -152,80 +152,3 @@ pub fn register_dll(
     Ok(())
 }
 
-/// Apply universal dotnet4.x compatibility registry fixes
-pub fn apply_universal_dotnet_fixes(
-    ctx: &DepInstallContext,
-) -> Result<(), Box<dyn Error>> {
-    ctx.log("Applying universal dotnet4.x compatibility registry fixes...");
-    log_install("Applying universal dotnet4.x registry fixes (*mscoree=native, OnlyUseLatestCLR=1)");
-
-    // Kill wineserver first to ensure clean slate
-    kill_wineserver(&ctx.proton, &ctx.prefix);
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    // Fix 1: Set *mscoree=native DLL override
-    ctx.log("Setting *mscoree=native DLL override...");
-    let status1 = run_wine_cmd(
-        &ctx.proton,
-        &ctx.prefix,
-        "reg",
-        [
-            "add",
-            r"HKCU\Software\Wine\DllOverrides",
-            "/v",
-            "*mscoree",
-            "/t",
-            "REG_SZ",
-            "/d",
-            "native",
-            "/f",
-        ],
-    )?;
-
-    if !status1.success() {
-        log_error(&format!("Failed to set *mscoree=native (exit code: {:?})", status1.code()));
-    } else {
-        log_install("Successfully applied *mscoree=native DLL override");
-    }
-
-    // Fix 2: Set OnlyUseLatestCLR=1
-    ctx.log("Setting OnlyUseLatestCLR=1 registry entry...");
-    let status2 = run_wine_cmd(
-        &ctx.proton,
-        &ctx.prefix,
-        "reg",
-        [
-            "add",
-            r"HKLM\Software\Microsoft\.NETFramework",
-            "/v",
-            "OnlyUseLatestCLR",
-            "/t",
-            "REG_DWORD",
-            "/d",
-            "1",
-            "/f",
-        ],
-    )?;
-
-    if !status2.success() {
-        log_error(&format!("Failed to set OnlyUseLatestCLR=1 (exit code: {:?})", status2.code()));
-    } else {
-        log_install("Successfully applied OnlyUseLatestCLR=1 registry entry");
-    }
-
-    // Flush registry changes
-    ctx.log("Flushing registry changes...");
-    kill_wineserver(&ctx.proton, &ctx.prefix);
-    std::thread::sleep(std::time::Duration::from_secs(1));
-
-    if status1.success() && status2.success() {
-        ctx.log("Universal dotnet4.x compatibility fixes applied successfully");
-        log_install("Universal dotnet4.x compatibility fixes applied successfully");
-    } else {
-        let err_msg = "Some dotnet4.x registry fixes failed - modlist may have .NET issues";
-        ctx.log(&format!("Warning: {}", err_msg));
-        log_error(err_msg);
-    }
-
-    Ok(())
-}

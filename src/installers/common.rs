@@ -667,6 +667,71 @@ pub fn create_nak_tools_folder(
     Ok(())
 }
 
+/// Regenerate NaK Tools scripts for an existing instance.
+/// This updates the Wine Prefix symlink and all scripts without touching
+/// the folder structure (Prefix Documents, Vortex Data, etc.)
+///
+/// Used when NaK is updated to refresh scripts with bug fixes/improvements.
+pub fn regenerate_nak_tools_scripts(
+    manager_type: ManagerType,
+    install_dir: &Path,
+    prefix_path: &Path,
+    app_id: u32,
+    proton_path: &Path,
+) -> Result<(), InstallError> {
+    let manager_name = manager_type.display_name();
+    let tools_dir = install_dir.join("NaK Tools");
+
+    // Ensure NaK Tools folder exists
+    if !tools_dir.exists() {
+        return Err(InstallError::DirectoryCreation {
+            path: tools_dir.display().to_string(),
+            reason: "NaK Tools folder does not exist".to_string(),
+        });
+    }
+
+    log_install(&format!("Regenerating scripts for {} instance...", manager_name));
+
+    // 1. Update Wine Prefix symlink (in case prefix was moved)
+    let prefix_link = tools_dir.join("Wine Prefix");
+    if prefix_link.exists() || fs::symlink_metadata(&prefix_link).is_ok() {
+        let _ = fs::remove_file(&prefix_link);
+    }
+    if let Err(e) = std::os::unix::fs::symlink(prefix_path, &prefix_link) {
+        log_warning(&format!("Failed to update prefix symlink: {}", e));
+    } else {
+        log_install("Updated Wine Prefix symlink");
+    }
+
+    // 2. Regenerate Launch script
+    let launch_script = generate_steam_launch_script(app_id, manager_name);
+    write_script(&tools_dir.join(format!("Launch {}.sh", manager_name)), &launch_script)?;
+    log_install(&format!("Regenerated Launch {} script", manager_name));
+
+    // 3. Regenerate NXM Toggle script
+    let nxm_script = generate_nxm_toggle_script(app_id, manager_name, install_dir, prefix_path, proton_path);
+    write_script(&tools_dir.join("NXM Toggle.sh"), &nxm_script)?;
+    log_install("Regenerated NXM Toggle script");
+
+    // 4. Regenerate Fix Game Registry script
+    let registry_script = generate_fix_registry_script(manager_name, prefix_path, proton_path);
+    write_script(&tools_dir.join("Fix Game Registry.sh"), &registry_script)?;
+    log_install("Regenerated Fix Game Registry script");
+
+    // 5. Regenerate Import Saves script
+    let import_script = generate_import_saves_script(prefix_path);
+    write_script(&tools_dir.join("Import Saves.sh"), &import_script)?;
+    log_install("Regenerated Import Saves script");
+
+    // 6. Regenerate Winetricks GUI script
+    let winetricks_script = generate_winetricks_gui_script(prefix_path);
+    write_script(&tools_dir.join("Winetricks.sh"), &winetricks_script)?;
+    log_install("Regenerated Winetricks GUI script");
+
+    log_install(&format!("NaK Tools scripts regenerated for {:?}", install_dir));
+    Ok(())
+}
+
 /// Write a script file with executable permissions
 fn write_script(path: &Path, content: &str) -> Result<(), InstallError> {
     let mut file = fs::File::create(path).map_err(|e| InstallError::Other {
@@ -694,8 +759,9 @@ fn write_script(path: &Path, content: &str) -> Result<(), InstallError> {
 
 /// Generate Fix Game Registry script for Steam-native installs
 fn generate_fix_registry_script(manager_name: &str, prefix_path: &Path, proton_path: &Path) -> String {
-    let prefix_str = prefix_path.display();
-    let proton_str = proton_path.display();
+    // Normalize paths for Bazzite/Fedora Atomic compatibility
+    let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
+    let proton_str = crate::config::normalize_path_for_steam(&proton_path.to_string_lossy());
     format!(r#"#!/bin/bash
 # NaK Fix Game Registry Script
 # For Steam-native {} installation
@@ -842,9 +908,11 @@ echo "Done! You may need to restart {} for changes to take effect."
 
 /// Generate NXM Toggle script
 fn generate_nxm_toggle_script(app_id: u32, manager_name: &str, install_dir: &Path, prefix_path: &Path, proton_path: &Path) -> String {
-    let install_str = install_dir.display();
-    let prefix_str = prefix_path.display();
-    let proton_str = proton_path.display();
+    // Normalize paths for Bazzite/Fedora Atomic compatibility
+    // On these systems, $HOME is /var/home/user but pressure-vessel exposes /home
+    let install_str = crate::config::normalize_path_for_steam(&install_dir.to_string_lossy());
+    let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
+    let proton_str = crate::config::normalize_path_for_steam(&proton_path.to_string_lossy());
 
     // Determine the NXM handler exe based on manager type
     let nxm_exe = if manager_name == "MO2" {
@@ -1083,7 +1151,8 @@ xdg-open "steam://rungameid/$GAME_ID"
 
 /// Generate Import Saves script
 fn generate_import_saves_script(prefix_path: &Path) -> String {
-    let prefix_str = prefix_path.display();
+    // Normalize paths for Bazzite/Fedora Atomic compatibility
+    let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
     format!(r#"#!/bin/bash
 # NaK Import Saves Script
 # Imports game saves from your Steam game prefix into this mod manager prefix.
@@ -1282,7 +1351,8 @@ echo "Done!"
 
 /// Generate Winetricks GUI script for Steam-native installs
 fn generate_winetricks_gui_script(prefix_path: &Path) -> String {
-    let prefix_str = prefix_path.display();
+    // Normalize paths for Bazzite/Fedora Atomic compatibility
+    let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
     format!(r#"#!/bin/bash
 # NaK Winetricks GUI Script
 #

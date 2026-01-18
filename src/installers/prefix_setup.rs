@@ -3,12 +3,9 @@
 //! This module handles all the common dependency installation logic
 //! shared between MO2 and Vortex installers.
 //!
-//! Key approach (Jackify-style):
+//! Key approach:
 //! 1. Install dependencies via native deps system (vcrun2022, physx, etc.)
-//! 2. Apply universal dotnet4.x registry fixes (*mscoree=native, OnlyUseLatestCLR=1)
-//!
-//! This approach replaces installing dotnet40/dotnet48/etc which caused Wine version
-//! mismatch issues. The registry fixes tell Wine to use native .NET runtime.
+//! 2. Auto-detect installed games and apply registry entries
 
 use std::error::Error;
 use std::fs;
@@ -17,7 +14,6 @@ use std::process::{Child, Command};
 
 use super::{apply_wine_registry_settings, TaskContext};
 use crate::config::AppConfig;
-use crate::deps::wine_utils::apply_universal_dotnet_fixes;
 use crate::deps::{DepInstallContext, NativeDependencyManager, STANDARD_DEPS};
 use crate::logging::{log_error, log_install, log_warning};
 use crate::steam::{detect_steam_path_checked, SteamProton};
@@ -44,13 +40,10 @@ fn create_dep_context(
     )
 }
 
-/// Install all dependencies to a prefix using Jackify-style approach.
+/// Install all dependencies to a prefix.
 ///
 /// Installs: registry settings, standard deps (vcrun2022, physx, etc.),
-/// and universal dotnet4.x registry fixes.
-///
-/// This approach replaces installing dotnet40/dotnet48/etc which caused Wine version
-/// mismatch issues. The registry fixes tell Wine to use native .NET runtime.
+/// and auto-detects installed games for registry configuration.
 pub fn install_all_dependencies(
     prefix_root: &Path,
     install_proton: &SteamProton,
@@ -64,8 +57,8 @@ pub fn install_all_dependencies(
     let dep_ctx = create_dep_context(prefix_root, install_proton, ctx);
     let dep_mgr = NativeDependencyManager::new(dep_ctx);
 
-    // Calculate progress ranges: registry + deps + dotnet_fixes
-    let total_steps = 1 + STANDARD_DEPS.len() + 1; // registry + deps + dotnet_fixes
+    // Calculate progress ranges: registry + deps
+    let total_steps = 1 + STANDARD_DEPS.len(); // registry + deps
     let progress_per_step = (end_progress - start_progress) / total_steps as f32;
     let mut current_step = 0;
 
@@ -163,25 +156,6 @@ pub fn install_all_dependencies(
 
     current_step += total;
     ctx.set_progress(start_progress + (current_step as f32 * progress_per_step));
-
-    if ctx.is_cancelled() {
-        return Err("Cancelled".into());
-    }
-
-    // =========================================================================
-    // Universal dotnet4.x Registry Fixes (Jackify-style)
-    // =========================================================================
-    // Apply AFTER wine component installation to prevent overwrites.
-    // This replaces the need to install dotnet40/dotnet48/etc.
-    ctx.set_status("Applying dotnet4.x compatibility fixes...".to_string());
-    log_install("Applying universal dotnet4.x compatibility registry fixes");
-
-    let fix_ctx = create_dep_context(prefix_root, install_proton, ctx);
-    if let Err(e) = apply_universal_dotnet_fixes(&fix_ctx) {
-        // Don't fail installation, just warn - the fixes are best-effort
-        ctx.log(format!("Warning: dotnet fixes failed: {}", e));
-        log_warning(&format!("dotnet4.x registry fixes failed: {}", e));
-    }
 
     ctx.set_progress(end_progress);
     Ok(())
@@ -514,7 +488,7 @@ pub fn auto_apply_game_registries(
             .arg("regedit")
             .arg(&reg_file)
             .env("WINEPREFIX", prefix_path)
-            .env("WINEDLLOVERRIDES", "mscoree=d;mshtml=d")
+            .env("WINEDLLOVERRIDES", "mshtml=d")
             .env("PROTON_USE_XALIA", "0")
             .status();
 
