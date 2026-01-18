@@ -232,40 +232,14 @@ export STEAM_COMPAT_DATA_PATH="${WINEPREFIX%/pfx}"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
 export WINEDLLOVERRIDES="winemenubuilder.exe="
 
-# Launch mod manager with NXM link
-echo "NaK: Handling NXM link..."
+# Launch mod manager with NXM link via Proton
+echo "NaK: Handling NXM link via Proton..."
 echo "  EXE: $NXM_EXE"
 echo "  URL: $NXM_URL"
-
-# If mod manager is already running, use wine directly to connect to existing wineserver
-# This prevents opening a new instance
-if is_running; then
-    echo "NaK: $MOD_MANAGER is running, using existing wineserver..."
-    WINE_BIN="$PROTON_PATH/files/bin/wine64"
-    if [ ! -f "$WINE_BIN" ]; then
-        WINE_BIN="$PROTON_PATH/files/bin/wine"
-    fi
-    if [ -f "$WINE_BIN" ]; then
-        if [ -n "$NXM_ARGS" ]; then
-            "$WINE_BIN" "$NXM_EXE" $NXM_ARGS "$NXM_URL"
-        else
-            "$WINE_BIN" "$NXM_EXE" "$NXM_URL"
-        fi
-    else
-        echo "NaK: Wine binary not found, falling back to Proton..."
-        if [ -n "$NXM_ARGS" ]; then
-            "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
-        else
-            "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
-        fi
-    fi
+if [ -n "$NXM_ARGS" ]; then
+    "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
 else
-    echo "NaK: Launching via Proton..."
-    if [ -n "$NXM_ARGS" ]; then
-        "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
-    else
-        "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
-    fi
+    "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
 fi
 "##;
 
