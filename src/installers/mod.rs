@@ -1,6 +1,7 @@
 //! Mod manager installation logic (Steam-native)
 
 mod common;
+mod compatdata_scanner;
 mod mo2;
 mod prefix_setup;
 mod vortex;
