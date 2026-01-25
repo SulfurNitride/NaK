@@ -25,11 +25,16 @@ fi
 
 PREFIX="{{PREFIX_PATH}}"
 PROTON_PATH="{{PROTON_PATH}}"
-WINE_BIN="$PROTON_PATH/files/bin/wine"
 
-# Check if Proton wine exists
-if [ ! -x "$WINE_BIN" ]; then
-    echo "ERROR: Proton wine not found at: $WINE_BIN"
+# Find wine binary - check both possible locations
+if [ -x "$PROTON_PATH/files/bin/wine" ]; then
+    WINE_BIN="$PROTON_PATH/files/bin/wine"
+elif [ -x "$PROTON_PATH/dist/bin/wine" ]; then
+    WINE_BIN="$PROTON_PATH/dist/bin/wine"
+else
+    echo "ERROR: Proton wine not found at expected paths:"
+    echo "  - $PROTON_PATH/files/bin/wine"
+    echo "  - $PROTON_PATH/dist/bin/wine"
     echo "The Proton installation may have been moved or deleted."
     exit 1
 fi

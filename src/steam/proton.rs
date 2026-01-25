@@ -23,6 +23,39 @@ pub struct SteamProton {
     pub is_experimental: bool,
 }
 
+impl SteamProton {
+    /// Get the path to the wine binary.
+    /// Checks multiple possible locations: files/bin/wine (standard) and dist/bin/wine (some builds)
+    pub fn wine_binary(&self) -> Option<PathBuf> {
+        let paths = [
+            self.path.join("files/bin/wine"),
+            self.path.join("dist/bin/wine"),
+        ];
+        paths.into_iter().find(|p| p.exists())
+    }
+
+    /// Get the path to the wineserver binary.
+    pub fn wineserver_binary(&self) -> Option<PathBuf> {
+        let paths = [
+            self.path.join("files/bin/wineserver"),
+            self.path.join("dist/bin/wineserver"),
+        ];
+        paths.into_iter().find(|p| p.exists())
+    }
+
+    /// Get the bin directory containing wine executables.
+    pub fn bin_dir(&self) -> Option<PathBuf> {
+        self.wine_binary().and_then(|p| p.parent().map(|p| p.to_path_buf()))
+    }
+}
+
+/// Check if Steam is installed via Flatpak
+pub fn is_flatpak_steam() -> bool {
+    find_steam_path()
+        .map(|p| p.to_string_lossy().contains(".var/app/com.valvesoftware.Steam"))
+        .unwrap_or(false)
+}
+
 /// Find all Protons that Steam can use (Proton 10+ only)
 pub fn find_steam_protons() -> Vec<SteamProton> {
     let mut protons = Vec::new();
@@ -31,6 +64,8 @@ pub fn find_steam_protons() -> Vec<SteamProton> {
         return protons;
     };
 
+    let is_flatpak = steam_path.to_string_lossy().contains(".var/app/com.valvesoftware.Steam");
+
     // 1. Steam's built-in Protons (steamapps/common/Proton*)
     protons.extend(find_builtin_protons(&steam_path));
 
@@ -38,10 +73,27 @@ pub fn find_steam_protons() -> Vec<SteamProton> {
     protons.extend(find_custom_protons(&steam_path));
 
     // 3. System-level Protons in /usr/share/steam/compatibilitytools.d/
-    protons.extend(find_system_protons());
+    // Skip for Flatpak Steam - system protons won't work properly with Flatpak
+    if is_flatpak {
+        crate::logging::log_info("Flatpak Steam detected - skipping system protons in /usr/share/steam/compatibilitytools.d/");
+    } else {
+        protons.extend(find_system_protons());
+    }
 
     // Filter to only include Proton 10+ (required for Steam-native integration)
     protons.retain(is_proton_10_or_newer);
+
+    // Filter to only include Protons with valid wine binaries
+    protons.retain(|p| {
+        let has_wine = p.wine_binary().is_some();
+        if !has_wine {
+            crate::logging::log_warning(&format!(
+                "Skipping Proton '{}': wine binary not found at expected paths (files/bin/wine or dist/bin/wine)",
+                p.name
+            ));
+        }
+        has_wine
+    });
 
     // Sort: Experimental first, then by name descending (newest first)
     protons.sort_by(|a, b| {

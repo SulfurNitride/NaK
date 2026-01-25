@@ -42,8 +42,15 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
                     ui.small(egui::RichText::new(&accounts[0].persona_name).strong());
                 } else {
                     // Multiple accounts - show dropdown
+                    // When no explicit selection, match find_userdata_path() logic:
+                    // 1. Account with most_recent flag, 2. First by timestamp
                     let current_account = if app.config.selected_steam_account.is_empty() {
-                        accounts.first().map(|a| a.account_id.clone()).unwrap_or_default()
+                        accounts
+                            .iter()
+                            .find(|a| a.most_recent)
+                            .or_else(|| accounts.first())
+                            .map(|a| a.account_id.clone())
+                            .unwrap_or_default()
                     } else {
                         app.config.selected_steam_account.clone()
                     };

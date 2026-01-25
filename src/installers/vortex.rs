@@ -55,7 +55,11 @@ pub fn install_vortex(
         "Starting Vortex installation: {} -> {:?}",
         install_name, install_path
     ));
-    log_install(&format!("Using Proton: {} (Steam-native)", proton.name));
+    log_install(&format!(
+        "Using Proton: {} (wine: {})",
+        proton.name,
+        proton.wine_binary().map(|p| p.display().to_string()).unwrap_or_else(|| "NOT FOUND".to_string())
+    ));
 
     // Get primary Steam path (where prefixes are always created)
     let primary_steam_path = steam::find_steam_path()
@@ -273,7 +277,11 @@ pub fn setup_existing_vortex(
         "Setting up existing Vortex: {} at {:?}",
         install_name, existing_path
     ));
-    log_install(&format!("Using Proton: {} (Steam-native)", proton.name));
+    log_install(&format!(
+        "Using Proton: {} (wine: {})",
+        proton.name,
+        proton.wine_binary().map(|p| p.display().to_string()).unwrap_or_else(|| "NOT FOUND".to_string())
+    ));
 
     // Get primary Steam path (where prefixes are always created)
     let primary_steam_path = steam::find_steam_path()

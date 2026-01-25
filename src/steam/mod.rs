@@ -16,7 +16,7 @@ pub use paths::{
 
 // Re-export Steam integration components
 pub use config::set_compat_tool;
-pub use proton::{find_steam_protons, SteamProton};
+pub use proton::{find_steam_protons, is_flatpak_steam, SteamProton};
 pub use shortcuts::{Shortcut, ShortcutsVdf};
 
 use std::fs;

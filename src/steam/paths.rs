@@ -35,9 +35,11 @@ pub fn find_steam_path() -> Option<PathBuf> {
 
 /// Find the Steam userdata directory.
 ///
-/// If a Steam account is selected in config, uses that account's directory.
-/// Otherwise, returns the path to the most recently modified user's config directory,
-/// which is typically the active Steam user.
+/// Priority order:
+/// 1. User-selected account from config (if set)
+/// 2. Account marked as "MostRecent" in loginusers.vdf
+/// 3. Account with the most recent timestamp in loginusers.vdf
+/// 4. Fallback to directory modification time (unreliable)
 #[must_use]
 pub fn find_userdata_path() -> Option<PathBuf> {
     // Check if user has selected a specific Steam account
@@ -56,7 +58,37 @@ pub fn find_userdata_path() -> Option<PathBuf> {
         return None;
     }
 
-    // Get all user directories and find the most recently modified
+    // Try to find the active account from loginusers.vdf
+    let accounts = get_steam_accounts();
+
+    // First, check for account marked as "MostRecent" in loginusers.vdf
+    if let Some(most_recent) = accounts.iter().find(|a| a.most_recent) {
+        let path = userdata.join(&most_recent.account_id);
+        if path.exists() {
+            log_info(&format!(
+                "Using Steam account from loginusers.vdf (MostRecent): {} ({})",
+                most_recent.persona_name, most_recent.account_id
+            ));
+            return Some(path);
+        }
+    }
+
+    // Second, use the account with the most recent timestamp (accounts are pre-sorted)
+    if let Some(first_account) = accounts.first() {
+        let path = userdata.join(&first_account.account_id);
+        if path.exists() {
+            log_info(&format!(
+                "Using Steam account from loginusers.vdf (most recent timestamp): {} ({})",
+                first_account.persona_name, first_account.account_id
+            ));
+            return Some(path);
+        }
+    }
+
+    // Fallback: Get all user directories and find the most recently modified
+    // This is unreliable but provides a last-resort option
+    log_warning("Could not determine active Steam account from loginusers.vdf, falling back to directory modification time");
+
     let mut user_dirs: Vec<PathBuf> = Vec::new();
 
     if let Ok(entries) = fs::read_dir(&userdata) {

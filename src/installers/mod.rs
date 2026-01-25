@@ -261,6 +261,7 @@ pub fn apply_wine_registry_settings(
     use std::io::Write;
     use crate::config::AppConfig;
     use crate::logging::{log_error, log_warning};
+    use crate::steam::is_flatpak_steam;
 
     let tmp_dir = AppConfig::get_tmp_path();
     fs::create_dir_all(&tmp_dir)?;
@@ -269,36 +270,77 @@ pub fn apply_wine_registry_settings(
     let mut file = fs::File::create(&reg_file)?;
     file.write_all(WINE_SETTINGS_REG.as_bytes())?;
 
-    let wine_bin = proton.path.join("files/bin/wine");
-    let wineserver_bin = proton.path.join("files/bin/wineserver");
-    if !wine_bin.exists() {
-        let err_msg = format!("Wine binary not found at {:?}", wine_bin);
+    let wine_bin = proton.wine_binary().ok_or_else(|| {
+        let err_msg = format!(
+            "Wine binary not found for Proton '{}' (checked files/bin/wine and dist/bin/wine)",
+            proton.name
+        );
         log_callback(format!("Error: {}", err_msg));
-        return Err(err_msg.into());
+        err_msg
+    })?;
+
+    let wineserver_bin = proton.wineserver_binary().unwrap_or_else(|| {
+        wine_bin.with_file_name("wineserver")
+    });
+
+    let bin_dir = proton.bin_dir().ok_or_else(|| {
+        let err_msg = "Could not determine Proton bin directory";
+        log_callback(format!("Error: {}", err_msg));
+        err_msg
+    })?;
+
+    // Check if we need to run through Flatpak
+    let use_flatpak = is_flatpak_steam();
+    if use_flatpak {
+        log_install("Flatpak Steam detected - running wine commands through Flatpak");
     }
 
-    let path_env = format!(
-        "{}:{}",
-        proton.path.join("files/bin").to_string_lossy(),
-        std::env::var("PATH").unwrap_or_default()
-    );
+    // Helper to build wine command - either direct or through flatpak
+    let build_wine_cmd = |wine_args: &[&str]| -> std::process::Command {
+        if use_flatpak {
+            let mut cmd = std::process::Command::new("flatpak");
+            cmd.arg("run")
+                .arg("--command=bash")
+                .arg("com.valvesoftware.Steam")
+                .arg("-c");
 
-    let wine_env = |cmd: &mut std::process::Command| {
-        cmd.env("WINEPREFIX", prefix_path)
-            .env("WINE", &wine_bin)
-            .env("WINESERVER", &wineserver_bin)
-            .env("PATH", &path_env)
-            .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
-            .env("WINEDLLOVERRIDES", "mshtml=d")
-            .env("PROTON_USE_XALIA", "0");
+            // Build the command string to run inside Flatpak
+            let wine_path = wine_bin.to_string_lossy();
+            let prefix_str = prefix_path.to_string_lossy();
+            let wineserver_str = wineserver_bin.to_string_lossy();
+            let args_str = wine_args.join(" ");
+
+            let bash_cmd = format!(
+                "WINEPREFIX='{}' WINE='{}' WINESERVER='{}' WINEDLLOVERRIDES='mshtml=d' PROTON_USE_XALIA='0' '{}' {}",
+                prefix_str, wine_path, wineserver_str, wine_path, args_str
+            );
+            cmd.arg(bash_cmd);
+            cmd
+        } else {
+            let mut cmd = std::process::Command::new(&wine_bin);
+            for arg in wine_args {
+                cmd.arg(arg);
+            }
+            let path_env = format!(
+                "{}:{}",
+                bin_dir.to_string_lossy(),
+                std::env::var("PATH").unwrap_or_default()
+            );
+            cmd.env("WINEPREFIX", prefix_path)
+                .env("WINE", &wine_bin)
+                .env("WINESERVER", &wineserver_bin)
+                .env("PATH", &path_env)
+                .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
+                .env("WINEDLLOVERRIDES", "mshtml=d")
+                .env("PROTON_USE_XALIA", "0");
+            cmd
+        }
     };
 
     log_callback("Initializing Wine prefix...".to_string());
     log_install("Initializing Wine prefix with wineboot...");
 
-    let mut wineboot_cmd = std::process::Command::new(&wine_bin);
-    wineboot_cmd.args(["wineboot", "-u"]);
-    wine_env(&mut wineboot_cmd);
+    let mut wineboot_cmd = build_wine_cmd(&["wineboot", "-u"]);
 
     match wineboot_cmd.status() {
         Ok(status) => {
@@ -321,9 +363,8 @@ pub fn apply_wine_registry_settings(
     log_callback("Applying Wine registry settings...".to_string());
     log_install("Running wine regedit...");
 
-    let mut regedit_cmd = std::process::Command::new(&wine_bin);
-    regedit_cmd.arg("regedit").arg(&reg_file);
-    wine_env(&mut regedit_cmd);
+    let reg_file_str = reg_file.to_string_lossy().to_string();
+    let mut regedit_cmd = build_wine_cmd(&["regedit", &reg_file_str]);
 
     match regedit_cmd.status() {
         Ok(status) => {

@@ -179,24 +179,40 @@ pub fn apply_dpi(
     proton: &SteamProton,
     dpi_value: u32,
 ) -> Result<(), Box<dyn Error>> {
+    use crate::steam::is_flatpak_steam;
+
     log_install(&format!("Applying DPI {} to prefix", dpi_value));
 
-    let wine_bin = proton.path.join("files/bin/wine");
+    let wine_bin = proton.wine_binary().ok_or_else(|| {
+        format!("Wine binary not found for Proton '{}'", proton.name)
+    })?;
 
-    let status = Command::new(&wine_bin)
-        .arg("reg")
-        .arg("add")
-        .arg(r"HKCU\Control Panel\Desktop")
-        .arg("/v")
-        .arg("LogPixels")
-        .arg("/t")
-        .arg("REG_DWORD")
-        .arg("/d")
-        .arg(dpi_value.to_string())
-        .arg("/f")
-        .env("WINEPREFIX", prefix_root)
-        .env("PROTON_USE_XALIA", "0")
-        .status()?;
+    let status = if is_flatpak_steam() {
+        let cmd_str = format!(
+            "WINEPREFIX='{}' PROTON_USE_XALIA='0' '{}' reg add 'HKCU\\Control Panel\\Desktop' /v LogPixels /t REG_DWORD /d {} /f",
+            prefix_root.to_string_lossy(),
+            wine_bin.to_string_lossy(),
+            dpi_value
+        );
+        Command::new("flatpak")
+            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .status()?
+    } else {
+        Command::new(&wine_bin)
+            .arg("reg")
+            .arg("add")
+            .arg(r"HKCU\Control Panel\Desktop")
+            .arg("/v")
+            .arg("LogPixels")
+            .arg("/t")
+            .arg("REG_DWORD")
+            .arg("/d")
+            .arg(dpi_value.to_string())
+            .arg("/f")
+            .env("WINEPREFIX", prefix_root)
+            .env("PROTON_USE_XALIA", "0")
+            .status()?
+    };
 
     if !status.success() {
         return Err(format!("Failed to apply DPI setting: exit code {:?}", status.code()).into());
@@ -212,40 +228,68 @@ pub fn launch_dpi_test_app(
     proton: &SteamProton,
     app_name: &str,
 ) -> Result<Child, Box<dyn Error>> {
-    let wine_bin = proton.path.join("files/bin/wine");
+    use crate::steam::is_flatpak_steam;
+
+    let wine_bin = proton.wine_binary().ok_or_else(|| {
+        format!("Wine binary not found for Proton '{}'", proton.name)
+    })?;
 
     log_install(&format!(
         "Launching {} with wine={:?} prefix={:?}",
         app_name, wine_bin, prefix_root
     ));
 
-    if !wine_bin.exists() {
-        return Err(format!("Wine binary not found: {:?}", wine_bin).into());
-    }
-
     if !prefix_root.exists() {
         return Err(format!("Prefix not found: {:?}", prefix_root).into());
     }
 
-    let child = Command::new(&wine_bin)
-        .arg(app_name)
-        .env("WINEPREFIX", prefix_root)
-        .env("PROTON_USE_XALIA", "0")
-        .spawn()?;
+    let child = if is_flatpak_steam() {
+        let cmd_str = format!(
+            "WINEPREFIX='{}' PROTON_USE_XALIA='0' '{}' {}",
+            prefix_root.to_string_lossy(),
+            wine_bin.to_string_lossy(),
+            app_name
+        );
+        Command::new("flatpak")
+            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .spawn()?
+    } else {
+        Command::new(&wine_bin)
+            .arg(app_name)
+            .env("WINEPREFIX", prefix_root)
+            .env("PROTON_USE_XALIA", "0")
+            .spawn()?
+    };
 
     Ok(child)
 }
 
 /// Kill the wineserver for a prefix (terminates all Wine processes in that prefix)
 pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
+    use crate::steam::is_flatpak_steam;
+
     log_install("Killing wineserver for prefix");
 
-    let wineserver_bin = proton.path.join("files/bin/wineserver");
+    let Some(wineserver_bin) = proton.wineserver_binary() else {
+        log_install("Wineserver binary not found, skipping kill");
+        return;
+    };
 
-    let _ = Command::new(&wineserver_bin)
-        .arg("-k")
-        .env("WINEPREFIX", prefix_root)
-        .status();
+    if is_flatpak_steam() {
+        let cmd_str = format!(
+            "WINEPREFIX='{}' '{}' -k",
+            prefix_root.to_string_lossy(),
+            wineserver_bin.to_string_lossy()
+        );
+        let _ = Command::new("flatpak")
+            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .status();
+    } else {
+        let _ = Command::new(&wineserver_bin)
+            .arg("-k")
+            .env("WINEPREFIX", prefix_root)
+            .status();
+    }
 }
 
 // Enderal Special Edition config files (embedded in binary)
@@ -427,6 +471,8 @@ pub fn auto_apply_game_registries(
     proton: &SteamProton,
     log_callback: &impl Fn(String),
 ) {
+    use crate::steam::is_flatpak_steam;
+
     let steam_path = match detect_steam_path_checked() {
         Some(p) => PathBuf::from(p),
         None => {
@@ -435,12 +481,12 @@ pub fn auto_apply_game_registries(
         }
     };
 
-    let wine_bin = proton.path.join("files/bin/wine");
-    if !wine_bin.exists() {
+    let Some(wine_bin) = proton.wine_binary() else {
         log_warning("Wine binary not found, skipping game registry auto-detection");
         return;
-    }
+    };
 
+    let use_flatpak = is_flatpak_steam();
     let mut applied_count = 0;
 
     for game in GAME_REGISTRY_CONFIGS {
@@ -484,13 +530,25 @@ pub fn auto_apply_game_registries(
         }
 
         // Apply registry
-        let status = Command::new(&wine_bin)
-            .arg("regedit")
-            .arg(&reg_file)
-            .env("WINEPREFIX", prefix_path)
-            .env("WINEDLLOVERRIDES", "mshtml=d")
-            .env("PROTON_USE_XALIA", "0")
-            .status();
+        let status = if use_flatpak {
+            let cmd_str = format!(
+                "WINEPREFIX='{}' WINEDLLOVERRIDES='mshtml=d' PROTON_USE_XALIA='0' '{}' regedit '{}'",
+                prefix_path.to_string_lossy(),
+                wine_bin.to_string_lossy(),
+                reg_file.to_string_lossy()
+            );
+            Command::new("flatpak")
+                .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+                .status()
+        } else {
+            Command::new(&wine_bin)
+                .arg("regedit")
+                .arg(&reg_file)
+                .env("WINEPREFIX", prefix_path)
+                .env("WINEDLLOVERRIDES", "mshtml=d")
+                .env("PROTON_USE_XALIA", "0")
+                .status()
+        };
 
         let _ = fs::remove_file(&reg_file);
 
