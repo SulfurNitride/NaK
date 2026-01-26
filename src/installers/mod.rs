@@ -299,7 +299,10 @@ pub fn apply_wine_registry_settings(
     let build_wine_cmd = |wine_args: &[&str]| -> std::process::Command {
         if use_flatpak {
             let mut cmd = std::process::Command::new("flatpak");
+            // Grant filesystem=home access for tmp files and other paths
+            // See: https://docs.flatpak.org/en/latest/sandbox-permissions.html
             cmd.arg("run")
+                .arg("--filesystem=home")
                 .arg("--command=bash")
                 .arg("com.valvesoftware.Steam")
                 .arg("-c");

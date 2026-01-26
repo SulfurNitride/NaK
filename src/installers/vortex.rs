@@ -175,8 +175,15 @@ pub fn install_vortex(
             installer_path.to_string_lossy(),
             win_install_path
         );
+        // Grant filesystem=home access for installer and install destination
+        // See: https://docs.flatpak.org/en/latest/sandbox-permissions.html
         Command::new("flatpak")
-            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .arg("run")
+            .arg("--filesystem=home")
+            .arg("--command=bash")
+            .arg("com.valvesoftware.Steam")
+            .arg("-c")
+            .arg(&cmd_str)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?

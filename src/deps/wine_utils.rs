@@ -45,6 +45,7 @@ where
     if is_flatpak_steam() {
         let mut cmd = Command::new("flatpak");
         cmd.arg("run")
+            .arg("--filesystem=home")  // Grant access to home directory for cache/tmp files
             .arg("--command=bash")
             .arg("com.valvesoftware.Steam")
             .arg("-c");
@@ -140,7 +141,12 @@ pub fn kill_wineserver(proton: &SteamProton, prefix: &Path) {
             wineserver.to_string_lossy()
         );
         let _ = Command::new("flatpak")
-            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .arg("run")
+            .arg("--filesystem=home")
+            .arg("--command=bash")
+            .arg("com.valvesoftware.Steam")
+            .arg("-c")
+            .arg(&cmd_str)
             .status();
     } else {
         let _ = Command::new(&wineserver)

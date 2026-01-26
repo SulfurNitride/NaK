@@ -195,7 +195,12 @@ pub fn apply_dpi(
             dpi_value
         );
         Command::new("flatpak")
-            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .arg("run")
+            .arg("--filesystem=home")
+            .arg("--command=bash")
+            .arg("com.valvesoftware.Steam")
+            .arg("-c")
+            .arg(&cmd_str)
             .status()?
     } else {
         Command::new(&wine_bin)
@@ -251,7 +256,12 @@ pub fn launch_dpi_test_app(
             app_name
         );
         Command::new("flatpak")
-            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .arg("run")
+            .arg("--filesystem=home")
+            .arg("--command=bash")
+            .arg("com.valvesoftware.Steam")
+            .arg("-c")
+            .arg(&cmd_str)
             .spawn()?
     } else {
         Command::new(&wine_bin)
@@ -282,7 +292,12 @@ pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
             wineserver_bin.to_string_lossy()
         );
         let _ = Command::new("flatpak")
-            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .arg("run")
+            .arg("--filesystem=home")
+            .arg("--command=bash")
+            .arg("com.valvesoftware.Steam")
+            .arg("-c")
+            .arg(&cmd_str)
             .status();
     } else {
         let _ = Command::new(&wineserver_bin)
@@ -537,8 +552,15 @@ pub fn auto_apply_game_registries(
                 wine_bin.to_string_lossy(),
                 reg_file.to_string_lossy()
             );
+            // Grant filesystem=home access for tmp files
+            // See: https://docs.flatpak.org/en/latest/sandbox-permissions.html
             Command::new("flatpak")
-                .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+                .arg("run")
+                .arg("--filesystem=home")
+                .arg("--command=bash")
+                .arg("com.valvesoftware.Steam")
+                .arg("-c")
+                .arg(&cmd_str)
                 .status()
         } else {
             Command::new(&wine_bin)
