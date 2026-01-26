@@ -429,7 +429,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
 
                                 ui.add_space(5.0);
 
-                                // Details
+                                // Details row with AppID and Proton selector
                                 ui.horizontal(|ui| {
                                     ui.label(
                                         egui::RichText::new(format!("AppID: {}", prefix.app_id))
@@ -448,6 +448,36 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                                                 .size(11.0)
                                                 .color(egui::Color32::from_rgb(255, 100, 100)),
                                         );
+                                    }
+
+                                    // Proton selector
+                                    if prefix_exists && !app.steam_protons.is_empty() {
+                                        ui.label(
+                                            egui::RichText::new("|")
+                                                .size(11.0)
+                                                .color(egui::Color32::DARK_GRAY),
+                                        );
+
+                                        let current_proton = prefix.proton_config_name.as_deref()
+                                            .and_then(|name| app.steam_protons.iter().find(|p| p.config_name == name))
+                                            .or_else(|| app.steam_protons.first());
+
+                                        let current_display = current_proton
+                                            .map(|p| p.name.as_str())
+                                            .unwrap_or("Select Proton");
+
+                                        let combo_id = format!("proton_select_{}", prefix.app_id);
+                                        egui::ComboBox::from_id_salt(&combo_id)
+                                            .selected_text(egui::RichText::new(current_display).size(11.0))
+                                            .width(140.0)
+                                            .show_ui(ui, |ui| {
+                                                for proton in &app.steam_protons {
+                                                    let is_selected = prefix.proton_config_name.as_deref() == Some(&proton.config_name);
+                                                    if ui.selectable_label(is_selected, &proton.name).clicked() {
+                                                        ManagedPrefixes::update_proton(prefix.app_id, &proton.config_name);
+                                                    }
+                                                }
+                                            });
                                     }
                                 });
 
@@ -512,34 +542,29 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     // Handle script regeneration outside the loop
                     if let Some(prefix) = to_update {
                         // Find the Proton to use - prefer the stored one, fallback to first available
-                        let proton_config_name = prefix.proton_config_name.as_deref()
-                            .or_else(|| app.steam_protons.first().map(|p| p.config_name.as_str()));
+                        let proton = prefix.proton_config_name.as_deref()
+                            .and_then(|name| app.steam_protons.iter().find(|p| p.config_name == name))
+                            .or_else(|| app.steam_protons.first());
 
-                        if let Some(proton_name) = proton_config_name {
-                            if let Some(proton) = app.steam_protons.iter().find(|p| p.config_name == proton_name) {
-                                let install_path = std::path::Path::new(&prefix.install_path);
-                                let prefix_path = std::path::Path::new(&prefix.prefix_path);
+                        if let Some(proton) = proton {
+                            let install_path = std::path::Path::new(&prefix.install_path);
+                            let prefix_path = std::path::Path::new(&prefix.prefix_path);
 
-                                match crate::installers::regenerate_nak_tools_scripts(
-                                    prefix.manager_type,
-                                    install_path,
-                                    prefix_path,
-                                    prefix.app_id,
-                                    &proton.path,
-                                ) {
-                                    Ok(_) => {
-                                        log_action(&format!("Updated scripts for {} (AppID: {})", prefix.name, prefix.app_id));
-                                        // Update the stored Proton config name if it wasn't set
-                                        if prefix.proton_config_name.is_none() {
-                                            ManagedPrefixes::update_proton(prefix.app_id, &proton.config_name);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log_action(&format!("Failed to update scripts: {}", e));
-                                    }
+                            match crate::installers::regenerate_nak_tools_scripts(
+                                prefix.manager_type,
+                                install_path,
+                                prefix_path,
+                                prefix.app_id,
+                                &proton.path,
+                            ) {
+                                Ok(_) => {
+                                    log_action(&format!("Updated scripts for {} (AppID: {}) using {}", prefix.name, prefix.app_id, proton.name));
+                                    // Always update stored Proton to current one
+                                    ManagedPrefixes::update_proton(prefix.app_id, &proton.config_name);
                                 }
-                            } else {
-                                log_action(&format!("Proton '{}' not found - cannot update scripts", proton_name));
+                                Err(e) => {
+                                    log_action(&format!("Failed to update scripts: {}", e));
+                                }
                             }
                         } else {
                             log_action("No Proton available - cannot update scripts");
