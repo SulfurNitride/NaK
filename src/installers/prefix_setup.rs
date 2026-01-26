@@ -419,11 +419,6 @@ pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
         .status();
 }
 
-// Enderal Special Edition config files (embedded in binary)
-const ENDERAL_SE_INI: &str = include_str!("../../resources/game_configs/enderal_se/Enderal.ini");
-const ENDERAL_SE_PREFS_INI: &str =
-    include_str!("../../resources/game_configs/enderal_se/EnderalPrefs.ini");
-
 // ============================================================================
 // Bethesda Game Mapping
 // ============================================================================
@@ -813,25 +808,6 @@ pub fn create_game_folders(prefix_root: &Path) {
     if !my_documents_link.exists() && fs::symlink_metadata(&my_documents_link).is_err() {
         if let Err(e) = std::os::unix::fs::symlink("Documents", &my_documents_link) {
             log_warning(&format!("Failed to create My Documents symlink: {}", e));
-        }
-    }
-
-    // Copy Enderal Special Edition config files (if folder exists but is empty)
-    let enderal_se_dir = my_games_dir.join("Enderal Special Edition");
-    if enderal_se_dir.exists() && !fs::symlink_metadata(&enderal_se_dir).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
-        // Only write default configs if folder is NOT a symlink (i.e., we created it empty)
-        let enderal_ini = enderal_se_dir.join("Enderal.ini");
-        let enderal_prefs_ini = enderal_se_dir.join("EnderalPrefs.ini");
-
-        if !enderal_ini.exists() {
-            if let Err(e) = fs::write(&enderal_ini, ENDERAL_SE_INI) {
-                log_warning(&format!("Failed to write Enderal.ini: {}", e));
-            }
-        }
-        if !enderal_prefs_ini.exists() {
-            if let Err(e) = fs::write(&enderal_prefs_ini, ENDERAL_SE_PREFS_INI) {
-                log_warning(&format!("Failed to write EnderalPrefs.ini: {}", e));
-            }
         }
     }
 
