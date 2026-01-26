@@ -3,16 +3,16 @@
 mod common;
 mod compatdata_scanner;
 mod mo2;
+mod plugin;
 mod prefix_setup;
-mod vortex;
 
 pub use common::{get_available_disk_space, regenerate_nak_tools_scripts, MIN_REQUIRED_DISK_SPACE_GB};
 pub use mo2::{install_mo2, setup_existing_mo2};
+pub use plugin::install_plugin;
 pub use prefix_setup::{
     apply_dpi, create_game_folders,
     install_all_dependencies, kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
 };
-pub use vortex::{install_vortex, setup_existing_vortex};
 
 use std::error::Error;
 use std::fs;
@@ -253,17 +253,19 @@ pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
 // ============================================================================
 
 /// Apply Wine registry settings to a prefix
+///
+/// NOTE: This should be called AFTER winetricks has initialized the prefix.
+/// Winetricks handles wineboot internally, so we just apply registry settings here.
 pub fn apply_wine_registry_settings(
     prefix_path: &std::path::Path,
     proton: &SteamProton,
     log_callback: &impl Fn(String),
-    app_id: Option<u32>,
+    _app_id: Option<u32>,
 ) -> Result<(), Box<dyn Error>> {
     use std::io::Write;
     use std::process::Command;
     use crate::config::AppConfig;
     use crate::logging::{log_error, log_warning};
-    use crate::steam::{is_flatpak_steam, is_flatpak_protontricks_installed, FLATPAK_PROTONTRICKS};
 
     let tmp_dir = AppConfig::get_tmp_path();
     fs::create_dir_all(&tmp_dir)?;
@@ -291,109 +293,25 @@ pub fn apply_wine_registry_settings(
         err_msg
     })?;
 
-    // Check if we need to run through Flatpak and if protontricks is available
-    let use_flatpak = is_flatpak_steam();
-    let use_protontricks = use_flatpak && app_id.is_some() && is_flatpak_protontricks_installed();
-
-    if use_flatpak {
-        if use_protontricks {
-            log_install("Flatpak Steam detected - using protontricks for wine commands");
-        } else {
-            log_install("Flatpak Steam detected - running wine commands through Flatpak");
-        }
-    }
-
-    // Helper to run a wine command via protontricks
-    let run_via_protontricks = |cmd: &str| -> Result<std::process::ExitStatus, std::io::Error> {
-        let app_id = app_id.unwrap();
-        log_install(&format!("Running via protontricks: wine {} (appid {})", cmd, app_id));
-        Command::new("flatpak")
-            .arg("run")
-            .arg(FLATPAK_PROTONTRICKS)
-            .arg("-c")
-            .arg(format!("wine {}", cmd))
-            .arg(app_id.to_string())
-            .status()
-    };
-
-    // Helper to build wine command - either direct or through flatpak
-    let build_wine_cmd = |wine_args: &[&str]| -> Command {
-        if use_flatpak && !use_protontricks {
-            let mut cmd = Command::new("flatpak");
-            cmd.arg("run")
-                .arg("--filesystem=home")
-                .arg("--command=bash")
-                .arg("com.valvesoftware.Steam")
-                .arg("-c");
-
-            let wine_path = wine_bin.to_string_lossy();
-            let prefix_str = prefix_path.to_string_lossy();
-            let wineserver_str = wineserver_bin.to_string_lossy();
-            let args_str = wine_args.join(" ");
-
-            let bash_cmd = format!(
-                "WINEPREFIX='{}' WINE='{}' WINESERVER='{}' WINEDLLOVERRIDES='mshtml=d' PROTON_USE_XALIA='0' '{}' {}",
-                prefix_str, wine_path, wineserver_str, wine_path, args_str
-            );
-            cmd.arg(bash_cmd);
-            cmd
-        } else {
-            let mut cmd = Command::new(&wine_bin);
-            for arg in wine_args {
-                cmd.arg(arg);
-            }
-            let path_env = format!(
-                "{}:{}",
-                bin_dir.to_string_lossy(),
-                std::env::var("PATH").unwrap_or_default()
-            );
-            cmd.env("WINEPREFIX", prefix_path)
-                .env("WINE", &wine_bin)
-                .env("WINESERVER", &wineserver_bin)
-                .env("PATH", &path_env)
-                .env("LD_LIBRARY_PATH", "/usr/lib:/usr/lib/x86_64-linux-gnu:/lib:/lib/x86_64-linux-gnu")
-                .env("WINEDLLOVERRIDES", "mshtml=d")
-                .env("PROTON_USE_XALIA", "0");
-            cmd
-        }
-    };
-
-    log_callback("Initializing Wine prefix...".to_string());
-    log_install("Initializing Wine prefix with wineboot...");
-
-    let wineboot_status = if use_protontricks {
-        run_via_protontricks("wineboot -u")
-    } else {
-        build_wine_cmd(&["wineboot", "-u"]).status()
-    };
-
-    match wineboot_status {
-        Ok(status) => {
-            if status.success() {
-                log_callback("Prefix initialized successfully".to_string());
-            } else {
-                let msg = format!("wineboot exited with code {:?}", status.code());
-                log_callback(format!("Warning: {}", msg));
-                log_warning(&msg);
-            }
-        }
-        Err(e) => {
-            let msg = format!("Failed to run wineboot: {}", e);
-            log_callback(format!("Error: {}", msg));
-            log_error(&msg);
-            return Err(msg.into());
-        }
-    }
+    let path_env = format!(
+        "{}:{}",
+        bin_dir.to_string_lossy(),
+        std::env::var("PATH").unwrap_or_default()
+    );
 
     log_callback("Applying Wine registry settings...".to_string());
     log_install("Running wine regedit...");
 
-    let reg_file_str = reg_file.to_string_lossy().to_string();
-    let regedit_status = if use_protontricks {
-        run_via_protontricks(&format!("regedit '{}'", reg_file_str))
-    } else {
-        build_wine_cmd(&["regedit", &reg_file_str]).status()
-    };
+    let regedit_status = Command::new(&wine_bin)
+        .arg("regedit")
+        .arg(&reg_file)
+        .env("WINEPREFIX", prefix_path)
+        .env("WINE", &wine_bin)
+        .env("WINESERVER", &wineserver_bin)
+        .env("PATH", &path_env)
+        .env("WINEDLLOVERRIDES", "mshtml=d")
+        .env("PROTON_USE_XALIA", "0")
+        .status();
 
     match regedit_status {
         Ok(status) => {
@@ -428,12 +346,3 @@ pub fn fetch_latest_mo2_release() -> Result<GithubRelease, Box<dyn Error>> {
     Ok(res)
 }
 
-/// Fetch the latest Vortex release from GitHub
-pub fn fetch_latest_vortex_release() -> Result<GithubRelease, Box<dyn Error>> {
-    let url = "https://api.github.com/repos/Nexus-Mods/Vortex/releases/latest";
-    let res = ureq::get(url)
-        .set("User-Agent", "NaK-Rust")
-        .call()?
-        .into_json()?;
-    Ok(res)
-}

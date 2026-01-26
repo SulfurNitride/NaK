@@ -1,6 +1,6 @@
 //! NaK - Linux Mod Manager Tool
 //!
-//! A tool to help manage modding tools (MO2, Vortex) on Linux via Proton/Wine.
+//! A tool to help manage modding tools (MO2) on Linux via Proton/Wine.
 
 use eframe::egui;
 
@@ -9,6 +9,7 @@ mod config;
 mod deps;
 mod installers;
 mod logging;
+mod marketplace;
 mod nxm;
 mod steam;
 mod ui;

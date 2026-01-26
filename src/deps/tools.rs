@@ -1,8 +1,7 @@
-//! Linux tool management (cabextract, winetricks)
+//! Linux tool management (winetricks, cabextract)
 //!
-//! Handles downloading and managing Linux CLI tools required for dependency
-//! installation. These are tools like cabextract (for CAB file extraction)
-//! and winetricks (for Wine configuration GUI).
+//! Handles downloading and managing Linux CLI tools.
+//! Tools are stored in ~/.config/nak/bin/ for accessibility from Flatpak.
 
 use std::error::Error;
 use std::fs;
@@ -15,17 +14,13 @@ use crate::config::AppConfig;
 use crate::logging::{log_error, log_info, log_warning};
 
 // ============================================================================
-// NaK Bin Directory (for bundled tools)
+// NaK Bin Directory (~/.config/nak/bin/)
 // ============================================================================
 
-/// Get the NaK data directory path from config
-pub fn get_nak_data_path() -> PathBuf {
-    AppConfig::load().get_data_path()
-}
-
-/// Get the NaK bin directory path ($DATA_PATH/bin)
+/// Get the NaK bin directory path (~/.config/nak/bin/)
+/// This is in the config dir so it's accessible from Flatpak sandboxes.
 pub fn get_nak_bin_path() -> PathBuf {
-    get_nak_data_path().join("bin")
+    AppConfig::get_config_dir().join("bin")
 }
 
 /// Check if a command exists (either in system PATH or NaK bin)
@@ -46,107 +41,28 @@ pub fn check_command_available(cmd: &str) -> bool {
 }
 
 // ============================================================================
-// Cabextract (for CAB file extraction)
-// ============================================================================
-
-/// URL for static cabextract binary (zip file)
-const CABEXTRACT_URL: &str =
-    "https://github.com/SulfurNitride/NaK/releases/download/Cabextract/cabextract-linux-x86_64.zip";
-
-/// Ensures cabextract is available (either system or downloaded).
-///
-/// On SteamOS and other immutable systems, cabextract may not be installed.
-/// This function downloads a static binary to ~/.config/nak/bin/ if needed.
-pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
-    // First check if system has cabextract
-    if Command::new("which")
-        .arg("cabextract")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        // Return a marker that system cabextract is available
-        return Ok(PathBuf::from("cabextract"));
-    }
-
-    // Check if we already downloaded it
-    let bin_dir = get_nak_bin_path();
-    let cabextract_path = bin_dir.join("cabextract");
-
-    if cabextract_path.exists() {
-        return Ok(cabextract_path);
-    }
-
-    // Download cabextract zip
-    log_warning("System cabextract not found, downloading...");
-    fs::create_dir_all(&bin_dir)?;
-
-    let response = ureq::get(CABEXTRACT_URL).call().map_err(|e| {
-        format!(
-            "Failed to download cabextract: {}. Please install cabextract manually.",
-            e
-        )
-    })?;
-
-    // Download to temp zip file
-    let zip_path = bin_dir.join("cabextract.zip");
-    let mut zip_file = fs::File::create(&zip_path)?;
-    std::io::copy(&mut response.into_reader(), &mut zip_file)?;
-
-    // Extract using unzip command (available on most systems including SteamOS)
-    let status = Command::new("unzip")
-        .arg("-o")
-        .arg(&zip_path)
-        .arg("-d")
-        .arg(&bin_dir)
-        .status()?;
-
-    if !status.success() {
-        // Fallback: try with python's zipfile
-        let _ = Command::new("python3")
-            .arg("-c")
-            .arg(format!(
-                "import zipfile; zipfile.ZipFile('{}').extractall('{}')",
-                zip_path.display(),
-                bin_dir.display()
-            ))
-            .status();
-    }
-
-    // Clean up zip file
-    let _ = fs::remove_file(&zip_path);
-
-    // Make executable
-    if cabextract_path.exists() {
-        let mut perms = fs::metadata(&cabextract_path)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&cabextract_path, perms)?;
-        log_info(&format!("cabextract downloaded to {:?}", cabextract_path));
-        Ok(cabextract_path)
-    } else {
-        log_error("Failed to extract cabextract from zip");
-        Err("Failed to extract cabextract from zip".into())
-    }
-}
-
-// ============================================================================
-// Winetricks (for Wine configuration GUI)
+// Winetricks
 // ============================================================================
 
 const WINETRICKS_URL: &str =
     "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks";
 
-/// Ensures winetricks is downloaded and up-to-date in NaK bin directory.
+/// Get the path to winetricks (without downloading)
+pub fn get_winetricks_path() -> PathBuf {
+    get_nak_bin_path().join("winetricks")
+}
+
+/// Ensures winetricks is downloaded and up-to-date.
 ///
-/// Downloads the latest winetricks script from GitHub and keeps it updated.
-/// This is used for the Winetricks GUI feature in NaK Tools.
+/// Downloads the latest winetricks script from GitHub.
+/// Winetricks is a bash script that handles all Wine dependency installation.
 pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
     let bin_dir = get_nak_bin_path();
     let winetricks_path = bin_dir.join("winetricks");
 
     fs::create_dir_all(&bin_dir)?;
 
-    // Always check for updates by downloading fresh copy
+    // Check for updates by downloading fresh copy
     log_info("Checking for winetricks updates...");
 
     match ureq::get(WINETRICKS_URL).call() {
@@ -188,4 +104,87 @@ pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
     }
 
     Ok(winetricks_path)
+}
+
+// ============================================================================
+// Cabextract (required by winetricks for DirectX cabs)
+// ============================================================================
+
+/// URL for static cabextract binary (zip file)
+const CABEXTRACT_URL: &str =
+    "https://github.com/SulfurNitride/NaK/releases/download/Cabextract/cabextract-linux-x86_64.zip";
+
+/// Ensures cabextract is available (either system or downloaded).
+///
+/// Winetricks requires cabextract for DirectX cab extraction.
+/// On SteamOS and other immutable systems, we download a static binary.
+pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
+    // First check if system has cabextract
+    if Command::new("which")
+        .arg("cabextract")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Ok(PathBuf::from("cabextract"));
+    }
+
+    // Check if we already downloaded it
+    let bin_dir = get_nak_bin_path();
+    let cabextract_path = bin_dir.join("cabextract");
+
+    if cabextract_path.exists() {
+        return Ok(cabextract_path);
+    }
+
+    // Download cabextract zip
+    log_warning("System cabextract not found, downloading...");
+    fs::create_dir_all(&bin_dir)?;
+
+    let response = ureq::get(CABEXTRACT_URL).call().map_err(|e| {
+        format!(
+            "Failed to download cabextract: {}. Please install cabextract manually.",
+            e
+        )
+    })?;
+
+    // Download to temp zip file
+    let zip_path = bin_dir.join("cabextract.zip");
+    let mut zip_file = fs::File::create(&zip_path)?;
+    std::io::copy(&mut response.into_reader(), &mut zip_file)?;
+
+    // Extract using unzip command
+    let status = Command::new("unzip")
+        .arg("-o")
+        .arg(&zip_path)
+        .arg("-d")
+        .arg(&bin_dir)
+        .status()?;
+
+    if !status.success() {
+        // Fallback: try with python's zipfile
+        let _ = Command::new("python3")
+            .arg("-c")
+            .arg(format!(
+                "import zipfile; zipfile.ZipFile('{}').extractall('{}')",
+                zip_path.display(),
+                bin_dir.display()
+            ))
+            .status();
+    }
+
+    // Clean up zip file
+    let _ = fs::remove_file(&zip_path);
+
+    // Make executable
+    if cabextract_path.exists() {
+        let mut perms = fs::metadata(&cabextract_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&cabextract_path, perms)?;
+        log_info(&format!("cabextract downloaded to {:?}", cabextract_path));
+        Ok(cabextract_path)
+    } else {
+        log_error("Failed to extract cabextract from zip");
+        Err("Failed to extract cabextract from zip".into())
+    }
 }

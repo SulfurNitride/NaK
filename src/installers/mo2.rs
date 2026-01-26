@@ -84,6 +84,7 @@ pub fn install_mo2(
         install_path.to_str().unwrap_or(""),
         &proton.config_name,
         Some(&dxvk_conf_path),
+        false, // MO2 is not an Electron app
     ).map_err(|e| InstallError::SteamError { reason: e.to_string() })?;
 
     log_install(&format!(
@@ -257,6 +258,7 @@ pub fn setup_existing_mo2(
         existing_path.to_str().unwrap_or(""),
         &proton.config_name,
         Some(&dxvk_conf_path),
+        false, // MO2 is not an Electron app
     ).map_err(|e| InstallError::SteamError { reason: e.to_string() })?;
 
     log_install(&format!(

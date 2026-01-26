@@ -128,7 +128,8 @@ pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, 
 
     let navigation_buttons = [
         (Page::GettingStarted, "Getting Started"),
-        (Page::ModManagers, "Mod Managers"),
+        (Page::ModManagers, "MO2"),
+        (Page::Marketplace, "Marketplace"),
         (Page::Settings, "Settings"),
         (Page::Updater, if update_available { "Version (NEW!)" } else { "Version" }),
     ];

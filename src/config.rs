@@ -165,14 +165,14 @@ impl AppConfig {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ManagerType {
     MO2,
-    Vortex,
+    Plugin,
 }
 
 impl std::fmt::Display for ManagerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ManagerType::MO2 => write!(f, "MO2"),
-            ManagerType::Vortex => write!(f, "Vortex"),
+            ManagerType::Plugin => write!(f, "Plugin"),
         }
     }
 }
@@ -182,7 +182,7 @@ impl ManagerType {
     pub fn display_name(&self) -> &'static str {
         match self {
             ManagerType::MO2 => "MO2",
-            ManagerType::Vortex => "Vortex",
+            ManagerType::Plugin => "Plugin",
         }
     }
 }

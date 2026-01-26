@@ -1,123 +1,106 @@
-//! Native dependency management for NaK
+//! Dependency management via winetricks
 //!
-//! Replaces winetricks for standard dependency installation.
-//! Provides direct downloads, cab extraction, and Wine command helpers.
-//!
-//! Also includes Linux tool management (cabextract, winetricks binaries).
+//! Uses winetricks for all Windows dependency installation.
+//! Winetricks handles prefix initialization, downloads, and DLL overrides automatically.
 
-pub mod direct_dll;
-pub mod directx;
-pub mod exe_installer;
 pub mod precache;
-pub mod registry;
 pub mod tools;
-pub mod wine_utils;
 
 use std::error::Error;
-use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::path::Path;
+use std::process::Command;
 
+use crate::config::AppConfig;
+use crate::logging::{log_error, log_install};
 use crate::steam::SteamProton;
 
-// Re-exports for Windows dependencies
-pub use registry::{DepType, Dependency, STANDARD_DEPS};
+// Re-export tools
+pub use tools::{check_command_available, ensure_cabextract, ensure_winetricks, get_winetricks_path};
 
-// Re-exports for Linux tools
-pub use tools::{check_command_available, ensure_cabextract, ensure_winetricks};
+/// Standard winetricks verbs for MO2 prefix
+pub const STANDARD_VERBS: &[&str] = &[
+    "vcrun2022",      // Visual C++ 2015-2022 Runtime
+    "dotnet6",        // .NET 6.0
+    "dotnet7",        // .NET 7.0
+    "dotnet8",        // .NET 8.0
+    "dotnetdesktop6", // .NET Desktop Runtime 6.0
+    "d3dcompiler_47", // DirectX Compiler 47
+    "d3dcompiler_43", // DirectX Compiler 43
+    "d3dx9",          // DirectX 9 (all versions)
+    "d3dx11_43",      // DirectX 11
+    "xact",           // XACT Audio (32-bit)
+    "xact_x64",       // XACT Audio (64-bit)
+    "faudio",         // FAudio (XAudio reimplementation)
+];
 
-/// Context for dependency installation
-#[derive(Clone)]
-pub struct DepInstallContext {
-    /// Prefix path (the pfx directory)
-    pub prefix: PathBuf,
-    /// Proton to use for installation
-    pub proton: SteamProton,
-    /// Log callback
-    log_callback: Arc<dyn Fn(String) + Send + Sync>,
-    /// Cancellation flag
-    pub cancel_flag: Arc<AtomicBool>,
-    /// Steam AppID for protontricks support (Flatpak Steam)
-    pub app_id: Option<u32>,
+
+/// Run winetricks to install dependencies
+///
+/// This handles:
+/// - Prefix initialization (wineboot) automatically
+/// - All dependency downloads and installation
+/// - DLL overrides
+///
+/// Winetricks is stored in ~/.config/nak/bin/ which is accessible
+/// from both native and Flatpak environments - no special handling needed.
+pub fn run_winetricks(
+    prefix_path: &Path,
+    proton: &SteamProton,
+    verbs: &[&str],
+    log_callback: impl Fn(String),
+) -> Result<(), Box<dyn Error>> {
+    if verbs.is_empty() {
+        return Ok(());
+    }
+
+    // Ensure winetricks is available (downloads to ~/.config/nak/bin/)
+    let winetricks_path = ensure_winetricks()?;
+
+    let Some(wine_bin) = proton.wine_binary() else {
+        return Err("Wine binary not found in Proton".into());
+    };
+
+    let Some(wineserver_bin) = proton.wineserver_binary() else {
+        return Err("Wineserver binary not found in Proton".into());
+    };
+
+    // Set up cache directory
+    let cache_dir = AppConfig::get_default_cache_dir();
+    std::fs::create_dir_all(&cache_dir)?;
+
+    let verbs_str = verbs.join(" ");
+    log_callback(format!("Installing dependencies via winetricks: {}", verbs_str));
+    log_install(&format!("Running winetricks with verbs: {}", verbs_str));
+
+    // Run winetricks directly - ~/.config/nak/bin/ is accessible from
+    // both native and Flatpak environments
+    let status = Command::new(&winetricks_path)
+        .arg("-q") // Quiet mode
+        .args(verbs)
+        .env("WINE", &wine_bin)
+        .env("WINESERVER", &wineserver_bin)
+        .env("WINEPREFIX", prefix_path)
+        .env("WINETRICKS_CACHE", &cache_dir)
+        .status()?;
+
+    if !status.success() {
+        let err_msg = format!("Winetricks failed with exit code: {:?}", status.code());
+        log_error(&err_msg);
+        return Err(err_msg.into());
+    }
+
+    log_install("Winetricks completed successfully");
+    Ok(())
 }
 
-impl DepInstallContext {
-    pub fn new(
-        prefix: PathBuf,
-        proton: SteamProton,
-        log: impl Fn(String) + Send + Sync + 'static,
-        cancel: Arc<AtomicBool>,
-    ) -> Self {
-        Self {
-            prefix,
-            proton,
-            log_callback: Arc::new(log),
-            cancel_flag: cancel,
-            app_id: None,
-        }
-    }
-
-    /// Set the AppID for protontricks support
-    pub fn with_app_id(mut self, app_id: u32) -> Self {
-        self.app_id = Some(app_id);
-        self
-    }
-
-    pub fn log(&self, msg: &str) {
-        (self.log_callback)(msg.to_string());
-    }
-
-    /// Get the tmp directory for downloads
-    pub fn tmp_dir(&self) -> PathBuf {
-        crate::config::AppConfig::get_tmp_path()
-    }
-}
-
-/// Native dependency manager - replaces winetricks for core installs
-pub struct NativeDependencyManager {
-    ctx: DepInstallContext,
-}
-
-impl NativeDependencyManager {
-    pub fn new(ctx: DepInstallContext) -> Self {
-        Self { ctx }
-    }
-
-    /// Install a single dependency
-    pub fn install_dep(&self, dep: &Dependency) -> Result<(), Box<dyn Error>> {
-        self.ctx.log(&format!("Installing {}...", dep.name));
-
-        match &dep.dep_type {
-            DepType::ExeInstaller { args } => {
-                exe_installer::install(dep, &self.ctx, args)?;
-            }
-            DepType::DirectXCab { dll_patterns, cab_patterns } => {
-                directx::install(dep, &self.ctx, cab_patterns, dll_patterns)?;
-            }
-            DepType::DirectDll => {
-                direct_dll::install(dep, &self.ctx)?;
-            }
-            DepType::GitHubRelease => {
-                // VKD3D-Proton - skip, Proton already includes it
-                self.ctx.log(&format!("Skipping {} (Proton includes vkd3d)", dep.name));
-                return Ok(());
-            }
-        }
-
-        // Apply DLL overrides
-        for dll in dep.dll_overrides {
-            wine_utils::set_dll_override(&self.ctx, dll, "native,builtin")?;
-        }
-
-        // Register COM DLLs (xactengine, xaudio, etc.)
-        if !dep.register_dlls.is_empty() {
-            self.ctx.log(&format!("Registering {} COM DLLs...", dep.register_dlls.len()));
-            for dll in dep.register_dlls {
-                wine_utils::register_dll(&self.ctx, dll)?;
-            }
-        }
-
-        self.ctx.log(&format!("{} installed successfully", dep.name));
-        Ok(())
-    }
+/// Install all standard dependencies to a prefix
+///
+/// This is the main entry point for dependency installation.
+/// Runs winetricks with all standard verbs.
+pub fn install_standard_deps(
+    prefix_path: &Path,
+    proton: &SteamProton,
+    log_callback: impl Fn(String),
+) -> Result<(), Box<dyn Error>> {
+    run_winetricks(prefix_path, proton, STANDARD_VERBS, log_callback)
 }

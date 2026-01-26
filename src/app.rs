@@ -19,15 +19,9 @@ pub enum Page {
     FirstRunSetup,
     GettingStarted,
     ModManagers,
+    Marketplace,
     Settings,
     Updater,
-}
-
-#[derive(PartialEq, Clone, Copy, Debug)]
-pub enum ModManagerView {
-    Dashboard,
-    Mo2Manager,
-    VortexManager,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -43,7 +37,7 @@ pub enum WizardStep {
 #[derive(Clone, Debug)]
 pub struct InstallWizard {
     pub step: WizardStep,
-    pub manager_type: String, // "MO2" or "Vortex"
+    pub manager_type: String, // "MO2"
     pub install_type: String, // "New" or "Existing"
     pub name: String,
     pub path: String,
@@ -95,7 +89,6 @@ impl Default for InstallWizard {
 pub struct MyApp {
     // Navigation
     pub current_page: Page,
-    pub mod_manager_view: ModManagerView,
 
     // Installation Wizard State
     pub install_wizard: InstallWizard,
@@ -144,6 +137,9 @@ pub struct MyApp {
     pub precache_progress: Arc<Mutex<f32>>,
     pub precache_status: Arc<Mutex<String>>,
     pub precache_result: Arc<Mutex<Option<Result<usize, String>>>>,
+
+    // Marketplace state
+    pub marketplace_state: Option<crate::ui::MarketplaceState>,
 }
 
 impl Default for MyApp {
@@ -183,7 +179,6 @@ impl Default for MyApp {
 
         let app = Self {
             current_page: starting_page,
-            mod_manager_view: ModManagerView::Dashboard,
 
             install_wizard: InstallWizard::default(),
 
@@ -226,6 +221,9 @@ impl Default for MyApp {
             precache_progress: Arc::new(Mutex::new(0.0)),
             precache_status: Arc::new(Mutex::new(String::new())),
             precache_result: Arc::new(Mutex::new(None)),
+
+            // Marketplace
+            marketplace_state: None,
         };
 
         // Auto-check for updates on startup

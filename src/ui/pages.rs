@@ -37,9 +37,9 @@ pub fn render_first_run_setup(app: &mut MyApp, ui: &mut egui::Ui) {
                     ui.label(egui::RichText::new("What NaK Does").strong().size(16.0));
                     ui.add_space(12.0);
 
-                    ui.label("NaK helps you install and run mod managers (MO2, Vortex) on Linux:");
+                    ui.label("NaK helps you install and run MO2 on Linux:");
                     ui.add_space(8.0);
-                    ui.label("  - Creates Steam shortcuts for your mod managers");
+                    ui.label("  - Creates a Steam shortcut for MO2");
                     ui.label("  - Installs required Windows dependencies (VC++, DirectX, etc.)");
                     ui.label("  - Sets up game registry entries for mod detection");
                     ui.label("  - Handles NXM links from Nexus Mods");
@@ -59,9 +59,9 @@ pub fn render_first_run_setup(app: &mut MyApp, ui: &mut egui::Ui) {
                         "Steam Integration",
                     );
                     ui.add_space(5.0);
-                    ui.label("NaK adds your mod managers as non-Steam games. This means:");
+                    ui.label("NaK adds MO2 as a non-Steam game. This means:");
                     ui.label("  - Proton versions are managed through Steam");
-                    ui.label("  - Launch mod managers directly from Steam");
+                    ui.label("  - Launch MO2 directly from Steam");
                     ui.label("  - Steam overlay and controller support work");
                 });
 
@@ -81,7 +81,7 @@ pub fn render_first_run_setup(app: &mut MyApp, ui: &mut egui::Ui) {
             ui.add_space(20.0);
 
             ui.label(
-                egui::RichText::new("Click above to begin setting up your mod manager")
+                egui::RichText::new("Click above to begin setting up MO2")
                     .size(12.0)
                     .color(egui::Color32::GRAY),
             );
@@ -111,29 +111,29 @@ pub fn render_getting_started(app: &mut MyApp, ui: &mut egui::Ui) {
         ui.add_space(15.0);
 
         // ============================================================
-        // Install a Mod Manager
+        // Install MO2
         // ============================================================
         ui.label(
-            egui::RichText::new("Install a Mod Manager")
+            egui::RichText::new("Install MO2")
                 .size(16.0)
                 .strong(),
         );
         ui.label(
-            egui::RichText::new("Choose MO2 or Vortex - NaK handles all the setup automatically")
+            egui::RichText::new("NaK handles all the setup automatically")
                 .size(12.0)
                 .color(egui::Color32::LIGHT_GRAY),
         );
         ui.add_space(10.0);
 
         ui.horizontal(|ui| {
-            if ui.button("Go to Mod Managers").clicked() {
-                log_action("Navigate to Mod Managers from Getting Started");
+            if ui.button("Install MO2").clicked() {
+                log_action("Navigate to MO2 install from Getting Started");
                 app.current_page = Page::ModManagers;
             }
         });
         ui.add_space(10.0);
         ui.label("NaK will:");
-        ui.label("  - Create a Steam shortcut for your mod manager");
+        ui.label("  - Create a Steam shortcut for MO2");
         ui.label("  - Configure your selected Proton version automatically");
         ui.label("  - Install required Windows dependencies");
 
@@ -199,7 +199,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 // --- Dependency Pre-Cache ---
                 ui.label(egui::RichText::new("Pre-Cache Downloads").strong());
                 ui.label(
-                    egui::RichText::new("Download MO2, Vortex, and dependencies for offline installation")
+                    egui::RichText::new("Download MO2 and dependencies for offline installation")
                         .size(11.0)
                         .color(egui::Color32::GRAY),
                 );
@@ -214,16 +214,16 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     if cache_status.is_complete() {
                         ui.colored_label(
                             egui::Color32::from_rgb(100, 200, 100),
-                            format!("{} files cached (~{}MB)", cache_status.total_files(), cache_status.total_cached_mb),
+                            format!("{} deps ready (~{}MB)", cache_status.total_files(), cache_status.total_estimated_mb),
                         );
                     } else {
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 200, 100),
                             format!(
-                                "{}/{} files (~{}MB remaining)",
+                                "{}/{} deps (~{}MB to download)",
                                 cache_status.cached_count(),
                                 cache_status.total_files(),
-                                cache_status.total_missing_mb
+                                cache_status.total_estimated_mb
                             ),
                         );
                     }

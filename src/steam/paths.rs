@@ -302,17 +302,3 @@ pub fn detect_steam_path_checked() -> Option<String> {
     }
 }
 
-/// Detect the Steam installation path (always returns a path).
-///
-/// Returns the detected Steam path, or a fallback default path if not found.
-/// Does not log. Use this when you need a path and can handle a possibly
-/// non-existent location.
-#[must_use]
-pub fn detect_steam_path() -> String {
-    find_steam_path()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            format!("{}/.steam/steam", home)
-        })
-}

@@ -10,16 +10,13 @@ mod shortcuts;
 
 // Re-export path detection utilities
 pub use paths::{
-    detect_steam_path, detect_steam_path_checked, find_steam_path, find_userdata_path,
+    detect_steam_path_checked, find_steam_path, find_userdata_path,
     get_steam_accounts,
 };
 
 // Re-export Steam integration components
 pub use config::set_compat_tool;
-pub use proton::{
-    find_steam_protons, is_flatpak_steam, is_flatpak_protontricks_installed,
-    SteamProton, FLATPAK_PROTONTRICKS,
-};
+pub use proton::{find_steam_protons, SteamProton};
 pub use shortcuts::{Shortcut, ShortcutsVdf};
 
 use std::fs;
@@ -129,7 +126,10 @@ pub fn detect_extra_mounts() -> Vec<String> {
 ///
 /// Returns something like:
 /// `DXVK_CONFIG_FILE="/path/to/dxvk.conf" STEAM_COMPAT_MOUNTS=/mnt:/media:/opt %command%`
-pub fn generate_launch_options(dxvk_conf_path: Option<&std::path::Path>) -> String {
+///
+/// For Electron apps (like Vortex), also adds `--disable-gpu --no-sandbox` after %command%
+/// to fix stdout/stderr EBADF errors under Wine/Proton.
+pub fn generate_launch_options(dxvk_conf_path: Option<&std::path::Path>, is_electron_app: bool) -> String {
     let mounts = detect_extra_mounts();
 
     let dxvk_part = match dxvk_conf_path {
@@ -141,11 +141,18 @@ pub fn generate_launch_options(dxvk_conf_path: Option<&std::path::Path>) -> Stri
         None => String::new(),
     };
 
+    // Electron apps need these flags to avoid EBADF errors with stdout/stderr under Wine
+    let electron_flags = if is_electron_app {
+        " --disable-gpu --no-sandbox"
+    } else {
+        ""
+    };
+
     match (dxvk_part.is_empty(), mounts.is_empty()) {
-        (true, true) => "%command%".to_string(),
-        (true, false) => format!("STEAM_COMPAT_MOUNTS={} %command%", mounts.join(":")),
-        (false, true) => format!("{} %command%", dxvk_part),
-        (false, false) => format!("{} STEAM_COMPAT_MOUNTS={} %command%", dxvk_part, mounts.join(":")),
+        (true, true) => format!("%command%{}", electron_flags),
+        (true, false) => format!("STEAM_COMPAT_MOUNTS={} %command%{}", mounts.join(":"), electron_flags),
+        (false, true) => format!("{} %command%{}", dxvk_part, electron_flags),
+        (false, false) => format!("{} STEAM_COMPAT_MOUNTS={} %command%{}", dxvk_part, mounts.join(":"), electron_flags),
     }
 }
 
@@ -173,18 +180,26 @@ mod mount_tests {
 
     #[test]
     fn test_generate_launch_options() {
-        // Test without dxvk.conf
-        let options = generate_launch_options(None);
+        // Test without dxvk.conf (non-Electron app)
+        let options = generate_launch_options(None, false);
         println!("Generated launch options (no dxvk): {}", options);
         assert!(options.contains("%command%"));
+        assert!(options.ends_with("%command%"));
 
-        // Test with dxvk.conf path
+        // Test with dxvk.conf path (non-Electron app)
         let dxvk_path = std::path::Path::new("/test/path/dxvk.conf");
-        let options = generate_launch_options(Some(dxvk_path));
+        let options = generate_launch_options(Some(dxvk_path), false);
         println!("Generated launch options (with dxvk): {}", options);
         assert!(options.contains("DXVK_CONFIG_FILE="));
         assert!(options.contains("/test/path/dxvk.conf"));
         assert!(options.ends_with("%command%"));
+
+        // Test Electron app flags
+        let options = generate_launch_options(None, true);
+        println!("Generated launch options (electron): {}", options);
+        assert!(options.contains("%command%"));
+        assert!(options.contains("--disable-gpu"));
+        assert!(options.contains("--no-sandbox"));
     }
 }
 
@@ -199,8 +214,6 @@ pub struct SteamShortcutResult {
     pub app_id: u32,
     /// Path to the prefix (in steamapps/compatdata/<appid>/pfx)
     pub prefix_path: PathBuf,
-    /// Path to the compat data directory
-    pub compat_data_path: PathBuf,
 }
 
 /// Add a mod manager as a non-Steam game shortcut
@@ -216,6 +229,7 @@ pub struct SteamShortcutResult {
 /// * `start_dir` - Working directory for the exe
 /// * `proton_name` - Proton config name (e.g., "GE-Proton9-20", "proton_experimental")
 /// * `dxvk_conf_path` - Optional path to dxvk.conf file for DXVK_CONFIG_FILE env var
+/// * `is_electron_app` - Whether this is an Electron app (like Vortex) needing extra flags
 ///
 /// # Returns
 /// `SteamShortcutResult` with AppID and prefix paths
@@ -225,6 +239,7 @@ pub fn add_mod_manager_shortcut(
     start_dir: &str,
     proton_name: &str,
     dxvk_conf_path: Option<&std::path::Path>,
+    is_electron_app: bool,
 ) -> Result<SteamShortcutResult, Box<dyn std::error::Error>> {
     // Normalize paths for Bazzite/Fedora Atomic compatibility
     // On these systems, $HOME is /var/home/user but /home is a symlink to /var/home
@@ -236,7 +251,8 @@ pub fn add_mod_manager_shortcut(
     let mut vdf = ShortcutsVdf::load()?;
 
     // 2. Generate launch options with DXVK_CONFIG_FILE and STEAM_COMPAT_MOUNTS
-    let launch_options = generate_launch_options(dxvk_conf_path);
+    // For Electron apps, also adds --disable-gpu --no-sandbox to fix EBADF errors
+    let launch_options = generate_launch_options(dxvk_conf_path, is_electron_app);
     if !launch_options.is_empty() && launch_options != "%command%" {
         crate::logging::log_install(&format!("Setting launch options: {}", launch_options));
     }
@@ -271,7 +287,6 @@ pub fn add_mod_manager_shortcut(
     Ok(SteamShortcutResult {
         app_id,
         prefix_path,
-        compat_data_path,
     })
 }
 

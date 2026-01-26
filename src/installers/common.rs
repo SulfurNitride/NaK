@@ -408,114 +408,6 @@ fn setup_prefix_appdata_roaming(tools_dir: &Path, prefix_path: &Path) {
     }
 }
 
-/// Create the Vortex Staging Guide text file (Vortex only)
-///
-/// This guide helps users understand where to place their mod staging folders
-/// to avoid EXDEV (cross-device link) errors with hardlink deployment.
-fn create_vortex_staging_guide(tools_dir: &Path) {
-    let guide_path = tools_dir.join("Vortex Staging Guide.txt");
-
-    // Get username for examples
-    let username = std::env::var("USER").unwrap_or_else(|_| "user".to_string());
-
-    let guide_content = format!(r#"================================================================================
-                    VORTEX MOD STAGING FOLDER GUIDE
-================================================================================
-
-Choose your staging folder location based on WHERE YOUR GAME IS INSTALLED:
-
-
-1. STEAM GAMES (in ~/.steam/steam/steamapps/common/)
-   ─────────────────────────────────────────────────
-   Staging folder: Z:\home\{username}\.steam\steam\steamapps\Vortex Mods\{{game}}
-
-   Example for Skyrim SE:
-   Z:\home\{username}\.steam\steam\steamapps\Vortex Mods\Skyrim Special Edition
-
-
-2. GAMES ON YOUR HOME DRIVE (anywhere in /home/{username}/)
-   ────────────────────────────────────────────────────────
-   Staging folder: Z:\home\{username}\Games\{{game}}
-
-   Example for Cyberpunk:
-   Z:\home\{username}\Games\Cyberpunk 2077
-
-
-3. GAMES ON A SECONDARY DRIVE (e.g., /mnt/games/, /run/media/...)
-   ───────────────────────────────────────────────────────────────
-   Staging folder: Put it ON THE SAME DRIVE as the game!
-
-   Example: Game at /mnt/games/SteamLibrary/steamapps/common/Skyrim
-   Staging: Z:\mnt\games\Vortex Mods\Skyrim
-
-
-================================================================================
-For more help, visit: https://github.com/SulfurNitride/NaK
-================================================================================
-"#, username = username);
-
-    if let Err(e) = fs::write(&guide_path, guide_content) {
-        log_warning(&format!("Failed to create Vortex Staging Guide: {}", e));
-    } else {
-        log_install("Created Vortex Staging Guide");
-    }
-}
-
-/// Set up the Vortex Data folder in NaK Tools (Vortex only)
-///
-/// Creates a real "Vortex Data" folder in NaK Tools, then replaces the
-/// prefix's AppData/Roaming/Vortex folder with a symlink pointing to it.
-/// This makes mod staging folders easily accessible from NaK Tools.
-fn setup_vortex_data(tools_dir: &Path, prefix_path: &Path) {
-    // Create the real Vortex Data folder in NaK Tools
-    let vortex_data = tools_dir.join("Vortex Data");
-    if let Err(e) = fs::create_dir_all(&vortex_data) {
-        log_warning(&format!("Failed to create Vortex Data folder: {}", e));
-        return;
-    }
-
-    // Find the prefix Vortex folder (AppData/Roaming/Vortex)
-    let users_dir = prefix_path.join("drive_c/users");
-    let username = find_prefix_username(&users_dir);
-    let roaming_vortex = users_dir.join(&username).join("AppData/Roaming/Vortex");
-
-    // If Vortex folder exists and is a real directory (not a symlink), move its contents
-    if roaming_vortex.exists() && !roaming_vortex.is_symlink() {
-        // Move existing contents to Vortex Data
-        if let Ok(entries) = fs::read_dir(&roaming_vortex) {
-            for entry in entries.flatten() {
-                let src = entry.path();
-                let dest = vortex_data.join(entry.file_name());
-                if fs::rename(&src, &dest).is_err() {
-                    // If rename fails (cross-device), try copy
-                    if src.is_dir() {
-                        let _ = copy_dir_recursive(&src, &dest);
-                    } else {
-                        let _ = fs::copy(&src, &dest);
-                    }
-                }
-            }
-        }
-        // Remove the original Vortex folder
-        let _ = fs::remove_dir_all(&roaming_vortex);
-    } else if roaming_vortex.is_symlink() {
-        // Already a symlink, remove it
-        let _ = fs::remove_file(&roaming_vortex);
-    }
-
-    // Ensure parent directory exists (AppData/Roaming)
-    if let Some(parent) = roaming_vortex.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    // Create symlink: prefix AppData/Roaming/Vortex -> NaK Tools/Vortex Data
-    if let Err(e) = std::os::unix::fs::symlink(&vortex_data, &roaming_vortex) {
-        log_warning(&format!("Failed to create Vortex Data symlink: {}", e));
-    } else {
-        log_install("Set up Vortex Data (mods accessible from NaK Tools)");
-    }
-}
-
 /// Recursively copy a directory
 fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
     fs::create_dir_all(dest)?;
@@ -639,44 +531,37 @@ pub fn create_nak_tools_folder(
     // 4. Set up Prefix AppData Roaming folder (real folder in NaK Tools, symlinked from prefix)
     setup_prefix_appdata_roaming(&tools_dir, prefix_path);
 
-    // 5. Set up Vortex Data folder (for Vortex only - mods/staging accessible from NaK Tools)
-    if manager_type == ManagerType::Vortex {
-        setup_vortex_data(&tools_dir, prefix_path);
-        // 5b. Create Vortex staging guide (explains hardlink requirements)
-        create_vortex_staging_guide(&tools_dir);
-    }
-
-    // 6. Universal auto-import from ALL Steam compatdata folders
+    // 5. Universal auto-import from ALL Steam compatdata folders
     super::compatdata_scanner::auto_import_from_all_compatdata(&tools_dir);
 
     // === All scripts and configs go in NaK Tools folder ===
 
-    // 7. Download and create dxvk.conf (non-fatal if download fails)
+    // 6. Download and create dxvk.conf (non-fatal if download fails)
     if let Err(e) = download_and_create_dxvk_conf(install_dir) {
         log_warning(&format!("Could not create dxvk.conf: {}", e));
     }
 
-    // 8. Create Launch script
+    // 7. Create Launch script
     let launch_script = generate_steam_launch_script(app_id, manager_name);
     write_script(&tools_dir.join(format!("Launch {}.sh", manager_name)), &launch_script)?;
     log_install(&format!("Created Launch {} script", manager_name));
 
-    // 9. Create NXM Toggle script
+    // 8. Create NXM Toggle script
     let nxm_script = generate_nxm_toggle_script(app_id, manager_name, install_dir, prefix_path, proton_path);
     write_script(&tools_dir.join("NXM Toggle.sh"), &nxm_script)?;
     log_install("Created NXM Toggle script");
 
-    // 10. Create Fix Game Registry script
+    // 9. Create Fix Game Registry script
     let registry_script = generate_fix_registry_script(manager_name, prefix_path, proton_path);
     write_script(&tools_dir.join("Fix Game Registry.sh"), &registry_script)?;
     log_install("Created Fix Game Registry script");
 
-    // 11. Create Import Saves script (for manual import of non-Steam games)
+    // 10. Create Import Saves script (for manual import of non-Steam games)
     let import_script = generate_import_saves_script(prefix_path);
     write_script(&tools_dir.join("Import Saves.sh"), &import_script)?;
     log_install("Created Import Saves script");
 
-    // 12. Create Winetricks GUI script
+    // 11. Create Winetricks GUI script
     let winetricks_script = generate_winetricks_gui_script(prefix_path);
     write_script(&tools_dir.join("Winetricks.sh"), &winetricks_script)?;
     log_install("Created Winetricks GUI script");
@@ -795,12 +680,8 @@ fn generate_nxm_toggle_script(app_id: u32, manager_name: &str, install_dir: &Pat
     let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
     let proton_str = crate::config::normalize_path_for_steam(&proton_path.to_string_lossy());
 
-    // Determine the NXM handler exe based on manager type
-    let nxm_exe = if manager_name == "MO2" {
-        format!("{}/nxmhandler.exe", install_str)
-    } else {
-        format!("{}/Vortex.exe", install_str)
-    };
+    // NXM handler exe path
+    let nxm_exe = format!("{}/nxmhandler.exe", install_str);
 
     include_str!("../scripts/nxm_toggle.sh")
         .replace("{{APP_ID}}", &app_id.to_string())

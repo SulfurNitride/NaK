@@ -1,9 +1,11 @@
 //! UI components and rendering
 
+mod marketplace;
 mod mod_managers;
 mod pages;
 mod sidebar;
 
+pub use marketplace::{render_marketplace, MarketplaceState};
 pub use mod_managers::render_mod_managers;
 pub use pages::{render_first_run_setup, render_getting_started, render_settings, render_updater};
 pub use sidebar::render_sidebar;
@@ -84,6 +86,7 @@ impl eframe::App for MyApp {
                 _ => {
                     ui.add_enabled_ui(!is_busy, |ui| match self.current_page {
                         crate::app::Page::GettingStarted => render_getting_started(self, ui),
+                        crate::app::Page::Marketplace => render_marketplace(self, ui),
                         crate::app::Page::Settings => render_settings(self, ui),
                         crate::app::Page::Updater => render_updater(self, ui),
                         _ => {}
@@ -110,7 +113,7 @@ fn render_confirmation_dialogs(app: &mut MyApp, ctx: &egui::Context) {
                     ui.add_space(15.0);
                 });
 
-                ui.label("NaK has moved to Steam-native integration. Your mod managers are now added as non-Steam games and run through Steam's Proton.");
+                ui.label("NaK has moved to Steam-native integration. MO2 is now added as a non-Steam game and runs through Steam's Proton.");
                 ui.add_space(10.0);
 
                 egui::Frame::none()

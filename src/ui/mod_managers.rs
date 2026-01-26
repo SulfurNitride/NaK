@@ -4,91 +4,32 @@ use eframe::egui;
 use std::sync::atomic::Ordering;
 use std::thread;
 
-use crate::app::{InstallWizard, ModManagerView, MyApp, WizardStep};
+use crate::app::{InstallWizard, MyApp, WizardStep};
 use crate::installers::{
-    apply_dpi, get_available_disk_space, install_mo2, install_vortex, kill_wineserver,
-    launch_dpi_test_app, setup_existing_mo2, setup_existing_vortex, TaskContext, DPI_PRESETS,
+    apply_dpi, get_available_disk_space, install_mo2, kill_wineserver,
+    launch_dpi_test_app, setup_existing_mo2, TaskContext, DPI_PRESETS,
     MIN_REQUIRED_DISK_SPACE_GB,
 };
 use crate::logging::log_action;
 
 pub fn render_mod_managers(app: &mut MyApp, ui: &mut egui::Ui) {
-    let is_busy = *app.is_installing_manager.lock().unwrap();
-
-    ui.heading("Mod Managers & Prefixes");
+    ui.heading("MO2 Installation");
     ui.separator();
     ui.add_space(10.0);
 
-    // Navigation / Breadcrumbs logic
-    if app.mod_manager_view != ModManagerView::Dashboard {
-        if ui.add_enabled(!is_busy, egui::Button::new("⬅ Back to Dashboard")).clicked() {
-            app.mod_manager_view = ModManagerView::Dashboard;
-            // Reset wizard state when leaving
-            app.install_wizard = InstallWizard::default();
-        }
-        ui.add_space(10.0);
+    // Set manager type for MO2 (only option now)
+    if app.install_wizard.manager_type.is_empty() {
+        app.install_wizard.manager_type = "MO2".to_string();
     }
 
-    // Main Content
-    egui::ScrollArea::vertical().show(ui, |ui| match app.mod_manager_view {
-        ModManagerView::Dashboard => render_dashboard(app, ui),
-        ModManagerView::Mo2Manager => render_manager_view(app, ui, "MO2"),
-        ModManagerView::VortexManager => render_manager_view(app, ui, "Vortex"),
+    // Main Content - go directly to MO2 manager view
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        render_manager_view(app, ui, "MO2");
     });
 }
 
-fn render_dashboard(app: &mut MyApp, ui: &mut egui::Ui) {
-    ui.label("Select a mod manager to install:");
-    ui.add_space(10.0);
-
-    let button_size = egui::vec2(ui.available_width(), 80.0);
-
-    if ui
-        .add_sized(
-            button_size,
-            egui::Button::new(egui::RichText::new("Mod Organizer 2").heading()),
-        )
-        .clicked()
-    {
-        app.mod_manager_view = ModManagerView::Mo2Manager;
-        app.install_wizard.manager_type = "MO2".to_string();
-    }
-    ui.add_space(10.0);
-
-    if ui
-        .add_sized(
-            button_size,
-            egui::Button::new(egui::RichText::new("Vortex").heading()),
-        )
-        .clicked()
-    {
-        app.mod_manager_view = ModManagerView::VortexManager;
-        app.install_wizard.manager_type = "Vortex".to_string();
-    }
-
-    ui.add_space(20.0);
-    ui.separator();
-    ui.add_space(10.0);
-
-    // Info about Steam-native integration
-    egui::Frame::none()
-        .fill(egui::Color32::from_rgb(40, 50, 60))
-        .rounding(egui::Rounding::same(6.0))
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new("Steam Integration").strong());
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new("Mod managers are installed as Steam shortcuts. After installation, launch them from your Steam library.")
-                    .size(12.0)
-                    .color(egui::Color32::GRAY),
-            );
-        });
-}
-
 fn render_manager_view(app: &mut MyApp, ui: &mut egui::Ui, manager_name: &str) {
-    ui.heading(format!("{} Manager", manager_name));
-    ui.label(format!("Manage your {} installations.", manager_name));
+    ui.label("Install or set up an existing MO2 installation.");
     ui.add_space(10.0);
 
     let is_busy = *app.is_installing_manager.lock().unwrap();
@@ -362,7 +303,7 @@ fn render_install_wizard(
         },
         WizardStep::ProtonSelect => {
             ui.heading("Step 3: Select Proton Version");
-            ui.label("Choose which Proton version to use for this mod manager.");
+            ui.label("Choose which Proton version to use for MO2.");
             ui.add_space(10.0);
 
             if steam_protons.is_empty() {
@@ -466,7 +407,7 @@ fn render_install_wizard(
         },
         WizardStep::DpiSetup => {
             ui.heading("Step 4: DPI Scaling");
-            ui.label("Configure display scaling for your mod manager.");
+            ui.label("Configure display scaling for MO2.");
             ui.add_space(5.0);
 
             ui.label(
@@ -663,7 +604,7 @@ fn render_install_wizard(
                     ui.add_space(6.0);
                     ui.colored_label(
                         egui::Color32::from_rgb(150, 200, 255),
-                        "Click Play in Steam to launch the mod manager.",
+                        "Click Play in Steam to launch MO2.",
                     );
 
                     ui.add_space(15.0);
@@ -734,8 +675,8 @@ fn validate_path(wizard: &mut InstallWizard) {
     } else {
         // Existing
         // Check for Executable
-        let exe_name = if wizard.manager_type == "MO2" { "ModOrganizer.exe" } else { "Vortex.exe" };
-        let has_exe = path.join(exe_name).exists() || (wizard.manager_type == "Vortex" && path.join("Vortex").join(exe_name).exists());
+        let exe_name = "ModOrganizer.exe";
+        let has_exe = path.join(exe_name).exists();
 
         if !has_exe {
             wizard.validation_error = Some(format!("Could not find {} in selected folder.", exe_name));
@@ -824,12 +765,6 @@ fn start_installation(app: &mut MyApp) {
                 .map(|r| (r.app_id, r.prefix_path))
                 .map_err(|e| e.to_string()),
             ("MO2", "Existing") => setup_existing_mo2(&instance_name, install_path, &steam_proton, ctx)
-                .map(|r| (r.app_id, r.prefix_path))
-                .map_err(|e| e.to_string()),
-            ("Vortex", "New") => install_vortex(&instance_name, install_path, &steam_proton, ctx, skip_disk_check)
-                .map(|r| (r.app_id, r.prefix_path))
-                .map_err(|e| e.to_string()),
-            ("Vortex", "Existing") => setup_existing_vortex(&instance_name, install_path, &steam_proton, ctx)
                 .map(|r| (r.app_id, r.prefix_path))
                 .map_err(|e| e.to_string()),
             _ => Err("Unknown installation type".to_string()),

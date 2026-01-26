@@ -1,6 +1,6 @@
 [package]
 name = "nak_rust"
-version = "4.3.5"
+version = "4.3.6"
 edition = "2021"
 
 [dependencies]
@@ -21,6 +21,8 @@ rfd = "0.16"
 sevenz-rust = "0.6"  # For MO2 .7z extraction
 zip = "2.2"  # For update extraction
 rand = "0.8"  # For random AppID generation
+toml = "0.8"  # For parsing plugin manifests
+version-compare = "0.2"  # For version comparison
 
 [profile.release]
 
