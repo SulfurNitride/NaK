@@ -11,7 +11,7 @@ use super::common::{check_cancelled, check_disk_space, finalize_steam_installati
 use super::{fetch_latest_vortex_release, install_all_dependencies, TaskContext};
 use crate::config::{AppConfig, ManagedPrefixes};
 use crate::logging::{log_download, log_error, log_install};
-use crate::steam::{self, SteamProton};
+use crate::steam::{self, is_flatpak_steam, SteamProton};
 use crate::utils::download_file;
 
 /// Minimum disk space required for Vortex installation (in GB)
@@ -160,18 +160,40 @@ pub fn install_vortex(
 
     ctx.log("Running Vortex installer...".to_string());
 
-    let mut child = Command::new(&proton_bin)
-        .args([
-            "run",
-            installer_path.to_str().unwrap_or(""),
-            "/S",
-            &format!("/D={}", win_install_path),
-        ])
-        .env("STEAM_COMPAT_DATA_PATH", &steam_result.compat_data_path)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+    // For Flatpak Steam, run proton through flatpak
+    let use_flatpak = is_flatpak_steam();
+    if use_flatpak {
+        log_install("Flatpak Steam detected - running Vortex installer through Flatpak");
+    }
+
+    let mut child = if use_flatpak {
+        let cmd_str = format!(
+            "STEAM_COMPAT_DATA_PATH='{}' STEAM_COMPAT_CLIENT_INSTALL_PATH='{}' '{}' run '{}' /S '/D={}'",
+            steam_result.compat_data_path.to_string_lossy(),
+            steam_path.to_string_lossy(),
+            proton_bin.to_string_lossy(),
+            installer_path.to_string_lossy(),
+            win_install_path
+        );
+        Command::new("flatpak")
+            .args(["run", "--command=bash", "com.valvesoftware.Steam", "-c", &cmd_str])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?
+    } else {
+        Command::new(&proton_bin)
+            .args([
+                "run",
+                installer_path.to_str().unwrap_or(""),
+                "/S",
+                &format!("/D={}", win_install_path),
+            ])
+            .env("STEAM_COMPAT_DATA_PATH", &steam_result.compat_data_path)
+            .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?
+    };
 
     // Wait with timeout
     let timeout = Duration::from_secs(INSTALLER_TIMEOUT_SECS);
