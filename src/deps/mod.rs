@@ -37,6 +37,8 @@ pub struct DepInstallContext {
     log_callback: Arc<dyn Fn(String) + Send + Sync>,
     /// Cancellation flag
     pub cancel_flag: Arc<AtomicBool>,
+    /// Steam AppID for protontricks support (Flatpak Steam)
+    pub app_id: Option<u32>,
 }
 
 impl DepInstallContext {
@@ -51,7 +53,14 @@ impl DepInstallContext {
             proton,
             log_callback: Arc::new(log),
             cancel_flag: cancel,
+            app_id: None,
         }
+    }
+
+    /// Set the AppID for protontricks support
+    pub fn with_app_id(mut self, app_id: u32) -> Self {
+        self.app_id = Some(app_id);
+        self
     }
 
     pub fn log(&self, msg: &str) {

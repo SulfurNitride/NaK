@@ -56,6 +56,20 @@ pub fn is_flatpak_steam() -> bool {
         .unwrap_or(false)
 }
 
+/// Check if Flatpak protontricks is installed
+pub fn is_flatpak_protontricks_installed() -> bool {
+    std::process::Command::new("flatpak")
+        .args(["info", "com.github.Matoking.protontricks"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Get the Flatpak protontricks command prefix
+pub const FLATPAK_PROTONTRICKS: &str = "com.github.Matoking.protontricks";
+
 /// Find all Protons that Steam can use (Proton 10+ only)
 pub fn find_steam_protons() -> Vec<SteamProton> {
     let mut protons = Vec::new();

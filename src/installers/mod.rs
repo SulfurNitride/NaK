@@ -257,11 +257,13 @@ pub fn apply_wine_registry_settings(
     prefix_path: &std::path::Path,
     proton: &SteamProton,
     log_callback: &impl Fn(String),
+    app_id: Option<u32>,
 ) -> Result<(), Box<dyn Error>> {
     use std::io::Write;
+    use std::process::Command;
     use crate::config::AppConfig;
     use crate::logging::{log_error, log_warning};
-    use crate::steam::is_flatpak_steam;
+    use crate::steam::{is_flatpak_steam, is_flatpak_protontricks_installed, FLATPAK_PROTONTRICKS};
 
     let tmp_dir = AppConfig::get_tmp_path();
     fs::create_dir_all(&tmp_dir)?;
@@ -289,25 +291,41 @@ pub fn apply_wine_registry_settings(
         err_msg
     })?;
 
-    // Check if we need to run through Flatpak
+    // Check if we need to run through Flatpak and if protontricks is available
     let use_flatpak = is_flatpak_steam();
+    let use_protontricks = use_flatpak && app_id.is_some() && is_flatpak_protontricks_installed();
+
     if use_flatpak {
-        log_install("Flatpak Steam detected - running wine commands through Flatpak");
+        if use_protontricks {
+            log_install("Flatpak Steam detected - using protontricks for wine commands");
+        } else {
+            log_install("Flatpak Steam detected - running wine commands through Flatpak");
+        }
     }
 
+    // Helper to run a wine command via protontricks
+    let run_via_protontricks = |cmd: &str| -> Result<std::process::ExitStatus, std::io::Error> {
+        let app_id = app_id.unwrap();
+        log_install(&format!("Running via protontricks: wine {} (appid {})", cmd, app_id));
+        Command::new("flatpak")
+            .arg("run")
+            .arg(FLATPAK_PROTONTRICKS)
+            .arg("-c")
+            .arg(format!("wine {}", cmd))
+            .arg(app_id.to_string())
+            .status()
+    };
+
     // Helper to build wine command - either direct or through flatpak
-    let build_wine_cmd = |wine_args: &[&str]| -> std::process::Command {
-        if use_flatpak {
-            let mut cmd = std::process::Command::new("flatpak");
-            // Grant filesystem=home access for tmp files and other paths
-            // See: https://docs.flatpak.org/en/latest/sandbox-permissions.html
+    let build_wine_cmd = |wine_args: &[&str]| -> Command {
+        if use_flatpak && !use_protontricks {
+            let mut cmd = Command::new("flatpak");
             cmd.arg("run")
                 .arg("--filesystem=home")
                 .arg("--command=bash")
                 .arg("com.valvesoftware.Steam")
                 .arg("-c");
 
-            // Build the command string to run inside Flatpak
             let wine_path = wine_bin.to_string_lossy();
             let prefix_str = prefix_path.to_string_lossy();
             let wineserver_str = wineserver_bin.to_string_lossy();
@@ -320,7 +338,7 @@ pub fn apply_wine_registry_settings(
             cmd.arg(bash_cmd);
             cmd
         } else {
-            let mut cmd = std::process::Command::new(&wine_bin);
+            let mut cmd = Command::new(&wine_bin);
             for arg in wine_args {
                 cmd.arg(arg);
             }
@@ -343,9 +361,13 @@ pub fn apply_wine_registry_settings(
     log_callback("Initializing Wine prefix...".to_string());
     log_install("Initializing Wine prefix with wineboot...");
 
-    let mut wineboot_cmd = build_wine_cmd(&["wineboot", "-u"]);
+    let wineboot_status = if use_protontricks {
+        run_via_protontricks("wineboot -u")
+    } else {
+        build_wine_cmd(&["wineboot", "-u"]).status()
+    };
 
-    match wineboot_cmd.status() {
+    match wineboot_status {
         Ok(status) => {
             if status.success() {
                 log_callback("Prefix initialized successfully".to_string());
@@ -367,9 +389,13 @@ pub fn apply_wine_registry_settings(
     log_install("Running wine regedit...");
 
     let reg_file_str = reg_file.to_string_lossy().to_string();
-    let mut regedit_cmd = build_wine_cmd(&["regedit", &reg_file_str]);
+    let regedit_status = if use_protontricks {
+        run_via_protontricks(&format!("regedit '{}'", reg_file_str))
+    } else {
+        build_wine_cmd(&["regedit", &reg_file_str]).status()
+    };
 
-    match regedit_cmd.status() {
+    match regedit_status {
         Ok(status) => {
             if status.success() {
                 log_callback("Registry settings applied successfully".to_string());

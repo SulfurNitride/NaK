@@ -10,8 +10,9 @@ use wait_timeout::ChildExt;
 use super::common::{check_cancelled, check_disk_space, finalize_steam_installation_with_tools, get_dxvk_conf_path, InstallError, ManagerType};
 use super::{fetch_latest_vortex_release, install_all_dependencies, TaskContext};
 use crate::config::{AppConfig, ManagedPrefixes};
+use crate::deps::wine_utils::run_protontricks_launch;
 use crate::logging::{log_download, log_error, log_install};
-use crate::steam::{self, is_flatpak_steam, SteamProton};
+use crate::steam::{self, is_flatpak_steam, is_flatpak_protontricks_installed, SteamProton};
 use crate::utils::download_file;
 
 /// Minimum disk space required for Vortex installation (in GB)
@@ -160,13 +161,27 @@ pub fn install_vortex(
 
     ctx.log("Running Vortex installer...".to_string());
 
-    // For Flatpak Steam, run proton through flatpak
+    // For Flatpak Steam, prefer protontricks-launch if available
     let use_flatpak = is_flatpak_steam();
+    let use_protontricks = use_flatpak && is_flatpak_protontricks_installed();
+
     if use_flatpak {
-        log_install("Flatpak Steam detected - running Vortex installer through Flatpak");
+        if use_protontricks {
+            log_install("Flatpak Steam detected - running Vortex installer via protontricks-launch");
+        } else {
+            log_install("Flatpak Steam detected - running Vortex installer through Flatpak (protontricks recommended)");
+        }
     }
 
-    let mut child = if use_flatpak {
+    let status = if use_protontricks {
+        // Use protontricks-launch for proper sandbox handling
+        run_protontricks_launch(
+            steam_result.app_id,
+            &installer_path,
+            &["/S", &format!("/D={}", win_install_path)],
+        )?
+    } else if use_flatpak {
+        // Fallback: run through flatpak bash (less reliable)
         let cmd_str = format!(
             "STEAM_COMPAT_DATA_PATH='{}' STEAM_COMPAT_CLIENT_INSTALL_PATH='{}' '{}' run '{}' /S '/D={}'",
             steam_result.compat_data_path.to_string_lossy(),
@@ -175,9 +190,7 @@ pub fn install_vortex(
             installer_path.to_string_lossy(),
             win_install_path
         );
-        // Grant filesystem=home access for installer and install destination
-        // See: https://docs.flatpak.org/en/latest/sandbox-permissions.html
-        Command::new("flatpak")
+        let mut child = Command::new("flatpak")
             .arg("run")
             .arg("--filesystem=home")
             .arg("--command=bash")
@@ -186,9 +199,27 @@ pub fn install_vortex(
             .arg(&cmd_str)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()?
+            .spawn()?;
+
+        let timeout = Duration::from_secs(INSTALLER_TIMEOUT_SECS);
+        match child.wait_timeout(timeout)? {
+            Some(status) => status,
+            None => {
+                let _ = child.kill();
+                log_error(&format!(
+                    "Vortex installer timed out after {} seconds",
+                    INSTALLER_TIMEOUT_SECS
+                ));
+                return Err(InstallError::Other {
+                    context: "Vortex installer".to_string(),
+                    reason: format!("Timed out after {} seconds", INSTALLER_TIMEOUT_SECS),
+                }
+                .into());
+            }
+        }
     } else {
-        Command::new(&proton_bin)
+        // Native Steam - run proton directly
+        let mut child = Command::new(&proton_bin)
             .args([
                 "run",
                 installer_path.to_str().unwrap_or(""),
@@ -199,24 +230,23 @@ pub fn install_vortex(
             .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()?
-    };
+            .spawn()?;
 
-    // Wait with timeout
-    let timeout = Duration::from_secs(INSTALLER_TIMEOUT_SECS);
-    let status = match child.wait_timeout(timeout)? {
-        Some(status) => status,
-        None => {
-            let _ = child.kill();
-            log_error(&format!(
-                "Vortex installer timed out after {} seconds",
-                INSTALLER_TIMEOUT_SECS
-            ));
-            return Err(InstallError::Other {
-                context: "Vortex installer".to_string(),
-                reason: format!("Timed out after {} seconds", INSTALLER_TIMEOUT_SECS),
+        let timeout = Duration::from_secs(INSTALLER_TIMEOUT_SECS);
+        match child.wait_timeout(timeout)? {
+            Some(status) => status,
+            None => {
+                let _ = child.kill();
+                log_error(&format!(
+                    "Vortex installer timed out after {} seconds",
+                    INSTALLER_TIMEOUT_SECS
+                ));
+                return Err(InstallError::Other {
+                    context: "Vortex installer".to_string(),
+                    reason: format!("Timed out after {} seconds", INSTALLER_TIMEOUT_SECS),
+                }
+                .into());
             }
-            .into());
         }
     };
 
@@ -248,7 +278,7 @@ pub fn install_vortex(
     check_cancelled(&ctx)?;
 
     // 6. Install dependencies
-    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.20, 0.90)?;
+    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.20, 0.90, steam_result.app_id)?;
 
     ctx.set_progress(0.92);
 
@@ -339,7 +369,7 @@ pub fn setup_existing_vortex(
     check_cancelled(&ctx)?;
 
     // 2. Install dependencies
-    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.10, 0.85)?;
+    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.10, 0.85, steam_result.app_id)?;
 
     ctx.set_progress(0.90);
 

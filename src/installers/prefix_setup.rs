@@ -30,31 +30,40 @@ fn create_dep_context(
     prefix: &Path,
     proton: &SteamProton,
     ctx: &TaskContext,
+    app_id: Option<u32>,
 ) -> DepInstallContext {
     let log_ctx = ctx.clone();
-    DepInstallContext::new(
+    let mut dep_ctx = DepInstallContext::new(
         prefix.to_path_buf(),
         proton.clone(),
         move |msg| log_ctx.log(msg),
         ctx.cancel_flag.clone(),
-    )
+    );
+    if let Some(id) = app_id {
+        dep_ctx = dep_ctx.with_app_id(id);
+    }
+    dep_ctx
 }
 
 /// Install all dependencies to a prefix.
 ///
 /// Installs: registry settings, standard deps (vcrun2022, physx, etc.),
 /// and auto-detects installed games for registry configuration.
+///
+/// # Arguments
+/// * `app_id` - Steam AppID for protontricks support on Flatpak Steam
 pub fn install_all_dependencies(
     prefix_root: &Path,
     install_proton: &SteamProton,
     ctx: &TaskContext,
     start_progress: f32,
     end_progress: f32,
+    app_id: u32,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(AppConfig::get_tmp_path())?;
 
     // Create NativeDependencyManager for all dep operations
-    let dep_ctx = create_dep_context(prefix_root, install_proton, ctx);
+    let dep_ctx = create_dep_context(prefix_root, install_proton, ctx, Some(app_id));
     let dep_mgr = NativeDependencyManager::new(dep_ctx);
 
     // Calculate progress ranges: registry + deps
@@ -73,7 +82,7 @@ pub fn install_all_dependencies(
         let ctx = ctx.clone();
         move |msg: String| ctx.log(msg)
     };
-    apply_wine_registry_settings(prefix_root, install_proton, &log_cb)?;
+    apply_wine_registry_settings(prefix_root, install_proton, &log_cb, Some(app_id))?;
 
     current_step += 1;
     ctx.set_progress(start_progress + (current_step as f32 * progress_per_step));
@@ -93,7 +102,7 @@ pub fn install_all_dependencies(
         let ctx = ctx.clone();
         move |msg: String| ctx.log(msg)
     };
-    auto_apply_game_registries(prefix_root, install_proton, &game_log_cb);
+    auto_apply_game_registries(prefix_root, install_proton, &game_log_cb, Some(app_id));
 
     if ctx.is_cancelled() {
         return Err("Cancelled".into());
@@ -485,8 +494,9 @@ pub fn auto_apply_game_registries(
     prefix_path: &Path,
     proton: &SteamProton,
     log_callback: &impl Fn(String),
+    app_id: Option<u32>,
 ) {
-    use crate::steam::is_flatpak_steam;
+    use crate::steam::{is_flatpak_steam, is_flatpak_protontricks_installed, FLATPAK_PROTONTRICKS};
 
     let steam_path = match detect_steam_path_checked() {
         Some(p) => PathBuf::from(p),
@@ -502,6 +512,7 @@ pub fn auto_apply_game_registries(
     };
 
     let use_flatpak = is_flatpak_steam();
+    let use_protontricks = use_flatpak && app_id.is_some() && is_flatpak_protontricks_installed();
     let mut applied_count = 0;
 
     for game in GAME_REGISTRY_CONFIGS {
@@ -545,15 +556,26 @@ pub fn auto_apply_game_registries(
         }
 
         // Apply registry
-        let status = if use_flatpak {
+        let status = if use_protontricks {
+            // Use protontricks for proper sandbox handling
+            let appid = app_id.unwrap();
+            let reg_file_str = reg_file.to_string_lossy();
+            log_install(&format!("Running via protontricks: wine regedit '{}' (appid {})", reg_file_str, appid));
+            Command::new("flatpak")
+                .arg("run")
+                .arg(FLATPAK_PROTONTRICKS)
+                .arg("-c")
+                .arg(format!("wine regedit '{}'", reg_file_str))
+                .arg(appid.to_string())
+                .status()
+        } else if use_flatpak {
+            // Fallback: run through flatpak bash
             let cmd_str = format!(
                 "WINEPREFIX='{}' WINEDLLOVERRIDES='mshtml=d' PROTON_USE_XALIA='0' '{}' regedit '{}'",
                 prefix_path.to_string_lossy(),
                 wine_bin.to_string_lossy(),
                 reg_file.to_string_lossy()
             );
-            // Grant filesystem=home access for tmp files
-            // See: https://docs.flatpak.org/en/latest/sandbox-permissions.html
             Command::new("flatpak")
                 .arg("run")
                 .arg("--filesystem=home")

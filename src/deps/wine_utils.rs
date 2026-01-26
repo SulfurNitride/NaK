@@ -1,18 +1,23 @@
 //! Wine prefix utilities
 //!
 //! Simple helpers for running Wine/Proton commands with proper environment setup.
+//! For Flatpak Steam, uses protontricks when available for proper sandbox handling.
 
 use std::error::Error;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, Command, ExitStatus, Stdio};
 
 use crate::logging::{log_error, log_install};
-use crate::steam::{detect_steam_path, SteamProton};
+use crate::steam::{
+    detect_steam_path, is_flatpak_protontricks_installed, is_flatpak_steam,
+    SteamProton, FLATPAK_PROTONTRICKS,
+};
 
 use super::DepInstallContext;
 
-/// Run a Wine command with proper environment setup
+/// Run a Wine command with proper environment setup.
+/// For Flatpak Steam with protontricks, uses protontricks -c for proper sandbox handling.
 pub fn run_wine_cmd<I, S>(
     proton: &SteamProton,
     prefix: &Path,
@@ -23,8 +28,23 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    use crate::steam::is_flatpak_steam;
+    run_wine_cmd_with_appid(proton, prefix, wine_cmd, args, None)
+}
 
+/// Run a Wine command with optional AppID for protontricks support.
+/// When AppID is provided and running on Flatpak Steam with protontricks installed,
+/// uses `protontricks -c` for proper sandbox handling.
+pub fn run_wine_cmd_with_appid<I, S>(
+    proton: &SteamProton,
+    prefix: &Path,
+    wine_cmd: &str,
+    args: I,
+    app_id: Option<u32>,
+) -> Result<ExitStatus, std::io::Error>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
     let args: Vec<_> = args.into_iter().collect();
     let steam_path = detect_steam_path();
     let compat_data = prefix.parent().unwrap_or(prefix);
@@ -41,16 +61,23 @@ where
     let standalone_binaries = ["wine", "wine64", "wineserver", "wine-preloader", "wine64-preloader"];
     let is_standalone = standalone_binaries.contains(&wine_cmd);
 
-    // For Flatpak Steam, run through flatpak
+    // For Flatpak Steam, prefer protontricks if available and we have an AppID
     if is_flatpak_steam() {
+        if let Some(appid) = app_id {
+            if is_flatpak_protontricks_installed() {
+                return run_protontricks_cmd(appid, wine_cmd, &args);
+            }
+        }
+
+        // Fallback: run through flatpak bash (less reliable)
+        log_install("Warning: Using fallback Flatpak method - protontricks recommended for Flatpak Steam");
         let mut cmd = Command::new("flatpak");
         cmd.arg("run")
-            .arg("--filesystem=home")  // Grant access to home directory for cache/tmp files
+            .arg("--filesystem=home")
             .arg("--command=bash")
             .arg("com.valvesoftware.Steam")
             .arg("-c");
 
-        // Build command string for bash
         let wine_path = wine_bin.to_string_lossy();
         let prefix_str = prefix.to_string_lossy();
         let compat_str = compat_data.to_string_lossy();
@@ -97,7 +124,88 @@ where
     cmd.status()
 }
 
+/// Run a command via protontricks -c (for Flatpak Steam)
+fn run_protontricks_cmd<S: AsRef<OsStr>>(
+    app_id: u32,
+    wine_cmd: &str,
+    args: &[S],
+) -> Result<ExitStatus, std::io::Error> {
+    let args_str: Vec<String> = args.iter().map(|a| {
+        let s = a.as_ref().to_string_lossy();
+        // Escape single quotes for shell
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }).collect();
+
+    // Build the wine command string
+    let cmd_str = format!("wine {} {}", wine_cmd, args_str.join(" "));
+
+    log_install(&format!("Running via protontricks: {} (appid {})", cmd_str, app_id));
+
+    Command::new("flatpak")
+        .arg("run")
+        .arg(FLATPAK_PROTONTRICKS)
+        .arg("-c")
+        .arg(&cmd_str)
+        .arg(app_id.to_string())
+        .status()
+}
+
+/// Run a Windows executable via protontricks-launch (for Flatpak Steam)
+pub fn run_protontricks_launch(
+    app_id: u32,
+    exe_path: &Path,
+    args: &[&str],
+) -> Result<ExitStatus, std::io::Error> {
+    log_install(&format!(
+        "Running via protontricks-launch: {:?} (appid {})",
+        exe_path, app_id
+    ));
+
+    let mut cmd = Command::new("flatpak");
+    cmd.arg("run")
+        .arg("--command=protontricks-launch")
+        .arg(FLATPAK_PROTONTRICKS)
+        .arg("--appid")
+        .arg(app_id.to_string())
+        .arg(exe_path);
+
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    cmd.status()
+}
+
+/// Spawn a Windows executable via protontricks-launch (non-blocking, for Flatpak Steam)
+pub fn spawn_protontricks_launch(
+    app_id: u32,
+    exe_path: &Path,
+    args: &[&str],
+) -> Result<Child, std::io::Error> {
+    log_install(&format!(
+        "Spawning via protontricks-launch: {:?} (appid {})",
+        exe_path, app_id
+    ));
+
+    let mut cmd = Command::new("flatpak");
+    cmd.arg("run")
+        .arg("--command=protontricks-launch")
+        .arg(FLATPAK_PROTONTRICKS)
+        .arg("--appid")
+        .arg(app_id.to_string())
+        .arg(exe_path);
+
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+}
+
 /// Spawn a Proton process (non-blocking)
+/// For Flatpak Steam, uses protontricks-launch when available
 pub fn spawn_proton<I, S>(
     proton: &SteamProton,
     prefix: &Path,
@@ -128,13 +236,12 @@ where
 
 /// Kill wineserver for a prefix
 pub fn kill_wineserver(proton: &SteamProton, prefix: &Path) {
-    use crate::steam::is_flatpak_steam;
-
     let Some(wineserver) = proton.wineserver_binary() else {
         return;
     };
 
     if is_flatpak_steam() {
+        // For Flatpak, try to kill via bash command
         let cmd_str = format!(
             "WINEPREFIX='{}' '{}' -k",
             prefix.to_string_lossy(),
@@ -170,7 +277,7 @@ pub fn set_dll_override(
     dll: &str,
     mode: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let status = run_wine_cmd(
+    let status = run_wine_cmd_with_appid(
         &ctx.proton,
         &ctx.prefix,
         "reg",
@@ -185,6 +292,7 @@ pub fn set_dll_override(
             mode,
             "/f",
         ],
+        ctx.app_id,
     )?;
 
     if !status.success() {
@@ -203,7 +311,13 @@ pub fn register_dll(
 ) -> Result<(), Box<dyn Error>> {
     ctx.log(&format!("Registering {}...", dll_name));
 
-    let status = run_wine_cmd(&ctx.proton, &ctx.prefix, "regsvr32", ["/s", dll_name])?;
+    let status = run_wine_cmd_with_appid(
+        &ctx.proton,
+        &ctx.prefix,
+        "regsvr32",
+        ["/s", dll_name],
+        ctx.app_id,
+    )?;
 
     if !status.success() {
         log_install(&format!(
@@ -215,4 +329,3 @@ pub fn register_dll(
 
     Ok(())
 }
-

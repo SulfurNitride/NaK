@@ -169,7 +169,7 @@ pub fn install_mo2(
     check_cancelled(&ctx)?;
 
     // 6. Initialize prefix and install dependencies
-    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.20, 0.90)?;
+    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.20, 0.90, steam_result.app_id)?;
 
     ctx.set_progress(0.92);
 
@@ -267,7 +267,7 @@ pub fn setup_existing_mo2(
     check_cancelled(&ctx)?;
 
     // 2. Install dependencies
-    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.10, 0.85)?;
+    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.10, 0.85, steam_result.app_id)?;
 
     ctx.set_progress(0.90);
 
