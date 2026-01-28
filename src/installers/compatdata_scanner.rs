@@ -464,3 +464,83 @@ pub fn auto_import_from_all_compatdata(tools_dir: &Path) {
         ));
     }
 }
+
+/// Import discovered folders directly into a Wine prefix's AppData/Documents folders.
+///
+/// This is used for Vortex where we don't want to symlink the entire AppData folder
+/// outside the prefix. Instead, we create symlinks for individual game folders
+/// directly inside the prefix's AppData structure.
+///
+/// Creates symlinks in:
+/// - prefix/drive_c/users/<user>/Documents/My Games/ for MyGames folders
+/// - prefix/drive_c/users/<user>/Documents/ for DocumentsRoot folders
+/// - prefix/drive_c/users/<user>/AppData/Local/ for AppDataLocal folders
+/// - prefix/drive_c/users/<user>/AppData/Roaming/ for AppDataRoaming folders
+pub fn import_compatdata_to_prefix(prefix_path: &Path) {
+    let scan_result = scan_all_compatdata();
+
+    // Log duplicates
+    for (skipped, kept) in &scan_result.duplicates {
+        log_info(&format!(
+            "Duplicate '{}': using App {} (newer), skipping App {}",
+            skipped.name, kept.app_id, skipped.app_id
+        ));
+    }
+
+    // Find the username in this prefix
+    let users_dir = prefix_path.join("drive_c/users");
+    let username = find_prefix_username(&users_dir);
+    let user_dir = users_dir.join(&username);
+
+    // Set up target directories inside the prefix
+    let documents_dir = user_dir.join("Documents");
+    let my_games_dir = documents_dir.join("My Games");
+    let appdata_local = user_dir.join("AppData/Local");
+    let appdata_roaming = user_dir.join("AppData/Roaming");
+
+    // Ensure directories exist
+    let _ = fs::create_dir_all(&my_games_dir);
+    let _ = fs::create_dir_all(&appdata_local);
+    let _ = fs::create_dir_all(&appdata_roaming);
+
+    let mut imported_count = 0;
+
+    // Create symlinks for each discovered folder
+    for ((folder_type, name), folder) in &scan_result.folders {
+        let target_dir = match folder_type {
+            FolderType::MyGames => my_games_dir.join(name),
+            FolderType::DocumentsRoot => documents_dir.join(name),
+            FolderType::AppDataLocal => appdata_local.join(name),
+            FolderType::AppDataRoaming => appdata_roaming.join(name),
+        };
+
+        // Skip if target already exists (don't overwrite user's setup)
+        if target_dir.exists() || target_dir.is_symlink() {
+            continue;
+        }
+
+        // Create symlink
+        match std::os::unix::fs::symlink(&folder.source_path, &target_dir) {
+            Ok(()) => {
+                log_info(&format!(
+                    "Imported {:?}/{} from App {} into prefix",
+                    folder_type, name, folder.app_id
+                ));
+                imported_count += 1;
+            }
+            Err(e) => {
+                log_warning(&format!(
+                    "Failed to import {:?}/{} into prefix: {}",
+                    folder_type, name, e
+                ));
+            }
+        }
+    }
+
+    if imported_count > 0 {
+        log_info(&format!(
+            "Auto-imported {} folder(s) from Steam compatdata into prefix",
+            imported_count
+        ));
+    }
+}

@@ -166,6 +166,7 @@ impl AppConfig {
 pub enum ManagerType {
     MO2,
     Plugin,
+    Vortex,
 }
 
 impl std::fmt::Display for ManagerType {
@@ -173,6 +174,7 @@ impl std::fmt::Display for ManagerType {
         match self {
             ManagerType::MO2 => write!(f, "MO2"),
             ManagerType::Plugin => write!(f, "Plugin"),
+            ManagerType::Vortex => write!(f, "Vortex"),
         }
     }
 }
@@ -183,6 +185,7 @@ impl ManagerType {
         match self {
             ManagerType::MO2 => "MO2",
             ManagerType::Plugin => "Plugin",
+            ManagerType::Vortex => "Vortex",
         }
     }
 }

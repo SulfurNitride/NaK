@@ -178,8 +178,15 @@ pub fn install_plugin(
     check_cancelled(&ctx)?;
 
     // 7. Finalize installation
+    // Use Vortex-specific handling for the Vortex plugin
+    let manager_type = if plugin_id == "vortex" {
+        ManagerType::Vortex
+    } else {
+        ManagerType::Plugin
+    };
+
     finalize_steam_installation_with_tools(
-        ManagerType::Plugin,
+        manager_type,
         &steam_result.prefix_path,
         &install_path,
         steam_result.app_id,
@@ -193,7 +200,7 @@ pub fn install_plugin(
         install_name,
         steam_result.prefix_path.to_str().unwrap_or(""),
         install_path.to_str().unwrap_or(""),
-        crate::config::ManagerType::Plugin,
+        manager_type,
         primary_steam_path.to_str().unwrap_or(""),
         Some(&proton.config_name),
     );

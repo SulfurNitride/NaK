@@ -1,6 +1,6 @@
 [package]
 name = "nak_rust"
-version = "4.3.6"
+version = "4.3.7"
 edition = "2021"
 
 [dependencies]

@@ -351,6 +351,12 @@ fn setup_prefix_appdata_local(tools_dir: &Path, prefix_path: &Path) {
     } else {
         log_install("Set up Prefix AppData Local (accessible from NaK Tools)");
     }
+
+    // Ensure Temp directory exists (some apps like MO2 require this)
+    let temp_dir = prefix_appdata_local.join("Temp");
+    if let Err(e) = fs::create_dir_all(&temp_dir) {
+        log_warning(&format!("Failed to create Temp directory: {}", e));
+    }
 }
 
 /// Set up the Prefix AppData Roaming folder in NaK Tools
@@ -522,17 +528,26 @@ pub fn create_nak_tools_folder(
         log_install("Created Wine Prefix symlink");
     }
 
-    // 2. Set up Prefix Documents folder (real folder in NaK Tools, symlinked from prefix)
-    setup_prefix_documents(&tools_dir, prefix_path);
+    // For Vortex: Keep AppData/Documents inside the prefix normally,
+    // and import game folders directly as symlinks inside the prefix.
+    // This avoids issues with Vortex seeing paths going to external "Z:" drive locations.
+    if manager_type == ManagerType::Vortex {
+        // Import game folders directly into prefix's AppData/Documents
+        super::compatdata_scanner::import_compatdata_to_prefix(prefix_path);
+        log_install("Imported game folders directly into Vortex prefix");
+    } else {
+        // 2. Set up Prefix Documents folder (real folder in NaK Tools, symlinked from prefix)
+        setup_prefix_documents(&tools_dir, prefix_path);
 
-    // 3. Set up Prefix AppData Local folder (real folder in NaK Tools, symlinked from prefix)
-    setup_prefix_appdata_local(&tools_dir, prefix_path);
+        // 3. Set up Prefix AppData Local folder (real folder in NaK Tools, symlinked from prefix)
+        setup_prefix_appdata_local(&tools_dir, prefix_path);
 
-    // 4. Set up Prefix AppData Roaming folder (real folder in NaK Tools, symlinked from prefix)
-    setup_prefix_appdata_roaming(&tools_dir, prefix_path);
+        // 4. Set up Prefix AppData Roaming folder (real folder in NaK Tools, symlinked from prefix)
+        setup_prefix_appdata_roaming(&tools_dir, prefix_path);
 
-    // 5. Universal auto-import from ALL Steam compatdata folders
-    super::compatdata_scanner::auto_import_from_all_compatdata(&tools_dir);
+        // 5. Universal auto-import from ALL Steam compatdata folders
+        super::compatdata_scanner::auto_import_from_all_compatdata(&tools_dir);
+    }
 
     // === All scripts and configs go in NaK Tools folder ===
 
