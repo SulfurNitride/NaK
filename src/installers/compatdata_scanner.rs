@@ -1,8 +1,21 @@
 //! Universal Steam compatdata scanner
 //!
+//! **DEPRECATED**: This module is kept for reference and backwards compatibility.
+//! New code should use the `game_finder` module instead, which provides:
+//! - Multi-launcher support (Steam, Heroic, Bottles)
+//! - VDF parsing for accurate game detection
+//! - Inverted symlink direction (NaK prefix -> game prefix)
+//!
+//! See `crate::game_finder` for the new implementation.
+//!
+//! ---
+//!
+//! Legacy documentation:
 //! Scans ALL Steam compatdata folders across all libraries to discover
 //! game save folders (Documents/My Games, AppData/Local, AppData/Roaming).
 //! Uses "most recently modified wins" strategy for duplicate folder names.
+
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::fs;

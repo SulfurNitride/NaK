@@ -344,14 +344,30 @@ impl ManagedPrefixes {
     }
 
     /// Delete a prefix directory and unregister it
+    ///
+    /// Deletes the entire appid folder (steamapps/compatdata/{app_id}/)
+    /// to avoid leaving empty folders that bloat the compatdata directory.
     pub fn delete_prefix(app_id: u32) -> Result<(), String> {
         let prefixes = Self::load();
         if let Some(prefix) = prefixes.get_by_app_id(app_id) {
-            let path = PathBuf::from(&prefix.prefix_path);
-            if path.exists() {
-                fs::remove_dir_all(&path)
-                    .map_err(|e| format!("Failed to delete prefix: {}", e))?;
+            let pfx_path = PathBuf::from(&prefix.prefix_path);
+
+            // The appid folder is the parent of the pfx folder
+            // Structure: steamapps/compatdata/{app_id}/pfx/
+            // We want to delete the entire {app_id} folder, not just pfx
+            if let Some(appid_folder) = pfx_path.parent() {
+                if appid_folder.exists() {
+                    fs::remove_dir_all(appid_folder)
+                        .map_err(|e| format!("Failed to delete prefix: {}", e))?;
+                }
+            } else {
+                // Fallback: if no parent, just delete the pfx folder
+                if pfx_path.exists() {
+                    fs::remove_dir_all(&pfx_path)
+                        .map_err(|e| format!("Failed to delete prefix: {}", e))?;
+                }
             }
+
             Self::unregister(app_id);
             Ok(())
         } else {

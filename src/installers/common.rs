@@ -8,8 +8,10 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::game_finder::detect_all_games;
 use crate::logging::{log_error, log_install, log_warning};
 
+use super::symlinks::{create_game_symlinks, create_nak_tools_symlinks, ensure_temp_directory};
 use super::TaskContext;
 
 // Re-export ManagerType from config for use in other installer modules
@@ -163,10 +165,8 @@ pub fn finalize_steam_installation_with_tools(
         setup_mo2_global_instance(prefix_path, install_dir);
     }
 
-    // Create game folders (prevents crashes for games that require them)
-    super::create_game_folders(prefix_path);
-
     // Create NaK Tools folder with utilities (only if we have a valid app_id)
+    // This also handles game symlinks and folder creation via game_finder
     if app_id > 0 {
         ctx.set_status("Creating NaK Tools folder...".to_string());
         if let Err(e) = create_nak_tools_folder(manager_type, install_dir, prefix_path, app_id, proton_path) {
@@ -240,197 +240,6 @@ fn find_prefix_username(users_dir: &Path) -> String {
 }
 
 // ============================================================================
-// Prefix Documents Setup
-// ============================================================================
-
-/// Set up the Prefix Documents folder in NaK Tools
-///
-/// Creates a real "Prefix Documents" folder in NaK Tools, then replaces the
-/// prefix's Documents folder with a symlink pointing to it. This makes saves
-/// and configs easily accessible from NaK Tools.
-fn setup_prefix_documents(tools_dir: &Path, prefix_path: &Path) {
-    // Create the real Prefix Documents folder in NaK Tools
-    let prefix_docs = tools_dir.join("Prefix Documents");
-    if let Err(e) = fs::create_dir_all(&prefix_docs) {
-        log_warning(&format!("Failed to create Prefix Documents folder: {}", e));
-        return;
-    }
-
-    // Find the prefix Documents folder
-    let users_dir = prefix_path.join("drive_c/users");
-    let username = find_prefix_username(&users_dir);
-    let wine_docs = users_dir.join(&username).join("Documents");
-
-    // If Documents exists and is a real directory (not a symlink), move its contents
-    if wine_docs.exists() && !wine_docs.is_symlink() {
-        // Move existing contents to Prefix Documents
-        if let Ok(entries) = fs::read_dir(&wine_docs) {
-            for entry in entries.flatten() {
-                let src = entry.path();
-                let dest = prefix_docs.join(entry.file_name());
-                if fs::rename(&src, &dest).is_err() {
-                    // If rename fails (cross-device), try copy
-                    if src.is_dir() {
-                        let _ = copy_dir_recursive(&src, &dest);
-                    } else {
-                        let _ = fs::copy(&src, &dest);
-                    }
-                }
-            }
-        }
-        // Remove the original Documents folder
-        let _ = fs::remove_dir_all(&wine_docs);
-    } else if wine_docs.is_symlink() {
-        // Already a symlink, remove it
-        let _ = fs::remove_file(&wine_docs);
-    }
-
-    // Ensure parent directory exists
-    if let Some(parent) = wine_docs.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    // Create symlink: prefix Documents -> NaK Tools/Prefix Documents
-    if let Err(e) = std::os::unix::fs::symlink(&prefix_docs, &wine_docs) {
-        log_warning(&format!("Failed to create Documents symlink: {}", e));
-    } else {
-        log_install("Set up Prefix Documents (accessible from NaK Tools)");
-    }
-}
-
-/// Set up the Prefix AppData Local folder in NaK Tools
-///
-/// Creates a real "Prefix AppData Local" folder in NaK Tools, then replaces the
-/// prefix's AppData/Local folder with a symlink pointing to it. This makes
-/// game configs and data easily accessible from NaK Tools.
-fn setup_prefix_appdata_local(tools_dir: &Path, prefix_path: &Path) {
-    // Create the real Prefix AppData Local folder in NaK Tools
-    let prefix_appdata_local = tools_dir.join("Prefix AppData Local");
-    if let Err(e) = fs::create_dir_all(&prefix_appdata_local) {
-        log_warning(&format!("Failed to create Prefix AppData Local folder: {}", e));
-        return;
-    }
-
-    // Find the prefix AppData/Local folder
-    let users_dir = prefix_path.join("drive_c/users");
-    let username = find_prefix_username(&users_dir);
-    let wine_appdata_local = users_dir.join(&username).join("AppData/Local");
-
-    // If AppData/Local exists and is a real directory (not a symlink), move its contents
-    if wine_appdata_local.exists() && !wine_appdata_local.is_symlink() {
-        // Move existing contents to Prefix AppData Local
-        if let Ok(entries) = fs::read_dir(&wine_appdata_local) {
-            for entry in entries.flatten() {
-                let src = entry.path();
-                let dest = prefix_appdata_local.join(entry.file_name());
-                if fs::rename(&src, &dest).is_err() {
-                    // If rename fails (cross-device), try copy
-                    if src.is_dir() {
-                        let _ = copy_dir_recursive(&src, &dest);
-                    } else {
-                        let _ = fs::copy(&src, &dest);
-                    }
-                }
-            }
-        }
-        // Remove the original AppData/Local folder
-        let _ = fs::remove_dir_all(&wine_appdata_local);
-    } else if wine_appdata_local.is_symlink() {
-        // Already a symlink, remove it
-        let _ = fs::remove_file(&wine_appdata_local);
-    }
-
-    // Ensure parent directory exists
-    if let Some(parent) = wine_appdata_local.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    // Create symlink: prefix AppData/Local -> NaK Tools/Prefix AppData Local
-    if let Err(e) = std::os::unix::fs::symlink(&prefix_appdata_local, &wine_appdata_local) {
-        log_warning(&format!("Failed to create AppData Local symlink: {}", e));
-    } else {
-        log_install("Set up Prefix AppData Local (accessible from NaK Tools)");
-    }
-
-    // Ensure Temp directory exists (some apps like MO2 require this)
-    let temp_dir = prefix_appdata_local.join("Temp");
-    if let Err(e) = fs::create_dir_all(&temp_dir) {
-        log_warning(&format!("Failed to create Temp directory: {}", e));
-    }
-}
-
-/// Set up the Prefix AppData Roaming folder in NaK Tools
-///
-/// Creates a real "Prefix AppData Roaming" folder in NaK Tools, then replaces the
-/// prefix's AppData/Roaming folder with a symlink pointing to it. This makes
-/// game configs and data easily accessible from NaK Tools.
-fn setup_prefix_appdata_roaming(tools_dir: &Path, prefix_path: &Path) {
-    // Create the real Prefix AppData Roaming folder in NaK Tools
-    let prefix_appdata_roaming = tools_dir.join("Prefix AppData Roaming");
-    if let Err(e) = fs::create_dir_all(&prefix_appdata_roaming) {
-        log_warning(&format!("Failed to create Prefix AppData Roaming folder: {}", e));
-        return;
-    }
-
-    // Find the prefix AppData/Roaming folder
-    let users_dir = prefix_path.join("drive_c/users");
-    let username = find_prefix_username(&users_dir);
-    let wine_appdata_roaming = users_dir.join(&username).join("AppData/Roaming");
-
-    // If AppData/Roaming exists and is a real directory (not a symlink), move its contents
-    if wine_appdata_roaming.exists() && !wine_appdata_roaming.is_symlink() {
-        // Move existing contents to Prefix AppData Roaming
-        if let Ok(entries) = fs::read_dir(&wine_appdata_roaming) {
-            for entry in entries.flatten() {
-                let src = entry.path();
-                let dest = prefix_appdata_roaming.join(entry.file_name());
-                if fs::rename(&src, &dest).is_err() {
-                    // If rename fails (cross-device), try copy
-                    if src.is_dir() {
-                        let _ = copy_dir_recursive(&src, &dest);
-                    } else {
-                        let _ = fs::copy(&src, &dest);
-                    }
-                }
-            }
-        }
-        // Remove the original AppData/Roaming folder
-        let _ = fs::remove_dir_all(&wine_appdata_roaming);
-    } else if wine_appdata_roaming.is_symlink() {
-        // Already a symlink, remove it
-        let _ = fs::remove_file(&wine_appdata_roaming);
-    }
-
-    // Ensure parent directory exists
-    if let Some(parent) = wine_appdata_roaming.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    // Create symlink: prefix AppData/Roaming -> NaK Tools/Prefix AppData Roaming
-    if let Err(e) = std::os::unix::fs::symlink(&prefix_appdata_roaming, &wine_appdata_roaming) {
-        log_warning(&format!("Failed to create AppData Roaming symlink: {}", e));
-    } else {
-        log_install("Set up Prefix AppData Roaming (accessible from NaK Tools)");
-    }
-}
-
-/// Recursively copy a directory
-fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dest)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dest_path = dest.join(entry.file_name());
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dest_path)?;
-        } else {
-            fs::copy(&src_path, &dest_path)?;
-        }
-    }
-    Ok(())
-}
-
-// ============================================================================
 // Disk Space Validation
 // ============================================================================
 
@@ -501,6 +310,11 @@ pub fn check_cancelled(ctx: &TaskContext) -> Result<(), InstallError> {
 /// Creates NaK utility scripts in the mod manager installation directory.
 /// Scripts are placed directly in the root folder alongside the mod manager executable.
 /// The NaK Tools subfolder contains the Wine Prefix symlink.
+///
+/// Uses the new GameFinder-style approach:
+/// - Detects games from all supported launchers (Steam, Heroic, Bottles)
+/// - Creates symlinks FROM NaK prefix TO game prefixes (data stays in game prefix)
+/// - Only creates essential directories (Temp)
 pub fn create_nak_tools_folder(
     manager_type: ManagerType,
     install_dir: &Path,
@@ -528,26 +342,30 @@ pub fn create_nak_tools_folder(
         log_install("Created Wine Prefix symlink");
     }
 
-    // For Vortex: Keep AppData/Documents inside the prefix normally,
-    // and import game folders directly as symlinks inside the prefix.
-    // This avoids issues with Vortex seeing paths going to external "Z:" drive locations.
-    if manager_type == ManagerType::Vortex {
-        // Import game folders directly into prefix's AppData/Documents
-        super::compatdata_scanner::import_compatdata_to_prefix(prefix_path);
-        log_install("Imported game folders directly into Vortex prefix");
-    } else {
-        // 2. Set up Prefix Documents folder (real folder in NaK Tools, symlinked from prefix)
-        setup_prefix_documents(&tools_dir, prefix_path);
+    // 2. Detect all games using the game_finder module
+    let scan_result = detect_all_games();
+    log_install(&format!(
+        "Detected {} games (Steam: {}, Heroic: {}, Bottles: {})",
+        scan_result.games.len(),
+        scan_result.steam_count,
+        scan_result.heroic_count,
+        scan_result.bottles_count
+    ));
 
-        // 3. Set up Prefix AppData Local folder (real folder in NaK Tools, symlinked from prefix)
-        setup_prefix_appdata_local(&tools_dir, prefix_path);
+    // 3. Create symlinks from NaK prefix to game prefixes
+    // This inverts the symlink direction: NaK prefix -> game prefix
+    // Data stays in the game prefix (preserving Steam Cloud sync)
+    create_game_symlinks(prefix_path, &scan_result.games);
 
-        // 4. Set up Prefix AppData Roaming folder (real folder in NaK Tools, symlinked from prefix)
-        setup_prefix_appdata_roaming(&tools_dir, prefix_path);
+    // 4. Ensure only essential directories exist (Temp required by MO2)
+    ensure_temp_directory(prefix_path);
 
-        // 5. Universal auto-import from ALL Steam compatdata folders
-        super::compatdata_scanner::auto_import_from_all_compatdata(&tools_dir);
-    }
+    // 5. Create NaK Tools convenience symlinks pointing INTO the prefix
+    // These provide easy access to prefix folders from NaK Tools:
+    // - Prefix Documents -> prefix/Documents
+    // - Prefix AppData Local -> prefix/AppData/Local
+    // - Prefix AppData Roaming -> prefix/AppData/Roaming
+    create_nak_tools_symlinks(&tools_dir, prefix_path);
 
     // === All scripts and configs go in NaK Tools folder ===
 

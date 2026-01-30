@@ -10,21 +10,19 @@
 
 use std::error::Error;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command};
 
 use super::{apply_wine_registry_settings, TaskContext};
 use crate::config::AppConfig;
 use crate::deps::{install_standard_deps, STANDARD_VERBS};
+use crate::game_finder::{detect_all_games, Game};
 use crate::logging::{log_install, log_warning};
 use crate::steam::{detect_steam_path_checked, SteamProton};
 
 // =============================================================================
 // Constants
 // =============================================================================
-
-/// Default Wine prefix username (Proton always uses this)
-const PREFIX_USERNAME: &str = "steamuser";
 
 /// .NET 9 SDK download URL
 const DOTNET9_SDK_URL: &str = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.310/dotnet-sdk-9.0.310-win-x64.exe";
@@ -420,261 +418,45 @@ pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
 }
 
 // ============================================================================
-// Bethesda Game Mapping
+// Game Registry Detection (uses game_finder module)
 // ============================================================================
 
-/// Mapping of My Games folder name to Steam App ID
-const BETHESDA_GAMES: &[(&str, &str)] = &[
-    // (My Games folder name, Steam App ID)
-    ("Enderal", "933480"),                    // Enderal: Forgotten Stories
-    ("Enderal Special Edition", "976620"),    // Enderal: Forgotten Stories SE
-    ("Fallout3", "22300"),                    // Fallout 3 (also 22370 for GOTY)
-    ("Fallout4", "377160"),                   // Fallout 4
-    ("Fallout4VR", "611660"),                 // Fallout 4 VR
-    ("FalloutNV", "22380"),                   // Fallout: New Vegas
-    ("Morrowind", "22320"),                   // Morrowind
-    ("Oblivion", "22330"),                    // Oblivion
-    ("Skyrim", "72850"),                      // Skyrim (original)
-    ("Skyrim Special Edition", "489830"),     // Skyrim SE/AE
-    ("Skyrim VR", "611670"),                  // Skyrim VR
-    ("Starfield", "1716740"),                 // Starfield
-];
-
-/// Games that need AppData/Local/<name>/
-const APPDATA_GAMES: &[&str] = &[
-    "Fallout3",
-    "Fallout4",
-    "FalloutNV",
-    "Oblivion",
-    "Skyrim",
-    "Skyrim Special Edition",
-];
-
-// ============================================================================
-// Game Registry Configuration (for auto-detection)
-// ============================================================================
-
-/// Game registry configuration for auto-detection
-struct GameRegistryConfig {
-    /// Display name
-    name: &'static str,
-    /// Steam App ID
-    app_id: &'static str,
-    /// Registry key path (under HKLM\Software\)
-    reg_path: &'static str,
-    /// Registry value name for install path
-    value_name: &'static str,
-    /// Expected folder name in steamapps/common/
-    steam_folder: &'static str,
-}
-
-/// All supported games with their registry configurations
-const GAME_REGISTRY_CONFIGS: &[GameRegistryConfig] = &[
-    GameRegistryConfig {
-        name: "Enderal",
-        app_id: "933480",
-        reg_path: r"Software\SureAI\Enderal",
-        value_name: "Install_Path",
-        steam_folder: "Enderal",
-    },
-    GameRegistryConfig {
-        name: "Enderal Special Edition",
-        app_id: "976620",
-        reg_path: r"Software\SureAI\Enderal SE",
-        value_name: "installed path",
-        steam_folder: "Enderal Special Edition",
-    },
-    GameRegistryConfig {
-        name: "Fallout 3",
-        app_id: "22300",
-        reg_path: r"Software\Bethesda Softworks\Fallout3",
-        value_name: "Installed Path",
-        steam_folder: "Fallout 3",
-    },
-    GameRegistryConfig {
-        name: "Fallout 4",
-        app_id: "377160",
-        reg_path: r"Software\Bethesda Softworks\Fallout4",
-        value_name: "Installed Path",
-        steam_folder: "Fallout 4",
-    },
-    GameRegistryConfig {
-        name: "Fallout 4 VR",
-        app_id: "611660",
-        reg_path: r"Software\Bethesda Softworks\Fallout 4 VR",
-        value_name: "Installed Path",
-        steam_folder: "Fallout 4 VR",
-    },
-    GameRegistryConfig {
-        name: "Fallout New Vegas",
-        app_id: "22380",
-        reg_path: r"Software\Bethesda Softworks\FalloutNV",
-        value_name: "Installed Path",
-        steam_folder: "Fallout New Vegas",
-    },
-    GameRegistryConfig {
-        name: "Morrowind",
-        app_id: "22320",
-        reg_path: r"Software\Bethesda Softworks\Morrowind",
-        value_name: "Installed Path",
-        steam_folder: "Morrowind",
-    },
-    GameRegistryConfig {
-        name: "Oblivion",
-        app_id: "22330",
-        reg_path: r"Software\Bethesda Softworks\Oblivion",
-        value_name: "Installed Path",
-        steam_folder: "Oblivion",
-    },
-    GameRegistryConfig {
-        name: "Skyrim",
-        app_id: "72850",
-        reg_path: r"Software\Bethesda Softworks\Skyrim",
-        value_name: "Installed Path",
-        steam_folder: "Skyrim",
-    },
-    GameRegistryConfig {
-        name: "Skyrim Special Edition",
-        app_id: "489830",
-        reg_path: r"Software\Bethesda Softworks\Skyrim Special Edition",
-        value_name: "Installed Path",
-        steam_folder: "Skyrim Special Edition",
-    },
-    GameRegistryConfig {
-        name: "Skyrim VR",
-        app_id: "611670",
-        reg_path: r"Software\Bethesda Softworks\Skyrim VR",
-        value_name: "Installed Path",
-        steam_folder: "Skyrim VR",
-    },
-    GameRegistryConfig {
-        name: "Starfield",
-        app_id: "1716740",
-        reg_path: r"Software\Bethesda Softworks\Starfield",
-        value_name: "Installed Path",
-        steam_folder: "Starfield",
-    },
-];
-
-/// Find the installation path for a game in Steam library folders
-fn find_steam_game_install(steam_path: &Path, steam_folder: &str) -> Option<PathBuf> {
-    // Check main steamapps first
-    let main_path = steam_path.join("steamapps/common").join(steam_folder);
-    if main_path.exists() {
-        return Some(main_path);
-    }
-
-    // Check library folders
-    let library_vdf = steam_path.join("steamapps/libraryfolders.vdf");
-    if let Ok(content) = fs::read_to_string(&library_vdf) {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("\"path\"") {
-                if let Some(path_str) = trimmed.split('"').nth(3) {
-                    let game_path = PathBuf::from(path_str)
-                        .join("steamapps/common")
-                        .join(steam_folder);
-                    if game_path.exists() {
-                        return Some(game_path);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Auto-detect installed Steam games and apply registry entries
+/// Auto-detect installed games and apply registry entries
 ///
-/// This scans Steam library folders for installed games and automatically
-/// adds the registry entries so mod managers can detect them.
+/// This uses the game_finder module to detect installed games across all
+/// supported launchers (Steam, Heroic, Bottles) and automatically adds
+/// the registry entries so mod managers can detect them.
 pub fn auto_apply_game_registries(
     prefix_path: &Path,
     proton: &SteamProton,
     log_callback: &impl Fn(String),
     _app_id: Option<u32>,
 ) {
-    let steam_path = match detect_steam_path_checked() {
-        Some(p) => PathBuf::from(p),
-        None => {
-            log_warning("Could not find Steam path for game registry auto-detection");
-            return;
-        }
-    };
-
     let Some(wine_bin) = proton.wine_binary() else {
         log_warning("Wine binary not found, skipping game registry auto-detection");
         return;
     };
 
+    // Use the new game_finder module to detect all games
+    let scan_result = detect_all_games();
     let mut applied_count = 0;
 
-    for game in GAME_REGISTRY_CONFIGS {
-        // Check if game is installed
-        let game_path = match find_steam_game_install(&steam_path, game.steam_folder) {
-            Some(p) => p,
-            None => continue,
+    for game in &scan_result.games {
+        // Only process games that have registry info
+        let (Some(reg_path), Some(reg_value)) = (&game.registry_path, &game.registry_value) else {
+            continue;
         };
 
-        log_callback(format!("Found {}, applying registry...", game.name));
-
-        // Convert Linux path to Wine Z: drive path with escaped backslashes for .reg file
-        let linux_path = game_path.to_string_lossy();
-        let wine_path_reg = format!("Z:{}", linux_path.replace('/', "\\\\"));
-
-        // Create .reg file content
-        let reg_content = format!(
-            r#"Windows Registry Editor Version 5.00
-
-[HKEY_LOCAL_MACHINE\{}]
-"{}"="{}"
-
-[HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\{}]
-"{}"="{}"
-"#,
-            game.reg_path,
-            game.value_name,
-            wine_path_reg,
-            game.reg_path.strip_prefix("Software\\").unwrap_or(game.reg_path),
-            game.value_name,
-            wine_path_reg,
-        );
-
-        // Write temp .reg file
-        let tmp_dir = AppConfig::get_tmp_path();
-        let reg_file = tmp_dir.join(format!("game_reg_{}.reg", game.app_id));
-
-        if let Err(e) = fs::write(&reg_file, &reg_content) {
-            log_warning(&format!("Failed to write registry file for {}: {}", game.name, e));
-            continue;
-        }
-
-        // Apply registry
-        let status = Command::new(&wine_bin)
-            .arg("regedit")
-            .arg(&reg_file)
-            .env("WINEPREFIX", prefix_path)
-            .env("WINEDLLOVERRIDES", "mshtml=d")
-            .env("PROTON_USE_XALIA", "0")
-            .status();
-
-        let _ = fs::remove_file(&reg_file);
-
-        match status {
-            Ok(s) if s.success() => {
-                log_install(&format!("Applied registry for {} -> {:?}", game.name, game_path));
-                applied_count += 1;
-            }
-            Ok(s) => {
-                log_warning(&format!(
-                    "Registry for {} may have failed (exit code: {:?})",
-                    game.name,
-                    s.code()
-                ));
-            }
-            Err(e) => {
-                log_warning(&format!("Failed to apply registry for {}: {}", game.name, e));
-            }
+        // Apply registry for this game
+        if apply_game_registry(
+            prefix_path,
+            &wine_bin,
+            game,
+            reg_path,
+            reg_value,
+            log_callback,
+        ) {
+            applied_count += 1;
         }
     }
 
@@ -684,154 +466,76 @@ pub fn auto_apply_game_registries(
     }
 }
 
-/// Find the Steam prefix for a game by App ID
-fn find_steam_game_prefix(steam_path: &Path, app_id: &str) -> Option<PathBuf> {
-    // Check main steamapps first
-    let main_prefix = steam_path
-        .join("steamapps/compatdata")
-        .join(app_id)
-        .join("pfx");
-    if main_prefix.exists() {
-        return Some(main_prefix);
+/// Apply registry entry for a single game
+fn apply_game_registry(
+    prefix_path: &Path,
+    wine_bin: &Path,
+    game: &Game,
+    reg_path: &str,
+    reg_value: &str,
+    log_callback: &impl Fn(String),
+) -> bool {
+    log_callback(format!("Found {}, applying registry...", game.name));
+
+    // Convert Linux path to Wine Z: drive path with escaped backslashes for .reg file
+    let linux_path = game.install_path.to_string_lossy();
+    let wine_path_reg = format!("Z:{}", linux_path.replace('/', "\\\\"));
+
+    // Create .reg file content
+    let reg_content = format!(
+        r#"Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\{}]
+"{}"="{}"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\{}]
+"{}"="{}"
+"#,
+        reg_path,
+        reg_value,
+        wine_path_reg,
+        reg_path.strip_prefix("Software\\").unwrap_or(reg_path),
+        reg_value,
+        wine_path_reg,
+    );
+
+    // Write temp .reg file
+    let tmp_dir = AppConfig::get_tmp_path();
+    let reg_file = tmp_dir.join(format!("game_reg_{}.reg", game.app_id));
+
+    if let Err(e) = fs::write(&reg_file, &reg_content) {
+        log_warning(&format!("Failed to write registry file for {}: {}", game.name, e));
+        return false;
     }
 
-    // Check library folders
-    let library_vdf = steam_path.join("steamapps/libraryfolders.vdf");
-    if let Ok(content) = fs::read_to_string(&library_vdf) {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("\"path\"") {
-                if let Some(path_str) = trimmed.split('"').nth(3) {
-                    let prefix = PathBuf::from(path_str)
-                        .join("steamapps/compatdata")
-                        .join(app_id)
-                        .join("pfx");
-                    if prefix.exists() {
-                        return Some(prefix);
-                    }
-                }
-            }
+    // Apply registry
+    let status = Command::new(wine_bin)
+        .arg("regedit")
+        .arg(&reg_file)
+        .env("WINEPREFIX", prefix_path)
+        .env("WINEDLLOVERRIDES", "mshtml=d")
+        .env("PROTON_USE_XALIA", "0")
+        .status();
+
+    let _ = fs::remove_file(&reg_file);
+
+    match status {
+        Ok(s) if s.success() => {
+            log_install(&format!("Applied registry for {} -> {:?}", game.name, game.install_path));
+            true
         }
-    }
-    None
-}
-
-/// Get the username from a Wine prefix (Proton always uses "steamuser")
-fn get_prefix_username(_prefix_root: &Path) -> &'static str {
-    PREFIX_USERNAME
-}
-
-/// Create game-specific folders in the Wine prefix
-/// Symlinks to existing Steam game saves/configs when available
-pub fn create_game_folders(prefix_root: &Path) {
-    let username = get_prefix_username(prefix_root);
-    let user_dir = prefix_root.join("drive_c/users").join(username);
-    let documents_dir = user_dir.join("Documents");
-    let my_games_dir = documents_dir.join("My Games");
-    let appdata_local = user_dir.join("AppData/Local");
-
-    // Ensure base directories exist
-    let _ = fs::create_dir_all(&my_games_dir);
-    let _ = fs::create_dir_all(&appdata_local);
-
-    // Find Steam installation (using shared utility)
-    let steam_path = detect_steam_path_checked().map(PathBuf::from);
-
-    // Process each Bethesda game
-    for (game_folder, app_id) in BETHESDA_GAMES {
-        let target_dir = my_games_dir.join(game_folder);
-
-        // Skip if already exists (don't overwrite)
-        if target_dir.exists() || fs::symlink_metadata(&target_dir).is_ok() {
-            continue;
-        }
-
-        // Try to find and symlink from Steam prefix
-        let mut linked = false;
-        if let Some(ref steam) = steam_path {
-            if let Some(game_prefix) = find_steam_game_prefix(steam, app_id) {
-                let game_username = get_prefix_username(&game_prefix);
-                let source_dir = game_prefix
-                    .join("drive_c/users")
-                    .join(game_username)
-                    .join("Documents/My Games")
-                    .join(game_folder);
-
-                if source_dir.exists() {
-                    match std::os::unix::fs::symlink(&source_dir, &target_dir) {
-                        Ok(()) => {
-                            log_install(&format!(
-                                "Linked My Games/{} from Steam prefix (App {})",
-                                game_folder, app_id
-                            ));
-                            linked = true;
-                        }
-                        Err(e) => {
-                            log_warning(&format!(
-                                "Failed to symlink My Games/{}: {}",
-                                game_folder, e
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Create empty folder if no Steam prefix found
-        if !linked {
-            if let Err(e) = fs::create_dir_all(&target_dir) {
-                log_warning(&format!("Failed to create My Games/{}: {}", game_folder, e));
-            }
-        }
-    }
-
-    // Handle Oblivion lowercase INI symlinks
-    // Some tools expect lowercase oblivion.ini alongside Oblivion.ini
-    let oblivion_dir = my_games_dir.join("Oblivion");
-    if oblivion_dir.exists() {
-        create_lowercase_ini_symlink(&oblivion_dir, "Oblivion.ini", "oblivion.ini");
-        create_lowercase_ini_symlink(&oblivion_dir, "OblivionPrefs.ini", "oblivionprefs.ini");
-    }
-
-    // Create AppData/Local folders (these don't usually have existing data to link)
-    for game in APPDATA_GAMES {
-        let game_dir = appdata_local.join(game);
-        if !game_dir.exists() {
-            if let Err(e) = fs::create_dir_all(&game_dir) {
-                log_warning(&format!("Failed to create AppData/Local/{}: {}", game, e));
-            }
-        }
-    }
-
-    // Create "My Documents" symlink if it doesn't exist
-    let my_documents_link = user_dir.join("My Documents");
-    if !my_documents_link.exists() && fs::symlink_metadata(&my_documents_link).is_err() {
-        if let Err(e) = std::os::unix::fs::symlink("Documents", &my_documents_link) {
-            log_warning(&format!("Failed to create My Documents symlink: {}", e));
-        }
-    }
-
-    log_install("Created/linked game folders in prefix (Documents/My Games, AppData/Local)");
-}
-
-/// Create a lowercase symlink for an INI file (for tools that expect lowercase)
-fn create_lowercase_ini_symlink(dir: &Path, original: &str, lowercase: &str) {
-    let original_path = dir.join(original);
-    let lowercase_path = dir.join(lowercase);
-
-    // Only create if original exists and lowercase doesn't
-    if original_path.exists()
-        && !lowercase_path.exists()
-        && fs::symlink_metadata(&lowercase_path).is_err()
-    {
-        // Create relative symlink (just the filename)
-        if let Err(e) = std::os::unix::fs::symlink(original, &lowercase_path) {
+        Ok(s) => {
             log_warning(&format!(
-                "Failed to create lowercase symlink {} -> {}: {}",
-                lowercase, original, e
+                "Registry for {} may have failed (exit code: {:?})",
+                game.name,
+                s.code()
             ));
-        } else {
-            log_install(&format!("Created lowercase INI symlink: {} -> {}", lowercase, original));
+            false
+        }
+        Err(e) => {
+            log_warning(&format!("Failed to apply registry for {}: {}", game.name, e));
+            false
         }
     }
 }
+

@@ -7,6 +7,7 @@ use eframe::egui;
 mod app;
 mod config;
 mod deps;
+mod game_finder;
 mod installers;
 mod logging;
 mod marketplace;

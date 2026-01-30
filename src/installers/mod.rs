@@ -1,18 +1,21 @@
 //! Mod manager installation logic (Steam-native)
 
 mod common;
-mod compatdata_scanner;
+mod compatdata_scanner; // Deprecated: kept for reference, use game_finder instead
 mod mo2;
 mod plugin;
 mod prefix_setup;
+pub mod symlinks;
 
 pub use common::{get_available_disk_space, regenerate_nak_tools_scripts, MIN_REQUIRED_DISK_SPACE_GB};
 pub use mo2::{install_mo2, setup_existing_mo2};
 pub use plugin::install_plugin;
 pub use prefix_setup::{
-    apply_dpi, create_game_folders,
+    apply_dpi,
     install_all_dependencies, kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
 };
+// Public symlinks API - used internally by create_nak_tools_folder
+// pub use symlinks::{create_game_symlinks, create_game_symlinks_auto, ensure_temp_directory};
 
 use std::error::Error;
 use std::fs;
