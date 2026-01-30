@@ -513,8 +513,12 @@ fn generate_nxm_toggle_script(app_id: u32, manager_name: &str, install_dir: &Pat
     let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
     let proton_str = crate::config::normalize_path_for_steam(&proton_path.to_string_lossy());
 
-    // NXM handler exe path
-    let nxm_exe = format!("{}/nxmhandler.exe", install_str);
+    // NXM handler exe path - Vortex uses Vortex.exe, MO2 uses nxmhandler.exe
+    let nxm_exe = if manager_name == "Vortex" {
+        format!("{}/Vortex.exe", install_str)
+    } else {
+        format!("{}/nxmhandler.exe", install_str)
+    };
 
     include_str!("../scripts/nxm_toggle.sh")
         .replace("{{APP_ID}}", &app_id.to_string())
