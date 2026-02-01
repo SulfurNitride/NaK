@@ -14,7 +14,7 @@ use eframe::egui;
 use std::sync::atomic::Ordering;
 
 use crate::app::MyApp;
-use crate::logging::{log_error, log_info};
+use nak_rust::logging::{log_error, log_info};
 
 // ============================================================================
 // eframe::App Implementation

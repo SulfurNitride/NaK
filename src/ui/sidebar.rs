@@ -1,8 +1,8 @@
 //! Sidebar navigation
 
 use crate::app::{MyApp, Page};
-use crate::logging::log_action;
-use crate::steam::get_steam_accounts;
+use nak_rust::logging::log_action;
+use nak_rust::steam::get_steam_accounts;
 use eframe::egui;
 
 pub fn render_sidebar(app: &mut MyApp, _ctx: &egui::Context, ui: &mut egui::Ui, is_enabled: bool) {

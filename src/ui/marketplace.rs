@@ -5,9 +5,9 @@ use std::sync::atomic::Ordering;
 use std::thread;
 
 use crate::app::MyApp;
-use crate::installers::{install_plugin, TaskContext};
-use crate::logging::log_action;
-use crate::marketplace::{
+use nak_rust::installers::{install_plugin, TaskContext};
+use nak_rust::logging::log_action;
+use nak_rust::marketplace::{
     fetch_registry, fetch_plugin_manifest, check_version_compatible,
     get_plugin_display_info, get_plugin_exe_name,
     Registry, PluginManifest,
@@ -447,7 +447,7 @@ fn start_plugin_installation(app: &mut MyApp, manifest: PluginManifest) {
             Ok(result) => {
                 // Auto-restart Steam so the shortcut appears
                 *cb_status.lock().unwrap() = "Restarting Steam...".to_string();
-                match crate::steam::restart_steam() {
+                match nak_rust::steam::restart_steam() {
                     Ok(_) => {
                         *cb_status.lock().unwrap() = format!(
                             "{} Installed! AppID: {}. Steam has been restarted.",
@@ -456,7 +456,7 @@ fn start_plugin_installation(app: &mut MyApp, manifest: PluginManifest) {
                         );
                     }
                     Err(e) => {
-                        crate::logging::log_warning(&format!("Failed to restart Steam: {}", e));
+                        nak_rust::logging::log_warning(&format!("Failed to restart Steam: {}", e));
                         *cb_status.lock().unwrap() = format!(
                             "{} Installed! AppID: {}. Please restart Steam manually.",
                             manifest.plugin.name,

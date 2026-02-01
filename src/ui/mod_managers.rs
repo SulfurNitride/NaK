@@ -5,12 +5,12 @@ use std::sync::atomic::Ordering;
 use std::thread;
 
 use crate::app::{InstallWizard, MyApp, WizardStep};
-use crate::installers::{
+use nak_rust::installers::{
     apply_dpi, get_available_disk_space, install_mo2, kill_wineserver,
     launch_dpi_test_app, setup_existing_mo2, TaskContext, DPI_PRESETS,
     MIN_REQUIRED_DISK_SPACE_GB,
 };
-use crate::logging::log_action;
+use nak_rust::logging::log_action;
 
 pub fn render_mod_managers(app: &mut MyApp, ui: &mut egui::Ui) {
     ui.heading("MO2 Installation");
@@ -107,7 +107,7 @@ fn render_install_wizard(
     status: &str,
     _progress: f32,
     manager_name: &str,
-    steam_protons: &[crate::steam::SteamProton],
+    steam_protons: &[nak_rust::steam::SteamProton],
     ui: &mut egui::Ui
 ) -> WizardAction {
     let mut action = WizardAction::None;
@@ -587,8 +587,8 @@ fn render_install_wizard(
                                 ui.add_space(8.0);
                                 ui.horizontal(|ui| {
                                     if ui.button("Restart Steam Now").clicked() {
-                                        if let Err(e) = crate::steam::restart_steam() {
-                                            crate::logging::log_error(&format!("Failed to restart Steam: {}", e));
+                                        if let Err(e) = nak_rust::steam::restart_steam() {
+                                            nak_rust::logging::log_error(&format!("Failed to restart Steam: {}", e));
                                         }
                                     }
                                 });
@@ -778,20 +778,20 @@ fn start_installation(app: &mut MyApp) {
 
                 // Apply the selected Proton version via Steam's config
                 *status_arc.lock().unwrap() = "Applying Proton compatibility settings...".to_string();
-                if let Err(e) = crate::steam::set_compat_tool(app_id, &proton_config_name) {
-                    crate::logging::log_warning(&format!("Failed to set Proton compat tool: {}", e));
+                if let Err(e) = nak_rust::steam::set_compat_tool(app_id, &proton_config_name) {
+                    nak_rust::logging::log_warning(&format!("Failed to set Proton compat tool: {}", e));
                 } else {
-                    crate::logging::log_info(&format!("Set Proton '{}' for AppID {}", proton_config_name, app_id));
+                    nak_rust::logging::log_info(&format!("Set Proton '{}' for AppID {}", proton_config_name, app_id));
                 }
 
                 // Auto-restart Steam so the shortcut appears
                 *status_arc.lock().unwrap() = "Restarting Steam...".to_string();
-                match crate::steam::restart_steam() {
+                match nak_rust::steam::restart_steam() {
                     Ok(_) => {
                         *status_arc.lock().unwrap() = "Installation Complete! Steam has been restarted.".to_string();
                     }
                     Err(e) => {
-                        crate::logging::log_warning(&format!("Failed to restart Steam automatically: {}", e));
+                        nak_rust::logging::log_warning(&format!("Failed to restart Steam automatically: {}", e));
                         *status_arc.lock().unwrap() = "Installation Complete! Please restart Steam manually.".to_string();
                     }
                 }
@@ -817,7 +817,7 @@ fn get_wizard_prefix_path(app: &MyApp) -> Option<std::path::PathBuf> {
 
     // Fallback: try to compute from primary Steam path + AppID
     if let Some(app_id) = app.install_wizard.installed_app_id {
-        if let Some(steam_path) = crate::steam::find_steam_path() {
+        if let Some(steam_path) = nak_rust::steam::find_steam_path() {
             return Some(steam_path.join("steamapps/compatdata").join(app_id.to_string()).join("pfx"));
         }
     }
@@ -833,7 +833,7 @@ fn handle_apply_dpi(app: &mut MyApp, dpi_value: u32) {
     let prefix_path = match get_wizard_prefix_path(app) {
         Some(p) => p,
         None => {
-            crate::logging::log_error("No prefix path available for DPI setting");
+            nak_rust::logging::log_error("No prefix path available for DPI setting");
             return;
         }
     };
@@ -847,7 +847,7 @@ fn handle_apply_dpi(app: &mut MyApp, dpi_value: u32) {
     let proton = match proton {
         Some(p) => p,
         None => {
-            crate::logging::log_error("No proton selected for DPI setting");
+            nak_rust::logging::log_error("No proton selected for DPI setting");
             return;
         }
     };
@@ -858,10 +858,10 @@ fn handle_apply_dpi(app: &mut MyApp, dpi_value: u32) {
 
     // Apply the DPI setting
     if let Err(e) = apply_dpi(&prefix_path, &proton, dpi_value) {
-        crate::logging::log_error(&format!("Failed to apply DPI: {}", e));
+        nak_rust::logging::log_error(&format!("Failed to apply DPI: {}", e));
     } else {
         app.install_wizard.selected_dpi = dpi_value;
-        crate::logging::log_info(&format!("DPI set to {}", dpi_value));
+        nak_rust::logging::log_info(&format!("DPI set to {}", dpi_value));
     }
 }
 
@@ -873,7 +873,7 @@ fn handle_launch_test_app(app: &mut MyApp, app_name: &str) {
     let prefix_path = match get_wizard_prefix_path(app) {
         Some(p) => p,
         None => {
-            crate::logging::log_error("No prefix path available for test app");
+            nak_rust::logging::log_error("No prefix path available for test app");
             return;
         }
     };
@@ -887,7 +887,7 @@ fn handle_launch_test_app(app: &mut MyApp, app_name: &str) {
     let proton = match proton {
         Some(p) => p,
         None => {
-            crate::logging::log_error("No proton selected for test app");
+            nak_rust::logging::log_error("No proton selected for test app");
             return;
         }
     };
@@ -897,10 +897,10 @@ fn handle_launch_test_app(app: &mut MyApp, app_name: &str) {
         Ok(child) => {
             // Track the PID
             app.dpi_test_processes.lock().unwrap().push(child.id());
-            crate::logging::log_info(&format!("Launched {} (PID: {})", app_name, child.id()));
+            nak_rust::logging::log_info(&format!("Launched {} (PID: {})", app_name, child.id()));
         }
         Err(e) => {
-            crate::logging::log_error(&format!("Failed to launch {}: {}", app_name, e));
+            nak_rust::logging::log_error(&format!("Failed to launch {}: {}", app_name, e));
         }
     }
 }
@@ -913,7 +913,7 @@ fn handle_confirm_dpi(app: &mut MyApp) {
     let prefix_path = match get_wizard_prefix_path(app) {
         Some(p) => p,
         None => {
-            crate::logging::log_error("No prefix path available");
+            nak_rust::logging::log_error("No prefix path available");
             app.install_wizard.step = WizardStep::Finished;
             return;
         }
@@ -933,14 +933,14 @@ fn handle_confirm_dpi(app: &mut MyApp) {
         // Apply final DPI setting if not default
         if app.install_wizard.selected_dpi != 96 {
             if let Err(e) = apply_dpi(&prefix_path, &proton, app.install_wizard.selected_dpi) {
-                crate::logging::log_error(&format!("Failed to apply final DPI: {}", e));
+                nak_rust::logging::log_error(&format!("Failed to apply final DPI: {}", e));
             }
         }
     }
 
     // Move to finished
     app.install_wizard.step = WizardStep::Finished;
-    crate::logging::log_info("DPI setup complete");
+    nak_rust::logging::log_info("DPI setup complete");
 }
 
 // Helper to launch winetricks

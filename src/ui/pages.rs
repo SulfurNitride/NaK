@@ -1,9 +1,9 @@
 //! Simple pages: Getting Started, Marketplace, Settings, First Run Setup
 
 use crate::app::{MyApp, Page};
-use crate::config::{AppConfig, ManagedPrefixes};
-use crate::logging::log_action;
-use crate::steam::ShortcutsVdf;
+use nak_rust::config::{AppConfig, ManagedPrefixes};
+use nak_rust::logging::log_action;
+use nak_rust::steam::ShortcutsVdf;
 use eframe::egui;
 use std::collections::HashSet;
 
@@ -205,7 +205,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                 );
                 ui.add_space(5.0);
 
-                let cache_status = crate::deps::precache::get_cache_status();
+                let cache_status = nak_rust::deps::precache::get_cache_status();
                 let is_precaching = *app.is_precaching.lock().unwrap();
 
                 // Show dependency cache status (quick check, no network)
@@ -254,7 +254,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                         if cache_status.cached_count() > 0
                             && ui.button("Clear Cache").clicked()
                         {
-                            if let Err(e) = crate::deps::precache::clear_cache() {
+                            if let Err(e) = nak_rust::deps::precache::clear_cache() {
                                 eprintln!("Failed to clear dependency cache: {}", e);
                             }
                         }
@@ -376,7 +376,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                     let active_app_ids = get_active_shortcut_app_ids();
 
                     let mut to_delete: Option<u32> = None;
-                    let mut to_update: Option<crate::config::ManagedPrefix> = None;
+                    let mut to_update: Option<nak_rust::config::ManagedPrefix> = None;
 
                     for prefix in &managed.prefixes {
                         let is_active = active_app_ids.contains(&prefix.app_id);
@@ -389,7 +389,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     // Manager icon/type
-                                    let type_color = if prefix.manager_type == crate::config::ManagerType::MO2 {
+                                    let type_color = if prefix.manager_type == nak_rust::config::ManagerType::MO2 {
                                         egui::Color32::from_rgb(100, 150, 255)
                                     } else {
                                         egui::Color32::from_rgb(255, 150, 100)
@@ -550,7 +550,7 @@ pub fn render_settings(app: &mut MyApp, ui: &mut egui::Ui) {
                             let install_path = std::path::Path::new(&prefix.install_path);
                             let prefix_path = std::path::Path::new(&prefix.prefix_path);
 
-                            match crate::installers::regenerate_nak_tools_scripts(
+                            match nak_rust::installers::regenerate_nak_tools_scripts(
                                 prefix.manager_type,
                                 install_path,
                                 prefix_path,
@@ -691,7 +691,7 @@ pub fn render_updater(app: &mut MyApp, ui: &mut egui::Ui) {
                 ui.add_space(10.0);
 
                 if info.download_url.is_some() {
-                    if crate::updater::can_self_update() {
+                    if nak_rust::updater::can_self_update() {
                         if ui.button("Install Update").clicked() {
                             log_action("Install update clicked");
                             let url = info.download_url.clone().unwrap();
@@ -703,7 +703,7 @@ pub fn render_updater(app: &mut MyApp, ui: &mut egui::Ui) {
                             *update_error.lock().unwrap() = None;
 
                             std::thread::spawn(move || {
-                                match crate::updater::install_update(&url) {
+                                match nak_rust::updater::install_update(&url) {
                                     Ok(_) => {
                                         *update_installed.lock().unwrap() = true;
                                     }
@@ -761,7 +761,7 @@ pub fn render_updater(app: &mut MyApp, ui: &mut egui::Ui) {
                 *update_error.lock().unwrap() = None;
 
                 std::thread::spawn(move || {
-                    match crate::updater::check_for_updates() {
+                    match nak_rust::updater::check_for_updates() {
                         Ok(info) => {
                             *update_info.lock().unwrap() = Some(info);
                         }
@@ -800,7 +800,7 @@ fn get_active_shortcut_app_ids() -> HashSet<u32> {
     let mut app_ids = HashSet::new();
 
     // Find Steam path
-    if let Some(steam_path) = crate::steam::find_steam_path() {
+    if let Some(steam_path) = nak_rust::steam::find_steam_path() {
         // Find all user directories in userdata
         let userdata_path = std::path::Path::new(&steam_path).join("userdata");
         if let Ok(entries) = std::fs::read_dir(&userdata_path) {

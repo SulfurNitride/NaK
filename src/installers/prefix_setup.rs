@@ -30,9 +30,12 @@ const DOTNET9_SDK_URL: &str = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.
 /// .NET Desktop Runtime 10 download URL
 const DOTNET_DESKTOP10_URL: &str = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.2/windowsdesktop-runtime-10.0.2-win-x64.exe";
 
+/// Drive letters to keep in the prefix (c: is Windows root, z: maps to Linux /)
+const ALLOWED_DRIVE_LETTERS: &[&str] = &["c:", "z:"];
+
 /// Install all dependencies to a prefix.
 ///
-/// Order: proton init → winetricks → custom dotnet → game detection → registry → win10 → dotnet fixes
+/// Order: proton init → winetricks → custom dotnet → game detection → registry → win11 → dotnet fixes
 ///
 /// # Arguments
 /// * `app_id` - Steam AppID (used for registry operations)
@@ -66,6 +69,22 @@ pub fn install_all_dependencies(
     }
 
     ctx.set_progress(init_end);
+
+    if ctx.is_cancelled() {
+        return Err("Cancelled".into());
+    }
+
+    // =========================================================================
+    // 0.5. Clean up unwanted drive letters (keep only C: and Z:)
+    // =========================================================================
+    ctx.set_status("Cleaning up Wine drive letters...".to_string());
+    ctx.log("Removing unwanted drive letters (keeping C: and Z:)...".to_string());
+    log_install("Cleaning up Wine drive letters");
+
+    if let Err(e) = cleanup_wine_drives(prefix_root, install_proton) {
+        ctx.log(format!("Warning: Drive cleanup had issues: {}", e));
+        log_warning(&format!("Drive cleanup failed: {}", e));
+    }
 
     if ctx.is_cancelled() {
         return Err("Cancelled".into());
@@ -164,15 +183,15 @@ pub fn install_all_dependencies(
     }
 
     // =========================================================================
-    // 5. Set Windows 10 Mode
+    // 5. Set Windows 11 Mode
     // =========================================================================
-    ctx.set_status("Setting Windows 10 mode...".to_string());
-    ctx.log("Setting Windows 10 mode...".to_string());
-    log_install("Setting Windows 10 mode via winetricks");
+    ctx.set_status("Setting Windows 11 mode...".to_string());
+    ctx.log("Setting Windows 11 mode...".to_string());
+    log_install("Setting Windows 11 mode via winetricks");
 
-    if let Err(e) = set_windows_10_mode(prefix_root, install_proton) {
-        ctx.log(format!("Warning: Failed to set Windows 10 mode: {}", e));
-        log_warning(&format!("Failed to set Windows 10 mode: {}", e));
+    if let Err(e) = set_windows_11_mode(prefix_root, install_proton) {
+        ctx.log(format!("Warning: Failed to set Windows 11 mode: {}", e));
+        log_warning(&format!("Failed to set Windows 11 mode: {}", e));
     }
 
     if ctx.is_cancelled() {
@@ -288,11 +307,142 @@ fn initialize_prefix_with_proton(
     }
 }
 
-/// Set Windows 10 mode for the prefix using winetricks
+/// Clean up unwanted Wine drive letters from prefix
+///
+/// Removes both symbolic links in dosdevices/ and registry entries for
+/// drive letters other than C: and Z:. This prevents Wine from mounting
+/// other users' drives as E:, F:, G:, etc.
+fn cleanup_wine_drives(
+    prefix_root: &Path,
+    proton: &SteamProton,
+) -> Result<(), Box<dyn Error>> {
+    let dosdevices = prefix_root.join("dosdevices");
+
+    if !dosdevices.exists() {
+        log_install("dosdevices directory not found, skipping drive cleanup");
+        return Ok(());
+    }
+
+    // =========================================================================
+    // 1. Remove unwanted symlinks from dosdevices/
+    // =========================================================================
+    let mut removed_drives = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&dosdevices) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+
+            // Skip allowed drives and non-drive entries (like com1, lpt1, etc.)
+            if ALLOWED_DRIVE_LETTERS.contains(&name.as_str()) {
+                continue;
+            }
+
+            // Only process drive letters (single letter followed by colon)
+            if name.len() == 2 && name.ends_with(':') && name.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false) {
+                let path = entry.path();
+                if let Err(e) = fs::remove_file(&path) {
+                    log_warning(&format!("Failed to remove drive symlink {}: {}", name, e));
+                } else {
+                    removed_drives.push(name.to_uppercase());
+                }
+            }
+        }
+    }
+
+    if !removed_drives.is_empty() {
+        log_install(&format!("Removed drive symlinks: {}", removed_drives.join(", ")));
+    }
+
+    // =========================================================================
+    // 2. Clean up registry entries for removed drives
+    // =========================================================================
+    let Some(wine_bin) = proton.wine_binary() else {
+        log_warning("Wine binary not found, skipping registry cleanup");
+        return Ok(());
+    };
+
+    // Create a .reg file to remove drive type entries
+    let tmp_dir = AppConfig::get_tmp_path();
+    fs::create_dir_all(&tmp_dir)?;
+
+    let mut reg_content = String::from("Windows Registry Editor Version 5.00\n\n");
+
+    // Remove entries from HKLM\Software\Wine\Drives
+    for drive in &removed_drives {
+        // Remove both uppercase and lowercase variants
+        reg_content.push_str(&format!(
+            "[HKEY_LOCAL_MACHINE\\Software\\Wine\\Drives]\n\"{drive}\"=-\n\n"
+        ));
+    }
+
+    if !removed_drives.is_empty() {
+        let reg_file = tmp_dir.join("drive_cleanup.reg");
+        fs::write(&reg_file, &reg_content)?;
+
+        let status = Command::new(&wine_bin)
+            .arg("regedit")
+            .arg(&reg_file)
+            .env("WINEPREFIX", prefix_root)
+            .env("WINEDLLOVERRIDES", "mshtml=d")
+            .env("PROTON_USE_XALIA", "0")
+            .status();
+
+        let _ = fs::remove_file(&reg_file);
+
+        match status {
+            Ok(s) if s.success() => {
+                log_install("Registry drive entries cleaned up");
+            }
+            Ok(s) => {
+                log_warning(&format!("Registry cleanup may have failed (exit code: {:?})", s.code()));
+            }
+            Err(e) => {
+                log_warning(&format!("Failed to run registry cleanup: {}", e));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Public wrapper to clean up Wine drives on an existing prefix
+///
+/// This can be called from the UI to fix drive letter issues on existing prefixes.
+pub fn cleanup_prefix_drives(
+    prefix_root: &Path,
+    proton: &SteamProton,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let dosdevices = prefix_root.join("dosdevices");
+
+    if !dosdevices.exists() {
+        return Err("dosdevices directory not found - is this a valid Wine prefix?".into());
+    }
+
+    // Collect drives before cleanup
+    let mut removed = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&dosdevices) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if name.len() == 2 && name.ends_with(':') && name.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false) {
+                if !ALLOWED_DRIVE_LETTERS.contains(&name.as_str()) {
+                    removed.push(name.to_uppercase());
+                }
+            }
+        }
+    }
+
+    // Run the actual cleanup
+    cleanup_wine_drives(prefix_root, proton)?;
+
+    Ok(removed)
+}
+
+/// Set Windows 11 mode for the prefix using winetricks
 ///
 /// This should be called AFTER all components are installed.
-/// Sets the Windows version to Windows 10 which is required for MO2 to work properly.
-fn set_windows_10_mode(
+/// Sets the Windows version to Windows 11 which is required for MO2 to work properly.
+fn set_windows_11_mode(
     prefix_root: &Path,
     proton: &SteamProton,
 ) -> Result<(), Box<dyn Error>> {
@@ -308,21 +458,21 @@ fn set_windows_10_mode(
         return Err("Wineserver binary not found".into());
     };
 
-    log_install("Running winetricks win10...");
+    log_install("Running winetricks win11...");
 
     let status = Command::new(&winetricks_path)
         .arg("-q")
-        .arg("win10")
+        .arg("win11")
         .env("WINE", &wine_bin)
         .env("WINESERVER", &wineserver_bin)
         .env("WINEPREFIX", prefix_root)
         .status()?;
 
     if !status.success() {
-        return Err(format!("winetricks win10 failed with exit code: {:?}", status.code()).into());
+        return Err(format!("winetricks win11 failed with exit code: {:?}", status.code()).into());
     }
 
-    log_install("Windows 10 mode set successfully");
+    log_install("Windows 11 mode set successfully");
     Ok(())
 }
 

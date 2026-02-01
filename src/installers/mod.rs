@@ -11,7 +11,7 @@ pub use common::{get_available_disk_space, regenerate_nak_tools_scripts, MIN_REQ
 pub use mo2::{install_mo2, setup_existing_mo2};
 pub use plugin::install_plugin;
 pub use prefix_setup::{
-    apply_dpi,
+    apply_dpi, cleanup_prefix_drives,
     install_all_dependencies, kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
 };
 // Public symlinks API - used internally by create_nak_tools_folder

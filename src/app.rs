@@ -5,10 +5,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use crate::config::AppConfig;
-use crate::nxm::NxmHandler;
-use crate::deps::{check_command_available, ensure_cabextract, ensure_winetricks};
-use crate::steam::detect_steam_path_checked;
+use nak_rust::config::AppConfig;
+use nak_rust::nxm::NxmHandler;
+use nak_rust::deps::{check_command_available, ensure_cabextract, ensure_winetricks};
+use nak_rust::steam::detect_steam_path_checked;
 
 // ============================================================================
 // Types
@@ -113,13 +113,13 @@ pub struct MyApp {
     // Steam Detection
     pub steam_detected: bool,
     pub steam_path: Option<String>,
-    pub steam_protons: Vec<crate::steam::SteamProton>,
+    pub steam_protons: Vec<nak_rust::steam::SteamProton>,
 
     // Steam migration popup (for users with legacy prefixes)
     pub show_steam_migration_popup: bool,
 
     // Updater state
-    pub update_info: Arc<Mutex<Option<crate::updater::UpdateInfo>>>,
+    pub update_info: Arc<Mutex<Option<nak_rust::updater::UpdateInfo>>>,
     pub is_checking_update: Arc<Mutex<bool>>,
     pub is_installing_update: Arc<Mutex<bool>>,
     pub update_error: Arc<Mutex<Option<String>>>,
@@ -198,7 +198,7 @@ impl Default for MyApp {
 
             steam_detected,
             steam_path,
-            steam_protons: crate::steam::find_steam_protons(),
+            steam_protons: nak_rust::steam::find_steam_protons(),
 
             show_steam_migration_popup: false, // Will be set below if legacy data found
 
@@ -230,7 +230,7 @@ impl Default for MyApp {
         let update_info_arc = app.update_info.clone();
         let is_checking_arc = app.is_checking_update.clone();
         thread::spawn(move || {
-            match crate::updater::check_for_updates() {
+            match nak_rust::updater::check_for_updates() {
                 Ok(info) => {
                     *update_info_arc.lock().unwrap() = Some(info);
                 }
@@ -291,7 +291,7 @@ impl Default for MyApp {
 
 impl MyApp {
     pub fn refresh_steam_protons(&mut self) {
-        self.steam_protons = crate::steam::find_steam_protons();
+        self.steam_protons = nak_rust::steam::find_steam_protons();
 
         // Check if selected proton is still valid
         let mut changed = false;
@@ -348,7 +348,7 @@ impl MyApp {
                 *status_inner.lock().unwrap() = msg.to_string();
             };
 
-            match crate::deps::precache::precache_all(progress_cb, status_cb, cancel_flag) {
+            match nak_rust::deps::precache::precache_all(progress_cb, status_cb, cancel_flag) {
                 Ok(count) => {
                     *result.lock().unwrap() = Some(Ok(count));
                     *status.lock().unwrap() = format!("Pre-cached {} files successfully!", count);
