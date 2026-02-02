@@ -56,6 +56,9 @@ pub fn run_winetricks(
     // Ensure winetricks is available (downloads to ~/.config/nak/bin/)
     let winetricks_path = ensure_winetricks()?;
 
+    // Ensure cabextract is available (required by winetricks for cab extraction)
+    ensure_cabextract()?;
+
     let Some(wine_bin) = proton.wine_binary() else {
         return Err("Wine binary not found in Proton".into());
     };
@@ -72,11 +75,17 @@ pub fn run_winetricks(
     log_callback(format!("Installing dependencies via winetricks: {}", verbs_str));
     log_install(&format!("Running winetricks with verbs: {}", verbs_str));
 
+    // Build PATH with NaK bin directory so winetricks can find cabextract
+    let nak_bin = tools::get_nak_bin_path();
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", nak_bin.display(), current_path);
+
     // Run winetricks directly - ~/.config/nak/bin/ is accessible from
     // both native and Flatpak environments
     let status = Command::new(&winetricks_path)
         .arg("-q") // Quiet mode
         .args(verbs)
+        .env("PATH", &new_path)
         .env("WINE", &wine_bin)
         .env("WINESERVER", &wineserver_bin)
         .env("WINEPREFIX", prefix_path)
