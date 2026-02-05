@@ -30,7 +30,6 @@ pub const STANDARD_VERBS: &[&str] = &[
     "d3dx11_43",      // DirectX 11
     "xact",           // XACT Audio (32-bit)
     "xact_x64",       // XACT Audio (64-bit)
-    "faudio",         // FAudio (XAudio reimplementation)
 ];
 
 

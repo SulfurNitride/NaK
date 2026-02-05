@@ -1,0 +1,1466 @@
+// NaK Slint Pages - All page content
+
+import { Theme, NakButton, NakCard, NakTextInput, NakProgressBar, SidebarButton,
+         NakComboBox, NakCheckbox, NakRadio, StatusFrame, Spinner, SectionHeader, NakLink } from "components.slint";
+
+// ============================================================================
+// First Run Setup Page
+// ============================================================================
+
+export component FirstRunSetupPage inherits Rectangle {
+    callback get-started;
+
+    background: Theme.bg-dark;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 20px;
+        padding: 40px;
+
+        Text {
+            text: "Welcome to NaK!";
+            color: Theme.text-primary;
+            font-size: 32px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: "Linux Modding Helper";
+            color: Theme.text-secondary;
+            font-size: 18px;
+            horizontal-alignment: center;
+        }
+
+        Rectangle { height: 20px; }
+
+        // Info card
+        NakCard {
+            max-width: 550px;
+            horizontal-stretch: 0;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                Text {
+                    text: "What NaK Does";
+                    color: Theme.text-primary;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                Text {
+                    text: "NaK helps you install and run MO2 on Linux:";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                }
+
+                Text { text: "  - Creates a Steam shortcut for MO2"; color: Theme.text-secondary; font-size: 14px; }
+                Text { text: "  - Installs required Windows dependencies"; color: Theme.text-secondary; font-size: 14px; }
+                Text { text: "  - Sets up game registry entries for mod detection"; color: Theme.text-secondary; font-size: 14px; }
+                Text { text: "  - Handles NXM links from Nexus Mods"; color: Theme.text-secondary; font-size: 14px; }
+            }
+        }
+
+        // Steam integration note
+        NakCard {
+            max-width: 550px;
+            horizontal-stretch: 0;
+            card-color: #1e3228;
+
+            VerticalLayout {
+                padding: 15px;
+                spacing: 8px;
+
+                Text {
+                    text: "Steam Integration";
+                    color: Theme.accent-green;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                Text { text: "NaK adds MO2 as a non-Steam game. This means:"; color: Theme.text-secondary; font-size: 13px; }
+                Text { text: "  - Proton versions are managed through Steam"; color: Theme.text-secondary; font-size: 13px; }
+                Text { text: "  - Launch MO2 directly from Steam"; color: Theme.text-secondary; font-size: 13px; }
+                Text { text: "  - Steam overlay and controller support work"; color: Theme.text-secondary; font-size: 13px; }
+            }
+        }
+
+        Rectangle { height: 20px; }
+
+        NakButton {
+            text: "Get Started";
+            primary: true;
+            min-width: 200px;
+            min-height: 45px;
+            clicked => { root.get-started(); }
+        }
+
+        Text {
+            text: "Click above to begin setting up MO2";
+            color: Theme.text-muted;
+            font-size: 12px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// ============================================================================
+// Getting Started Page
+// ============================================================================
+
+export component GettingStartedPage inherits Rectangle {
+    callback navigate-to-mo2;
+    callback open-faq;
+    callback open-github;
+    callback open-discord;
+    callback open-kofi;
+
+    background: Theme.bg-dark;
+
+    Flickable {
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            padding: 20px;
+            spacing: 15px;
+
+            SectionHeader {
+                text: "Welcome to NaK!";
+                subtitle: "Linux Modding Helper";
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.bg-accent;
+            }
+
+            Text {
+                text: "NaK makes it easy to run Windows modding tools on Linux using Proton.";
+                color: Theme.text-secondary;
+                font-size: 14px;
+                wrap: word-wrap;
+            }
+
+            Rectangle { height: 10px; }
+
+            // Install MO2 Section
+            Text {
+                text: "Install MO2";
+                color: Theme.text-primary;
+                font-size: 16px;
+                font-weight: 600;
+            }
+
+            Text {
+                text: "NaK handles all the setup automatically";
+                color: Theme.text-muted;
+                font-size: 12px;
+            }
+
+            NakButton {
+                text: "Install MO2";
+                primary: true;
+                clicked => { root.navigate-to-mo2(); }
+            }
+
+            Text { text: "NaK will:"; color: Theme.text-secondary; font-size: 14px; }
+            Text { text: "  - Create a Steam shortcut for MO2"; color: Theme.text-secondary; font-size: 14px; }
+            Text { text: "  - Configure your selected Proton version automatically"; color: Theme.text-secondary; font-size: 14px; }
+            Text { text: "  - Install required Windows dependencies"; color: Theme.text-secondary; font-size: 14px; }
+
+            Rectangle { height: 10px; }
+            Rectangle { height: 1px; background: Theme.bg-accent; }
+            Rectangle { height: 10px; }
+
+            // Help Section
+            Text {
+                text: "Need Help?";
+                color: Theme.text-primary;
+                font-size: 16px;
+                font-weight: 600;
+            }
+
+            NakButton {
+                text: "View FAQ";
+                clicked => { root.open-faq(); }
+            }
+
+            Rectangle { height: 5px; }
+
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+
+                Text {
+                    text: "Community:";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+
+                NakLink {
+                    text: "GitHub Issues";
+                    clicked => { root.open-github(); }
+                }
+
+                Text { text: "|"; color: Theme.text-muted; font-size: 14px; vertical-alignment: center; }
+
+                NakLink {
+                    text: "Discord";
+                    clicked => { root.open-discord(); }
+                }
+
+                Text { text: "|"; color: Theme.text-muted; font-size: 14px; vertical-alignment: center; }
+
+                NakLink {
+                    text: "Ko-Fi (Donate)";
+                    clicked => { root.open-kofi(); }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// MO2 Installation Page
+// ============================================================================
+
+export component MO2Page inherits Rectangle {
+    // State properties
+    in property <int> wizard-step: 0; // 0=Selection, 1=Name, 2=Path, 3=Proton, 4=DPI, 5=Finished
+    in property <bool> is-installing: false;
+    in property <string> install-status: "";
+    in property <float> install-progress: 0.0;
+    in property <string> validation-error: "";
+    in property <bool> low-disk-space: false;
+    in property <float> available-disk-gb: 0.0;
+    in property <bool> install-success: false;
+    in property <string> last-error: "";
+    in property <[string]> proton-options: [];
+    in-out property <string> instance-name: "";
+    in-out property <string> install-path: "";
+    in-out property <int> selected-proton-index: 0;
+    in-out property <string> install-type: ""; // "New" or "Existing"
+    in-out property <int> selected-dpi: 96;
+    in-out property <bool> force-install: false;
+    in-out property <bool> disk-override: false;
+
+    // Callbacks
+    callback select-install-new;
+    callback select-install-existing;
+    callback go-back;
+    callback go-next;
+    callback browse-path;
+    callback start-install;
+    callback cancel-install;
+    callback reset-wizard;
+    callback apply-dpi(int);
+    callback launch-test-app(string);
+    callback confirm-dpi;
+    callback skip-dpi;
+
+    background: Theme.bg-dark;
+
+    Flickable {
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            padding: 20px;
+            spacing: 15px;
+
+            SectionHeader {
+                text: "MO2 Installation";
+            }
+
+            Rectangle { height: 1px; background: Theme.bg-accent; }
+
+            // Installation in progress
+            if root.is-installing: VerticalLayout {
+                alignment: center;
+                spacing: 15px;
+                padding-top: 40px;
+
+                Text {
+                    text: "Installation in Progress...";
+                    color: Theme.text-primary;
+                    font-size: 18px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: root.install-status;
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+
+                NakProgressBar {
+                    progress: root.install-progress;
+                    max-width: 400px;
+                }
+
+                NakButton {
+                    text: "Cancel";
+                    danger: true;
+                    clicked => { root.cancel-install(); }
+                }
+            }
+
+            // Step 0: Selection
+            if !root.is-installing && root.wizard-step == 0: VerticalLayout {
+                spacing: 15px;
+
+                Text {
+                    text: "Install or set up an existing MO2 installation.";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                }
+
+                HorizontalLayout {
+                    spacing: 20px;
+
+                    NakButton {
+                        text: "Install New MO2";
+                        primary: true;
+                        min-width: 200px;
+                        min-height: 50px;
+                        clicked => { root.select-install-new(); }
+                    }
+
+                    NakButton {
+                        text: "Setup Existing MO2";
+                        min-width: 200px;
+                        min-height: 50px;
+                        clicked => { root.select-install-existing(); }
+                    }
+                }
+            }
+
+            // Step 1: Name Input
+            if !root.is-installing && root.wizard-step == 1: VerticalLayout {
+                spacing: 15px;
+
+                Text {
+                    text: "Step 1: Instance Name";
+                    color: Theme.text-primary;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                Text {
+                    text: "Give your installation a unique name. This will be used to identify the prefix folder.";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+
+                NakTextInput {
+                    text <=> root.instance-name;
+                    placeholder: "My MO2 Instance";
+                    max-width: 400px;
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakButton {
+                        text: "Back";
+                        clicked => { root.go-back(); }
+                    }
+
+                    NakButton {
+                        text: "Next";
+                        primary: true;
+                        enabled: root.instance-name != "";
+                        clicked => { root.go-next(); }
+                    }
+                }
+            }
+
+            // Step 2: Path Input
+            if !root.is-installing && root.wizard-step == 2: VerticalLayout {
+                spacing: 15px;
+
+                Text {
+                    text: "Step 2: Install Location";
+                    color: Theme.text-primary;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                Text {
+                    text: root.install-type == "New" ?
+                          "Select an EMPTY directory where you want to install." :
+                          "Select the existing MO2 directory.";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakTextInput {
+                        text <=> root.install-path;
+                        placeholder: "/home/user/MO2";
+                        horizontal-stretch: 1;
+                    }
+
+                    NakButton {
+                        text: "Browse";
+                        clicked => { root.browse-path(); }
+                    }
+                }
+
+                // Validation feedback
+                if root.validation-error != "": StatusFrame {
+                    status-type: "warning";
+                    message: root.validation-error;
+                    max-width: 500px;
+                }
+
+                if root.validation-error != "" && root.validation-error == "Warning: Directory is not empty!": NakCheckbox {
+                    text: "I acknowledge this folder is not empty";
+                    checked <=> root.force-install;
+                }
+
+                if root.install-path != "" && root.validation-error == "": StatusFrame {
+                    status-type: "success";
+                    message: "Path looks good";
+                    max-width: 500px;
+                }
+
+                // Disk space warning
+                if root.low-disk-space: NakCard {
+                    card-color: Theme.warning;
+                    max-width: 500px;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Low disk space: " + root.available-disk-gb + "GB available";
+                            color: Theme.accent-yellow;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: "Installation may fail or cause issues with insufficient space.";
+                            color: Theme.text-secondary;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+
+                        NakCheckbox {
+                            text: "I understand and want to proceed anyway";
+                            checked <=> root.disk-override;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakButton {
+                        text: "Back";
+                        clicked => { root.go-back(); }
+                    }
+
+                    NakButton {
+                        text: "Next";
+                        primary: true;
+                        enabled: root.install-path != "" &&
+                                 (root.validation-error == "" ||
+                                  (root.validation-error == "Warning: Directory is not empty!" && root.force-install)) &&
+                                 (!root.low-disk-space || root.disk-override);
+                        clicked => { root.go-next(); }
+                    }
+                }
+            }
+
+            // Step 3: Proton Selection
+            if !root.is-installing && root.wizard-step == 3: VerticalLayout {
+                spacing: 15px;
+
+                Text {
+                    text: "Step 3: Select Proton Version";
+                    color: Theme.text-primary;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                Text {
+                    text: "Choose which Proton version to use for MO2.";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                }
+
+                if root.proton-options.length == 0: StatusFrame {
+                    status-type: "warning";
+                    title: "No Proton versions found";
+                    message: "Please install a Proton version through Steam or ProtonUp-Qt.";
+                    max-width: 500px;
+                }
+
+                if root.proton-options.length > 0: VerticalLayout {
+                    spacing: 8px;
+
+                    Text {
+                        text: "Available Proton Versions:";
+                        color: Theme.text-primary;
+                        font-size: 14px;
+                        font-weight: 600;
+                    }
+
+                    for option[idx] in root.proton-options: NakCard {
+                        card-color: idx == root.selected-proton-index ? #325032 : Theme.bg-medium;
+                        max-width: 500px;
+
+                        TouchArea {
+                            clicked => { root.selected-proton-index = idx; }
+                        }
+
+                        HorizontalLayout {
+                            padding: 12px;
+                            spacing: 12px;
+                            alignment: start;
+
+                            NakRadio {
+                                selected: idx == root.selected-proton-index;
+                                text: "";
+                                clicked => { root.selected-proton-index = idx; }
+                            }
+
+                            Text {
+                                text: option;
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                }
+
+                // Recommendation
+                NakCard {
+                    card-color: #283240;
+                    max-width: 500px;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+
+                        Text {
+                            text: "Recommendation";
+                            color: Theme.text-primary;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: "GE-Proton is recommended for modding tools like MO2.";
+                            color: Theme.text-secondary;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakButton {
+                        text: "Back";
+                        clicked => { root.go-back(); }
+                    }
+
+                    NakButton {
+                        text: root.install-type == "New" ? "Start Installation" : "Setup Instance";
+                        primary: true;
+                        enabled: root.proton-options.length > 0;
+                        clicked => { root.start-install(); }
+                    }
+                }
+            }
+
+            // Step 4: DPI Setup
+            if !root.is-installing && root.wizard-step == 4: VerticalLayout {
+                spacing: 15px;
+
+                Text {
+                    text: "Step 4: DPI Scaling";
+                    color: Theme.text-primary;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                Text {
+                    text: "Configure display scaling for MO2.";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                }
+
+                Text {
+                    text: "Current: " + root.selected-dpi + " DPI";
+                    color: Theme.text-primary;
+                    font-size: 14px;
+                }
+
+                // DPI Presets
+                Text {
+                    text: "Presets:";
+                    color: Theme.text-primary;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakButton {
+                        text: "96 (100%)";
+                        primary: root.selected-dpi == 96;
+                        clicked => { root.apply-dpi(96); }
+                    }
+
+                    NakButton {
+                        text: "120 (125%)";
+                        primary: root.selected-dpi == 120;
+                        clicked => { root.apply-dpi(120); }
+                    }
+
+                    NakButton {
+                        text: "144 (150%)";
+                        primary: root.selected-dpi == 144;
+                        clicked => { root.apply-dpi(144); }
+                    }
+
+                    NakButton {
+                        text: "192 (200%)";
+                        primary: root.selected-dpi == 192;
+                        clicked => { root.apply-dpi(192); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.bg-accent; }
+
+                // Test Applications
+                Text {
+                    text: "Test Applications:";
+                    color: Theme.text-primary;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                Text {
+                    text: "Launch these to preview how your DPI setting looks.";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakButton {
+                        text: "Wine Config";
+                        clicked => { root.launch-test-app("winecfg"); }
+                    }
+
+                    NakButton {
+                        text: "Registry Editor";
+                        clicked => { root.launch-test-app("regedit"); }
+                    }
+
+                    NakButton {
+                        text: "Notepad";
+                        clicked => { root.launch-test-app("notepad"); }
+                    }
+
+                    NakButton {
+                        text: "Control Panel";
+                        clicked => { root.launch-test-app("control"); }
+                    }
+                }
+
+                Text {
+                    text: "Note: Changing DPI or confirming will close all test applications.";
+                    color: Theme.accent-yellow;
+                    font-size: 12px;
+                }
+
+                Rectangle { height: 1px; background: Theme.bg-accent; }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakButton {
+                        text: "Skip (Use 96/100%)";
+                        clicked => { root.skip-dpi(); }
+                    }
+
+                    NakButton {
+                        text: "Confirm DPI: " + root.selected-dpi;
+                        primary: true;
+                        clicked => { root.confirm-dpi(); }
+                    }
+                }
+            }
+
+            // Step 5: Finished
+            if !root.is-installing && root.wizard-step == 5: VerticalLayout {
+                alignment: center;
+                spacing: 20px;
+                padding-top: 40px;
+
+                if root.last-error != "": VerticalLayout {
+                    spacing: 15px;
+
+                    Text {
+                        text: "Installation Failed!";
+                        color: Theme.accent-red;
+                        font-size: 20px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: root.last-error;
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 15px;
+
+                        NakButton {
+                            text: "Try Again";
+                            primary: true;
+                            clicked => { root.reset-wizard(); }
+                        }
+                    }
+                }
+
+                if root.last-error == "": VerticalLayout {
+                    spacing: 15px;
+
+                    Text {
+                        text: "Installation Successful!";
+                        color: Theme.accent-green;
+                        font-size: 20px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "MO2 has been set up successfully.";
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                        horizontal-alignment: center;
+                    }
+
+                    Rectangle { height: 10px; }
+
+                    NakCard {
+                        max-width: 500px;
+
+                        VerticalLayout {
+                            padding: 15px;
+                            spacing: 8px;
+
+                            Text {
+                                text: "How to Launch";
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                font-weight: 600;
+                            }
+
+                            Text {
+                                text: "Find '" + root.instance-name + "' in your Steam library under Non-Steam Games.";
+                                color: Theme.text-secondary;
+                                font-size: 13px;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: "Click Play in Steam to launch MO2.";
+                                color: Theme.accent-blue;
+                                font-size: 13px;
+                            }
+                        }
+                    }
+
+                    NakCard {
+                        max-width: 500px;
+
+                        VerticalLayout {
+                            padding: 15px;
+                            spacing: 8px;
+
+                            Text {
+                                text: "Steam Deck / Game Mode";
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                font-weight: 600;
+                            }
+
+                            Text {
+                                text: "The shortcut will automatically appear in Game Mode!";
+                                color: Theme.text-secondary;
+                                font-size: 13px;
+                            }
+                        }
+                    }
+
+                    NakButton {
+                        text: "Return to Menu";
+                        primary: true;
+                        clicked => { root.reset-wizard(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Marketplace Page
+// ============================================================================
+
+export component MarketplacePage inherits Rectangle {
+    in property <bool> is-loading: false;
+    in property <string> error-message: "";
+    in property <[string]> plugin-names: [];
+    in property <[string]> plugin-descriptions: [];
+
+    callback refresh;
+    callback load-plugin-details(int);
+    callback install-plugin(int);
+
+    background: Theme.bg-dark;
+
+    Flickable {
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            padding: 20px;
+            spacing: 15px;
+
+            SectionHeader {
+                text: "Marketplace";
+                subtitle: "Browse and install additional plugins for NaK";
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+
+                NakButton {
+                    text: "Refresh";
+                    enabled: !root.is-loading;
+                    clicked => { root.refresh(); }
+                }
+
+                if root.is-loading: HorizontalLayout {
+                    spacing: 8px;
+                    Spinner { }
+                    Text {
+                        text: "Loading...";
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle { height: 1px; background: Theme.bg-accent; }
+
+            if root.error-message != "": StatusFrame {
+                status-type: "error";
+                message: root.error-message;
+            }
+
+            if !root.is-loading && root.plugin-names.length == 0 && root.error-message == "": VerticalLayout {
+                alignment: center;
+                padding-top: 50px;
+
+                Text {
+                    text: "Click 'Refresh' to load available plugins";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            for name[idx] in root.plugin-names: NakCard {
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 8px;
+
+                    HorizontalLayout {
+                        Text {
+                            text: name;
+                            color: Theme.text-primary;
+                            font-size: 18px;
+                            font-weight: 600;
+                            horizontal-stretch: 1;
+                        }
+
+                        NakButton {
+                            text: "Load Details";
+                            clicked => { root.load-plugin-details(idx); }
+                        }
+                    }
+
+                    Text {
+                        text: idx < root.plugin-descriptions.length ? root.plugin-descriptions[idx] : "";
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Settings / Prefix Cleanup Page
+// ============================================================================
+
+export struct PrefixInfo {
+    name: string,
+    app-id: string,
+    prefix-path: string,
+    manager-type: string,
+    is-active: bool,
+    prefix-exists: bool,
+    proton-name: string,
+}
+
+export component SettingsPage inherits Rectangle {
+    in property <[PrefixInfo]> prefixes: [];
+    in property <[string]> proton-options: [];
+
+    callback open-folder(int);
+    callback update-scripts(int);
+    callback delete-prefix(int);
+    callback remove-entry(int);
+    callback change-proton(int, int);
+
+    background: Theme.bg-dark;
+
+    Flickable {
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            padding: 20px;
+            spacing: 15px;
+
+            SectionHeader {
+                text: "Prefix Cleanup";
+                subtitle: "Manage NaK-created Wine prefixes";
+            }
+
+            Text {
+                text: "Clean up orphaned prefixes after removing mod managers from Steam";
+                color: Theme.text-muted;
+                font-size: 12px;
+            }
+
+            Rectangle { height: 1px; background: Theme.bg-accent; }
+
+            if root.prefixes.length == 0: VerticalLayout {
+                padding-top: 20px;
+
+                Text {
+                    text: "No managed prefixes found.";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                }
+
+                Text {
+                    text: "Prefixes will appear here after installing mod managers via NaK.";
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                }
+            }
+
+            for prefix[idx] in root.prefixes: NakCard {
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        // Combined title badge (MO2: Name)
+                        Rectangle {
+                            height: 28px;
+                            border-radius: 4px;
+                            background: #8b2020;
+                            horizontal-stretch: 0;
+
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+
+                                Text {
+                                    text: prefix.manager-type + ": " + prefix.name;
+                                    color: Theme.text-primary;
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+
+                        // Status badge
+                        Rectangle {
+                            height: 24px;
+                            border-radius: 4px;
+                            background: prefix.is-active ? #1e3c1e : #3c281e;
+                            horizontal-stretch: 0;
+
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+
+                                Text {
+                                    text: prefix.is-active ? "In Use" : "Removed From Steam";
+                                    color: prefix.is-active ? Theme.accent-green : Theme.accent-orange;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // Details row
+                    HorizontalLayout {
+                        spacing: 8px;
+
+                        Text {
+                            text: "AppID: " + prefix.app-id;
+                            color: Theme.text-muted;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+
+                        if !prefix.prefix-exists: Text {
+                            text: "| Prefix deleted";
+                            color: Theme.accent-red;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+
+                        // Proton selector
+                        if prefix.prefix-exists && root.proton-options.length > 0: HorizontalLayout {
+                            spacing: 4px;
+
+                            Text {
+                                text: "| Proton:";
+                                color: Theme.text-muted;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+
+                            // Simple display for now
+                            Text {
+                                text: prefix.proton-name;
+                                color: Theme.text-secondary;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Path
+                    Text {
+                        text: prefix.prefix-path;
+                        color: Theme.text-muted;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+
+                    // Actions
+                    HorizontalLayout {
+                        spacing: 8px;
+
+                        if prefix.prefix-exists: NakButton {
+                            text: "Open Folder";
+                            min-width: 100px;
+                            min-height: 28px;
+                            clicked => { root.open-folder(idx); }
+                        }
+
+                        if prefix.prefix-exists: NakButton {
+                            text: "Update Scripts";
+                            min-width: 110px;
+                            min-height: 28px;
+                            clicked => { root.update-scripts(idx); }
+                        }
+
+                        if !prefix.is-active && prefix.prefix-exists: NakButton {
+                            text: "Delete Prefix";
+                            danger: true;
+                            min-width: 110px;
+                            min-height: 28px;
+                            clicked => { root.delete-prefix(idx); }
+                        }
+
+                        if !prefix.is-active && !prefix.prefix-exists: NakButton {
+                            text: "Remove Entry";
+                            min-width: 110px;
+                            min-height: 28px;
+                            clicked => { root.remove-entry(idx); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Version / Updater Page
+// ============================================================================
+
+export component VersionPage inherits Rectangle {
+    in property <string> current-version: "";
+    in property <string> latest-version: "";
+    in property <bool> update-available: false;
+    in property <bool> is-checking: false;
+    in property <bool> is-installing: false;
+    in property <bool> update-installed: false;
+    in property <string> error-message: "";
+    in property <string> release-notes: "";
+    in property <bool> can-self-update: true;
+
+    callback check-for-updates;
+    callback install-update;
+    callback restart-app;
+    callback open-releases;
+
+    background: Theme.bg-dark;
+
+    Flickable {
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            padding: 20px;
+            spacing: 15px;
+
+            SectionHeader {
+                text: "Version";
+            }
+
+            Rectangle { height: 1px; background: Theme.bg-accent; }
+
+            Text {
+                text: "NaK - Linux Modding Helper";
+                color: Theme.text-primary;
+                font-size: 18px;
+            }
+
+            Text {
+                text: "Current Version: " + root.current-version;
+                color: Theme.text-secondary;
+                font-size: 14px;
+            }
+
+            Rectangle { height: 1px; background: Theme.bg-accent; }
+
+            // Update installed success
+            if root.update-installed: NakCard {
+                card-color: Theme.success;
+
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Update installed successfully!";
+                        color: Theme.accent-green;
+                        font-size: 14px;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: "Please restart NaK to use the new version.";
+                        color: Theme.text-secondary;
+                        font-size: 13px;
+                    }
+
+                    NakButton {
+                        text: "Restart Now";
+                        primary: true;
+                        clicked => { root.restart-app(); }
+                    }
+                }
+            }
+
+            // Checking state
+            if root.is-checking: HorizontalLayout {
+                spacing: 8px;
+                Spinner { }
+                Text {
+                    text: "Checking for updates...";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Installing state
+            if root.is-installing: HorizontalLayout {
+                spacing: 8px;
+                Spinner { }
+                Text {
+                    text: "Installing update...";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Update available
+            if !root.is-checking && !root.is-installing && root.update-available && !root.update-installed: VerticalLayout {
+                spacing: 10px;
+
+                NakCard {
+                    card-color: #283c28;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+
+                        Text {
+                            text: "Update available: v" + root.latest-version;
+                            color: Theme.accent-green;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: "Current: v" + root.current-version;
+                            color: Theme.text-secondary;
+                            font-size: 13px;
+                        }
+                    }
+                }
+
+                if root.release-notes != "": NakCard {
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Release Notes";
+                            color: Theme.text-primary;
+                            font-size: 14px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: root.release-notes;
+                            color: Theme.text-secondary;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                if root.can-self-update: NakButton {
+                    text: "Install Update";
+                    primary: true;
+                    clicked => { root.install-update(); }
+                }
+
+                if !root.can-self-update: VerticalLayout {
+                    spacing: 5px;
+
+                    Text {
+                        text: "Cannot self-update (no write permission to executable location)";
+                        color: Theme.accent-yellow;
+                        font-size: 13px;
+                    }
+
+                    NakLink {
+                        text: "Download from GitHub";
+                        clicked => { root.open-releases(); }
+                    }
+                }
+            }
+
+            // Up to date
+            if !root.is-checking && !root.update-available && root.latest-version != "" && !root.update-installed: Text {
+                text: "You're up to date! (v" + root.current-version + ")";
+                color: Theme.accent-green;
+                font-size: 14px;
+            }
+
+            // No check yet
+            if !root.is-checking && root.latest-version == "" && !root.update-installed: Text {
+                text: "Click 'Check for Updates' to see if a new version is available.";
+                color: Theme.text-secondary;
+                font-size: 14px;
+            }
+
+            // Error
+            if root.error-message != "": StatusFrame {
+                status-type: "error";
+                message: root.error-message;
+            }
+
+            Rectangle { height: 10px; }
+
+            NakButton {
+                text: "Check for Updates";
+                enabled: !root.is-checking && !root.is-installing;
+                clicked => { root.check-for-updates(); }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Steam Migration Popup
+// ============================================================================
+
+export component SteamMigrationPopup inherits Rectangle {
+    in property <string> legacy-path: "";
+    in property <bool> show-popup: false;
+
+    callback open-folder;
+    callback delete-data;
+    callback dismiss;
+
+    // Dim background
+    background: #000000a0;
+
+    if root.show-popup: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 520px;
+        background: Theme.bg-medium;
+        border-radius: 8px;
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 15px;
+
+            Text {
+                text: "NaK Has Changed";
+                color: Theme.text-primary;
+                font-size: 20px;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "NaK Now Uses Steam Integration";
+                color: Theme.text-primary;
+                font-size: 16px;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "NaK has moved to Steam-native integration. MO2 is now added as a non-Steam game and runs through Steam's Proton.";
+                color: Theme.text-secondary;
+                font-size: 14px;
+                wrap: word-wrap;
+            }
+
+            NakCard {
+                card-color: #32281e;
+
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 4px;
+
+                    Text {
+                        text: "What This Means:";
+                        color: Theme.text-primary;
+                        font-size: 14px;
+                        font-weight: 600;
+                    }
+
+                    Text { text: "- Old NaK prefixes and Protons are no longer used"; color: Theme.text-secondary; font-size: 13px; }
+                    Text { text: "- New installations create Steam shortcuts"; color: Theme.text-secondary; font-size: 13px; }
+                    Text { text: "- Proton versions are managed through Steam"; color: Theme.text-secondary; font-size: 13px; }
+                }
+            }
+
+            NakCard {
+                card-color: #3c3228;
+
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 4px;
+
+                    Text {
+                        text: "Recommended: Delete Old NaK Data";
+                        color: Theme.accent-yellow;
+                        font-size: 14px;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: "Your old NaK folder at " + root.legacy-path + " contains data from the previous version.";
+                        color: Theme.text-secondary;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                    }
+
+                    Text {
+                        text: "You can safely delete it to start fresh with the new system.";
+                        color: Theme.text-secondary;
+                        font-size: 13px;
+                    }
+
+                    Text {
+                        text: "Or keep it if you want to use an older NaK version.";
+                        color: Theme.text-muted;
+                        font-size: 11px;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 10px;
+
+                NakButton {
+                    text: "Open NaK Folder";
+                    clicked => { root.open-folder(); }
+                }
+
+                NakButton {
+                    text: "Delete Old Data";
+                    danger: true;
+                    clicked => { root.delete-data(); }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                NakButton {
+                    text: "Got It, Keep Data";
+                    clicked => { root.dismiss(); }
+                }
+            }
+        }
+    }
+}

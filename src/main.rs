@@ -3,12 +3,13 @@
 //! A tool to help manage modding tools (MO2) on Linux via Proton/Wine.
 //! Supports both GUI mode (default) and CLI mode for automation.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use eframe::egui;
 
 mod app;
 mod ui;
@@ -56,7 +57,7 @@ enum Commands {
     CheckSteam,
 }
 
-fn main() -> eframe::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
     init_logger();
 
@@ -79,29 +80,19 @@ fn main() -> eframe::Result<()> {
             }
         }
 
-        // Return Ok for CLI mode (no GUI)
         return Ok(());
     }
 
     // No subcommand - run GUI mode
     log_info("NaK GUI starting...");
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([720.0, 720.0])
-            .with_min_inner_size([720.0, 720.0])
-            .with_title("NaK"),
-        ..Default::default()
-    };
+    // Create application state
+    let app = Rc::new(RefCell::new(MyApp::default()));
 
-    eframe::run_native(
-        "NaK",
-        options,
-        Box::new(|cc| {
-            egui_extras::install_image_loaders(&cc.egui_ctx);
-            Ok(Box::new(MyApp::default()))
-        }),
-    )
+    // Run the Slint UI
+    ui::run_slint_ui(app)?;
+
+    Ok(())
 }
 
 // ============================================================================

@@ -285,6 +285,12 @@ pub struct NakLogger {
     log_file: Option<File>,
 }
 
+impl Default for NakLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NakLogger {
     pub fn new() -> Self {
         // Write log to current working directory for easy access

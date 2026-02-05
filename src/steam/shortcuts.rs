@@ -14,9 +14,9 @@ use super::find_userdata_path;
 /// Generate a random AppID for a non-Steam game shortcut
 /// High bit (0x80000000) is set to mark as non-Steam game
 pub fn generate_random_app_id() -> u32 {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // Generate random u32 and set high bit for non-Steam game
-    rng.gen::<u32>() | 0x80000000
+    rng.random::<u32>() | 0x80000000
 }
 
 /// Get path to shortcuts.vdf for the current user

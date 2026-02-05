@@ -1,0 +1,472 @@
+// NaK Slint Components - Shared UI components
+
+// Color palette
+export global Theme {
+    // Background colors
+    out property <color> bg-dark: #1a1a1f;
+    out property <color> bg-medium: #23232b;
+    out property <color> bg-light: #2d2d38;
+    out property <color> bg-accent: #35354a;
+
+    // Text colors
+    out property <color> text-primary: #ffffff;
+    out property <color> text-secondary: #a0a0a0;
+    out property <color> text-muted: #666666;
+
+    // Accent colors
+    out property <color> accent-blue: #6496ff;
+    out property <color> accent-green: #64c864;
+    out property <color> accent-yellow: #ffc864;
+    out property <color> accent-red: #ff6464;
+    out property <color> accent-orange: #ff9664;
+
+    // Status colors
+    out property <color> success: #408040;
+    out property <color> warning: #806040;
+    out property <color> error: #804040;
+    out property <color> info: #404080;
+}
+
+// Standard button component
+export component NakButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    callback clicked;
+
+    min-width: 100px;
+    min-height: 36px;
+    border-radius: 4px;
+    background: root.enabled ?
+        (root.danger ? Theme.error :
+         root.primary ? Theme.accent-blue : Theme.bg-light)
+        : Theme.bg-medium;
+
+    animate background { duration: 150ms; }
+
+    states [
+        hovered when touch.has-hover && root.enabled: {
+            background: root.danger ? #904040 :
+                       root.primary ? #7496ff : Theme.bg-accent;
+        }
+        pressed when touch.pressed && root.enabled: {
+            background: root.danger ? #703030 :
+                       root.primary ? #5486ff : Theme.bg-light;
+        }
+    ]
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding: 8px;
+        alignment: center;
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.text-primary : Theme.text-muted;
+            font-size: 14px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Card/Frame component
+export component NakCard inherits Rectangle {
+    in property <color> card-color: Theme.bg-medium;
+
+    background: card-color;
+    border-radius: 8px;
+    clip: true;
+}
+
+// Text input component
+export component NakTextInput inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder: "";
+    in property <bool> enabled: true;
+    callback accepted(string);
+    callback edited(string);
+
+    min-height: 36px;
+    border-radius: 4px;
+    background: Theme.bg-dark;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent-blue : Theme.bg-accent;
+
+    input := TextInput {
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        text <=> root.text;
+        color: root.enabled ? Theme.text-primary : Theme.text-muted;
+        font-size: 14px;
+        vertical-alignment: center;
+        enabled: root.enabled;
+
+        accepted => { root.accepted(self.text); }
+        edited => { root.edited(self.text); }
+    }
+
+    // Placeholder
+    Text {
+        visible: root.text == "" && !input.has-focus;
+        x: 8px;
+        width: parent.width - 16px;
+        height: parent.height;
+        text: root.placeholder;
+        color: Theme.text-muted;
+        font-size: 14px;
+        vertical-alignment: center;
+    }
+}
+
+// Progress bar component
+export component NakProgressBar inherits Rectangle {
+    in property <float> progress: 0.0; // 0.0 to 1.0
+    in property <bool> indeterminate: false;
+
+    min-height: 8px;
+    background: Theme.bg-dark;
+    border-radius: 4px;
+    clip: true;
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        height: parent.height;
+        width: root.indeterminate ? parent.width * 0.3 : parent.width * root.progress;
+        background: Theme.accent-blue;
+        border-radius: 4px;
+
+        animate width { duration: 200ms; }
+    }
+}
+
+// Sidebar button
+export component SidebarButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected: false;
+    in property <bool> enabled: true;
+    in property <bool> highlight: false;
+    callback clicked;
+
+    min-height: 40px;
+    border-radius: 4px;
+    background: root.selected ? Theme.bg-accent : transparent;
+
+    animate background { duration: 150ms; }
+
+    states [
+        hovered when touch.has-hover && root.enabled && !root.selected: {
+            background: Theme.bg-light;
+        }
+    ]
+
+    touch := TouchArea {
+        enabled: root.enabled && !root.selected;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        alignment: start;
+
+        Text {
+            text: root.text;
+            color: root.highlight ? Theme.accent-green :
+                   root.enabled ? Theme.text-primary : Theme.text-muted;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Combo box / dropdown
+export component NakComboBox inherits Rectangle {
+    in property <[string]> options;
+    in-out property <int> current-index: 0;
+    in property <bool> enabled: true;
+    callback selected(int);
+
+    property <bool> expanded: false;
+
+    min-height: 36px;
+    min-width: 150px;
+    border-radius: 4px;
+    background: Theme.bg-light;
+    border-width: 1px;
+    border-color: root.expanded ? Theme.accent-blue : Theme.bg-accent;
+    clip: false;
+
+    // Main display
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.expanded = !root.expanded;
+        }
+    }
+
+    HorizontalLayout {
+        padding: 8px;
+        Text {
+            text: root.options.length > 0 && root.current-index >= 0 && root.current-index < root.options.length ?
+                  root.options[root.current-index] : "";
+            color: root.enabled ? Theme.text-primary : Theme.text-muted;
+            font-size: 14px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.expanded ? "^" : "v";
+            color: Theme.text-secondary;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+    }
+
+    // Dropdown popup
+    if root.expanded: Rectangle {
+        y: parent.height + 2px;
+        width: parent.width;
+        height: min(root.options.length * 32px, 200px);
+        background: Theme.bg-medium;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Theme.bg-accent;
+        clip: true;
+
+        // Close on outside click
+        TouchArea {
+            width: 2000px;
+            height: 2000px;
+            x: -1000px;
+            y: -1000px;
+            clicked => { root.expanded = false; }
+        }
+
+        VerticalLayout {
+            for option[idx] in root.options: Rectangle {
+                height: 32px;
+                background: idx == root.current-index ? Theme.bg-accent : transparent;
+
+                TouchArea {
+                    clicked => {
+                        root.current-index = idx;
+                        root.expanded = false;
+                        root.selected(idx);
+                    }
+                }
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    Text {
+                        text: option;
+                        color: Theme.text-primary;
+                        font-size: 14px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Checkbox component
+export component NakCheckbox inherits Rectangle {
+    in-out property <bool> checked: false;
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+
+    min-height: 24px;
+
+    HorizontalLayout {
+        spacing: 8px;
+
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
+            background: root.checked ? Theme.accent-blue : Theme.bg-dark;
+            border-width: 1px;
+            border-color: root.checked ? Theme.accent-blue : Theme.bg-accent;
+
+            Text {
+                visible: root.checked;
+                text: "X";
+                color: Theme.text-primary;
+                font-size: 12px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.text-primary : Theme.text-muted;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+}
+
+// Radio button
+export component NakRadio inherits Rectangle {
+    in property <bool> selected: false;
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    min-height: 24px;
+
+    HorizontalLayout {
+        spacing: 8px;
+
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            background: Theme.bg-dark;
+            border-width: 2px;
+            border-color: root.selected ? Theme.accent-blue : Theme.bg-accent;
+
+            if root.selected: Rectangle {
+                width: 10px;
+                height: 10px;
+                x: 4px;
+                y: 4px;
+                border-radius: 5px;
+                background: Theme.accent-blue;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.text-primary : Theme.text-muted;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Info/Warning/Error frame
+export component StatusFrame inherits Rectangle {
+    in property <string> status-type: "info"; // info, success, warning, error
+    in property <string> title: "";
+    in property <string> message: "";
+
+    background: status-type == "success" ? Theme.success :
+                status-type == "warning" ? Theme.warning :
+                status-type == "error" ? Theme.error :
+                Theme.info;
+    border-radius: 6px;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 4px;
+
+        if root.title != "": Text {
+            text: root.title;
+            color: Theme.text-primary;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        Text {
+            text: root.message;
+            color: Theme.text-primary;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Spinner for loading states (simple version)
+export component Spinner inherits Rectangle {
+    width: 24px;
+    height: 24px;
+
+    // Background circle
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: 12px;
+        border-width: 3px;
+        border-color: Theme.bg-accent;
+    }
+
+    // Animated indicator using opacity animation
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: Theme.accent-blue;
+
+        animate x {
+            duration: 1000ms;
+            iteration-count: -1;
+            easing: ease-in-out;
+        }
+    }
+}
+
+// Section header
+export component SectionHeader inherits Rectangle {
+    in property <string> text;
+    in property <string> subtitle: "";
+
+    VerticalLayout {
+        spacing: 4px;
+
+        Text {
+            text: root.text;
+            color: Theme.text-primary;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        if root.subtitle != "": Text {
+            text: root.subtitle;
+            color: Theme.text-secondary;
+            font-size: 13px;
+        }
+    }
+}
+
+// Link component
+export component NakLink inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+
+    min-height: 20px;
+
+    Text {
+        text: root.text;
+        color: touch.has-hover ? Theme.accent-blue : #8096c8;
+        font-size: 14px;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

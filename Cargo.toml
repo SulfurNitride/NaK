@@ -1,7 +1,8 @@
 [package]
 name = "nak_rust"
-version = "4.3.9"
+version = "4.4.0"
 edition = "2021"
+build = "build.rs"
 
 [lib]
 name = "nak_rust"
@@ -13,25 +14,26 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-eframe = "0.29.1" # Wrapper for egui
-egui = "0.29.1"
-egui_extras = { version = "0.29.1", features = ["image"] }
+slint = "1.9"
 image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 walkdir = "2"
 log = "0.4"
-ureq = { version = "2.10", features = ["json"] } # Tiny HTTP client (removes tokio)
-wait-timeout = "0.2"  # For process timeout support
-chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }  # For timestamps in logging
+ureq = { version = "2.12", features = ["json"] }
+wait-timeout = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 flate2 = "1.0"
 tar = "0.4"
 rfd = "0.16"
-sevenz-rust = "0.6"  # For MO2 .7z extraction
-zip = "2.2"  # For update extraction
-rand = "0.8"  # For random AppID generation
-toml = "0.8"  # For parsing plugin manifests
-version-compare = "0.2"  # For version comparison
+sevenz-rust = "0.6"
+zip = "2.4"
+rand = "0.9"
+toml = "0.8"
+version-compare = "0.2"
+
+[build-dependencies]
+slint-build = "1.9"
 
 [profile.release]
 

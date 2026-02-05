@@ -424,11 +424,10 @@ pub fn cleanup_prefix_drives(
     if let Ok(entries) = fs::read_dir(&dosdevices) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_lowercase();
-            if name.len() == 2 && name.ends_with(':') && name.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false) {
-                if !ALLOWED_DRIVE_LETTERS.contains(&name.as_str()) {
+            if name.len() == 2 && name.ends_with(':') && name.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+                && !ALLOWED_DRIVE_LETTERS.contains(&name.as_str()) {
                     removed.push(name.to_uppercase());
                 }
-            }
         }
     }
 

@@ -94,7 +94,6 @@ fn estimate_verb_size(verb: &str) -> u64 {
         "d3dcompiler_43" => 2,
         "d3dx11_43" => 2,
         "xact" | "xact_x64" => 10, // Part of DirectX redist (shared)
-        "faudio" => 5,
         _ => 10, // Default estimate
     }
 }

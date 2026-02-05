@@ -14,7 +14,7 @@ use nak_rust::steam::detect_steam_path_checked;
 // Types
 // ============================================================================
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Page {
     FirstRunSetup,
     GettingStarted,
@@ -46,7 +46,6 @@ pub struct InstallWizard {
     pub last_install_error: Option<String>,
     // DPI Setup state
     pub selected_dpi: u32,      // Selected DPI value (96, 120, 144, 192, or custom)
-    pub custom_dpi_input: String, // Text input for custom DPI value
     // Steam AppID after installation (for DPI setup)
     pub installed_app_id: Option<u32>,
     // Steam prefix path after installation (for DPI setup)
@@ -71,7 +70,6 @@ impl Default for InstallWizard {
             force_install: false,
             last_install_error: None,
             selected_dpi: 96, // Default 100% scaling
-            custom_dpi_input: String::new(),
             installed_app_id: None,
             installed_prefix_path: None,
             low_disk_space: false,
@@ -106,8 +104,6 @@ pub struct MyApp {
     pub config: AppConfig,
 
     // Flags
-    pub should_refresh_proton: bool,
-    pub download_needs_refresh: Arc<AtomicBool>, // Signal from background downloads to refresh UI
     pub missing_deps: Arc<Mutex<Vec<String>>>,
 
     // Steam Detection
@@ -131,12 +127,6 @@ pub struct MyApp {
     // Install result communication (from install thread to UI thread)
     pub install_result_app_id: Arc<Mutex<Option<u32>>>,       // Steam AppID after installation
     pub install_result_prefix_path: Arc<Mutex<Option<PathBuf>>>, // Prefix path after installation
-
-    // Dependency pre-caching state
-    pub is_precaching: Arc<Mutex<bool>>,
-    pub precache_progress: Arc<Mutex<f32>>,
-    pub precache_status: Arc<Mutex<String>>,
-    pub precache_result: Arc<Mutex<Option<Result<usize, String>>>>,
 
     // Marketplace state
     pub marketplace_state: Option<crate::ui::MarketplaceState>,
@@ -192,8 +182,6 @@ impl Default for MyApp {
 
             config,
 
-            should_refresh_proton: false,
-            download_needs_refresh: Arc::new(AtomicBool::new(false)),
             missing_deps: missing_deps_arc.clone(),
 
             steam_detected,
@@ -215,12 +203,6 @@ impl Default for MyApp {
             // Install result communication
             install_result_app_id: Arc::new(Mutex::new(None)),
             install_result_prefix_path: Arc::new(Mutex::new(None)),
-
-            // Dependency pre-caching
-            is_precaching: Arc::new(Mutex::new(false)),
-            precache_progress: Arc::new(Mutex::new(0.0)),
-            precache_status: Arc::new(Mutex::new(String::new())),
-            precache_result: Arc::new(Mutex::new(None)),
 
             // Marketplace
             marketplace_state: None,
@@ -289,77 +271,3 @@ impl Default for MyApp {
     }
 }
 
-impl MyApp {
-    pub fn refresh_steam_protons(&mut self) {
-        self.steam_protons = nak_rust::steam::find_steam_protons();
-
-        // Check if selected proton is still valid
-        let mut changed = false;
-        if let Some(selected) = &self.config.selected_proton {
-            let exists = self.steam_protons.iter().any(|p| &p.name == selected);
-            if !exists {
-                // Default to first available or None
-                if let Some(first) = self.steam_protons.first() {
-                    self.config.selected_proton = Some(first.name.clone());
-                } else {
-                    self.config.selected_proton = None;
-                }
-                changed = true;
-            }
-        } else if let Some(first) = self.steam_protons.first() {
-            // If nothing was selected but we have versions, select the first one
-            self.config.selected_proton = Some(first.name.clone());
-            changed = true;
-        }
-
-        if changed {
-            self.config.save();
-        }
-    }
-
-    /// Start pre-caching all dependencies
-    pub fn start_precache(&self) {
-        if *self.is_precaching.lock().unwrap() {
-            return; // Already pre-caching
-        }
-
-        let is_precaching = self.is_precaching.clone();
-        let progress = self.precache_progress.clone();
-        let status = self.precache_status.clone();
-        let result = self.precache_result.clone();
-        let cancel_flag = self.cancel_install.clone();
-
-        *is_precaching.lock().unwrap() = true;
-        *progress.lock().unwrap() = 0.0;
-        *status.lock().unwrap() = "Starting dependency pre-cache...".to_string();
-        *result.lock().unwrap() = None;
-
-        thread::spawn(move || {
-            let status_inner = status.clone();
-            let progress_inner = progress.clone();
-
-            let progress_cb = move |current: u64, total: u64| {
-                if total > 0 {
-                    *progress_inner.lock().unwrap() = current as f32 / total as f32;
-                }
-            };
-
-            let status_cb = move |msg: &str| {
-                *status_inner.lock().unwrap() = msg.to_string();
-            };
-
-            match nak_rust::deps::precache::precache_all(progress_cb, status_cb, cancel_flag) {
-                Ok(count) => {
-                    *result.lock().unwrap() = Some(Ok(count));
-                    *status.lock().unwrap() = format!("Pre-cached {} files successfully!", count);
-                }
-                Err(e) => {
-                    *result.lock().unwrap() = Some(Err(e.to_string()));
-                    *status.lock().unwrap() = format!("Pre-cache failed: {}", e);
-                }
-            }
-            *progress.lock().unwrap() = 1.0;
-            *is_precaching.lock().unwrap() = false;
-        });
-    }
-}

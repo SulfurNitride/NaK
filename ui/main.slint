@@ -1,0 +1,440 @@
+// NaK Main Window - Slint UI
+
+import { Theme, NakButton, NakCard, SidebarButton, NakProgressBar, StatusFrame, NakComboBox } from "components.slint";
+import { FirstRunSetupPage, GettingStartedPage, MO2Page, MarketplacePage, SettingsPage, VersionPage, SteamMigrationPopup, PrefixInfo } from "pages.slint";
+
+// Re-export for Rust
+export { PrefixInfo }
+
+// Page enumeration
+export enum PageType {
+    FirstRunSetup,
+    GettingStarted,
+    MO2,
+    Marketplace,
+    Settings,
+    Version,
+}
+
+// Main application window
+export component MainWindow inherits Window {
+    title: "NaK";
+    min-width: 720px;
+    min-height: 720px;
+    background: Theme.bg-dark;
+
+    // Application state (set from Rust)
+    in property <PageType> current-page: PageType.FirstRunSetup;
+    in property <bool> steam-detected: true;
+    in property <string> steam-path: "";
+    in property <[string]> steam-accounts: [];
+    in-out property <int> selected-account-index: 0;
+    in property <[string]> missing-deps: [];
+    in property <bool> update-available: false;
+    in property <string> app-version: "";
+
+    // Global installation state
+    in property <bool> is-installing: false;
+    in property <string> install-status: "";
+    in property <float> install-progress: 0.0;
+
+    // MO2 page state
+    in property <int> wizard-step: 0;
+    in property <string> validation-error: "";
+    in property <bool> low-disk-space: false;
+    in property <float> available-disk-gb: 0.0;
+    in property <string> last-error: "";
+    in property <[string]> proton-options: [];
+    in-out property <string> instance-name: "";
+    in-out property <string> install-path: "";
+    in-out property <int> selected-proton-index: 0;
+    in-out property <string> install-type: "";
+    in-out property <int> selected-dpi: 96;
+    in-out property <bool> force-install: false;
+    in-out property <bool> disk-override: false;
+
+    // Marketplace state
+    in property <bool> marketplace-loading: false;
+    in property <string> marketplace-error: "";
+    in property <[string]> plugin-names: [];
+    in property <[string]> plugin-descriptions: [];
+
+    // Settings/Prefix state
+    in property <[PrefixInfo]> prefixes: [];
+
+    // Version page state
+    in property <string> current-version: "";
+    in property <string> latest-version: "";
+    in property <bool> is-checking-update: false;
+    in property <bool> is-installing-update: false;
+    in property <bool> update-installed: false;
+    in property <string> update-error: "";
+    in property <string> release-notes: "";
+    in property <bool> can-self-update: true;
+
+    // Steam migration popup
+    in property <bool> show-migration-popup: false;
+    in property <string> legacy-path: "";
+
+    // Navigation callbacks
+    callback navigate(PageType);
+    callback account-selected(int);
+
+    // MO2 callbacks
+    callback mo2-select-new;
+    callback mo2-select-existing;
+    callback mo2-go-back;
+    callback mo2-go-next;
+    callback mo2-browse-path;
+    callback mo2-start-install;
+    callback mo2-cancel-install;
+    callback mo2-reset-wizard;
+    callback mo2-apply-dpi(int);
+    callback mo2-launch-test-app(string);
+    callback mo2-confirm-dpi;
+    callback mo2-skip-dpi;
+
+    // Getting started callbacks
+    callback open-faq;
+    callback open-github;
+    callback open-discord;
+    callback open-kofi;
+
+    // Marketplace callbacks
+    callback marketplace-refresh;
+    callback marketplace-load-details(int);
+    callback marketplace-install(int);
+
+    // Settings callbacks
+    callback prefix-open-folder(int);
+    callback prefix-update-scripts(int);
+    callback prefix-delete(int);
+    callback prefix-remove-entry(int);
+    callback prefix-change-proton(int, int);
+
+    // Version callbacks
+    callback check-for-updates;
+    callback install-update;
+    callback restart-app;
+    callback open-releases;
+
+    // Migration popup callbacks
+    callback migration-open-folder;
+    callback migration-delete-data;
+    callback migration-dismiss;
+
+    HorizontalLayout {
+        // Sidebar - hidden during first run
+        if root.current-page != PageType.FirstRunSetup: Rectangle {
+            width: 180px;
+            background: Theme.bg-medium;
+
+            VerticalLayout {
+                padding: 15px;
+                spacing: 5px;
+
+                // Logo/Title
+                Text {
+                    text: "NaK";
+                    color: Theme.text-primary;
+                    font-size: 24px;
+                    font-weight: 700;
+                }
+
+                Rectangle { height: 10px; }
+
+                // Steam warning
+                if !root.steam-detected: NakCard {
+                    card-color: Theme.error;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 4px;
+
+                        Text {
+                            text: "STEAM NOT DETECTED";
+                            color: Theme.accent-red;
+                            font-size: 12px;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: "NaK requires Steam to be installed.";
+                            color: #ff9696;
+                            font-size: 11px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // Steam path display
+                if root.steam-detected && root.steam-path != "": Text {
+                    text: "Steam: " + root.steam-path;
+                    color: Theme.text-muted;
+                    font-size: 10px;
+                    overflow: elide;
+                }
+
+                // Account selector (if multiple accounts)
+                if root.steam-detected && root.steam-accounts.length > 1: HorizontalLayout {
+                    spacing: 4px;
+
+                    Text {
+                        text: "Account:";
+                        color: Theme.text-muted;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+
+                    NakComboBox {
+                        options: root.steam-accounts;
+                        current-index <=> root.selected-account-index;
+                        selected(idx) => { root.account-selected(idx); }
+                    }
+                }
+
+                // Single account display
+                if root.steam-detected && root.steam-accounts.length == 1: Text {
+                    text: "Account: " + root.steam-accounts[0];
+                    color: Theme.text-muted;
+                    font-size: 11px;
+                }
+
+                Rectangle { height: 5px; }
+
+                // Missing deps warning
+                if root.missing-deps.length > 0: NakCard {
+                    card-color: Theme.error;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 2px;
+
+                        Text {
+                            text: "Missing Deps:";
+                            color: Theme.accent-red;
+                            font-size: 12px;
+                            font-weight: 600;
+                        }
+
+                        for dep in root.missing-deps: Text {
+                            text: "- " + dep;
+                            color: Theme.accent-red;
+                            font-size: 11px;
+                        }
+                    }
+                }
+
+                // Update notification
+                if root.update-available: NakCard {
+                    card-color: Theme.success;
+
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 4px;
+
+                        Text {
+                            text: "UPDATE AVAILABLE";
+                            color: Theme.accent-green;
+                            font-size: 12px;
+                            font-weight: 600;
+                        }
+
+                        NakButton {
+                            text: "View Update";
+                            min-height: 28px;
+                            clicked => { root.navigate(PageType.Version); }
+                        }
+                    }
+                }
+
+                Rectangle { height: 10px; }
+
+                // Navigation buttons
+                SidebarButton {
+                    text: "Getting Started";
+                    selected: root.current-page == PageType.GettingStarted;
+                    enabled: !root.is-installing;
+                    clicked => { root.navigate(PageType.GettingStarted); }
+                }
+
+                SidebarButton {
+                    text: "MO2";
+                    selected: root.current-page == PageType.MO2;
+                    enabled: !root.is-installing;
+                    clicked => { root.navigate(PageType.MO2); }
+                }
+
+                SidebarButton {
+                    text: "Marketplace";
+                    selected: root.current-page == PageType.Marketplace;
+                    enabled: !root.is-installing;
+                    clicked => { root.navigate(PageType.Marketplace); }
+                }
+
+                SidebarButton {
+                    text: "Prefix Cleanup";
+                    selected: root.current-page == PageType.Settings;
+                    enabled: !root.is-installing;
+                    clicked => { root.navigate(PageType.Settings); }
+                }
+
+                SidebarButton {
+                    text: root.update-available ? "Version (NEW!)" : "Version";
+                    selected: root.current-page == PageType.Version;
+                    enabled: !root.is-installing;
+                    highlight: root.update-available;
+                    clicked => { root.navigate(PageType.Version); }
+                }
+
+                // Spacer
+                Rectangle { vertical-stretch: 1; }
+
+                // Version at bottom
+                Rectangle { height: 1px; background: Theme.bg-accent; }
+                Text {
+                    text: "v" + root.app-version;
+                    color: Theme.text-muted;
+                    font-size: 11px;
+                }
+            }
+        }
+
+        // Main content area
+        Rectangle {
+            background: Theme.bg-dark;
+            horizontal-stretch: 1;
+
+            VerticalLayout {
+                // Global progress bar during installation
+                if root.is-installing: Rectangle {
+                    height: 80px;
+                    background: Theme.bg-medium;
+
+                    VerticalLayout {
+                        padding: 15px;
+                        spacing: 8px;
+                        alignment: center;
+
+                        Text {
+                            text: "Installation in Progress...";
+                            color: Theme.text-primary;
+                            font-size: 16px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                        }
+
+                        Text {
+                            text: root.install-status;
+                            color: Theme.text-secondary;
+                            font-size: 13px;
+                            horizontal-alignment: center;
+                        }
+
+                        NakProgressBar {
+                            progress: root.install-progress;
+                        }
+                    }
+                }
+
+                // Page content
+                Rectangle {
+                    vertical-stretch: 1;
+
+                    if root.current-page == PageType.FirstRunSetup: FirstRunSetupPage {
+                        get-started => { root.navigate(PageType.GettingStarted); }
+                    }
+
+                    if root.current-page == PageType.GettingStarted: GettingStartedPage {
+                        navigate-to-mo2 => { root.navigate(PageType.MO2); }
+                        open-faq => { root.open-faq(); }
+                        open-github => { root.open-github(); }
+                        open-discord => { root.open-discord(); }
+                        open-kofi => { root.open-kofi(); }
+                    }
+
+                    if root.current-page == PageType.MO2: MO2Page {
+                        wizard-step: root.wizard-step;
+                        is-installing: root.is-installing;
+                        install-status: root.install-status;
+                        install-progress: root.install-progress;
+                        validation-error: root.validation-error;
+                        low-disk-space: root.low-disk-space;
+                        available-disk-gb: root.available-disk-gb;
+                        last-error: root.last-error;
+                        proton-options: root.proton-options;
+                        instance-name <=> root.instance-name;
+                        install-path <=> root.install-path;
+                        selected-proton-index <=> root.selected-proton-index;
+                        install-type <=> root.install-type;
+                        selected-dpi <=> root.selected-dpi;
+                        force-install <=> root.force-install;
+                        disk-override <=> root.disk-override;
+
+                        select-install-new => { root.mo2-select-new(); }
+                        select-install-existing => { root.mo2-select-existing(); }
+                        go-back => { root.mo2-go-back(); }
+                        go-next => { root.mo2-go-next(); }
+                        browse-path => { root.mo2-browse-path(); }
+                        start-install => { root.mo2-start-install(); }
+                        cancel-install => { root.mo2-cancel-install(); }
+                        reset-wizard => { root.mo2-reset-wizard(); }
+                        apply-dpi(dpi) => { root.mo2-apply-dpi(dpi); }
+                        launch-test-app(app) => { root.mo2-launch-test-app(app); }
+                        confirm-dpi => { root.mo2-confirm-dpi(); }
+                        skip-dpi => { root.mo2-skip-dpi(); }
+                    }
+
+                    if root.current-page == PageType.Marketplace: MarketplacePage {
+                        is-loading: root.marketplace-loading;
+                        error-message: root.marketplace-error;
+                        plugin-names: root.plugin-names;
+                        plugin-descriptions: root.plugin-descriptions;
+
+                        refresh => { root.marketplace-refresh(); }
+                        load-plugin-details(idx) => { root.marketplace-load-details(idx); }
+                        install-plugin(idx) => { root.marketplace-install(idx); }
+                    }
+
+                    if root.current-page == PageType.Settings: SettingsPage {
+                        prefixes: root.prefixes;
+                        proton-options: root.proton-options;
+
+                        open-folder(idx) => { root.prefix-open-folder(idx); }
+                        update-scripts(idx) => { root.prefix-update-scripts(idx); }
+                        delete-prefix(idx) => { root.prefix-delete(idx); }
+                        remove-entry(idx) => { root.prefix-remove-entry(idx); }
+                        change-proton(idx, proton) => { root.prefix-change-proton(idx, proton); }
+                    }
+
+                    if root.current-page == PageType.Version: VersionPage {
+                        current-version: root.current-version;
+                        latest-version: root.latest-version;
+                        update-available: root.update-available;
+                        is-checking: root.is-checking-update;
+                        is-installing: root.is-installing-update;
+                        update-installed: root.update-installed;
+                        error-message: root.update-error;
+                        release-notes: root.release-notes;
+                        can-self-update: root.can-self-update;
+
+                        check-for-updates => { root.check-for-updates(); }
+                        install-update => { root.install-update(); }
+                        restart-app => { root.restart-app(); }
+                        open-releases => { root.open-releases(); }
+                    }
+                }
+            }
+        }
+    }
+
+    // Steam migration popup overlay
+    if root.show-migration-popup: SteamMigrationPopup {
+        show-popup: root.show-migration-popup;
+        legacy-path: root.legacy-path;
+
+        open-folder => { root.migration-open-folder(); }
+        delete-data => { root.migration-delete-data(); }
+        dismiss => { root.migration-dismiss(); }
+    }
+}
