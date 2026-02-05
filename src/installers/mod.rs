@@ -22,26 +22,9 @@ use std::fs;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use serde::Deserialize;
-
+use crate::github::GithubRelease;
 use crate::logging::log_install;
 use crate::steam::SteamProton;
-
-// ============================================================================
-// GitHub Release Types (for fetching MO2/Vortex releases)
-// ============================================================================
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct GithubRelease {
-    pub tag_name: String,
-    pub assets: Vec<GithubAsset>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct GithubAsset {
-    pub name: String,
-    pub browser_download_url: String,
-}
 
 // ============================================================================
 // Shared Types
@@ -85,6 +68,28 @@ impl TaskContext {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancel_flag.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Run a command that can be killed if the user cancels.
+    ///
+    /// Uses spawn() + try_wait() polling instead of .status() so the child
+    /// process can be killed promptly on cancellation.
+    pub fn run_cancellable(&self, mut cmd: std::process::Command) -> Result<std::process::ExitStatus, Box<dyn std::error::Error>> {
+        let mut child = cmd.spawn()?;
+
+        loop {
+            match child.try_wait()? {
+                Some(status) => return Ok(status),
+                None => {
+                    if self.is_cancelled() {
+                        let _ = child.kill();
+                        let _ = child.wait(); // Reap the zombie
+                        return Err("Cancelled".into());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+            }
+        }
     }
 }
 

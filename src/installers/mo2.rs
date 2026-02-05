@@ -7,9 +7,31 @@ use std::path::PathBuf;
 use super::common::{check_cancelled, check_disk_space, finalize_steam_installation_with_tools, get_dxvk_conf_path, InstallError, ManagerType};
 use super::{fetch_latest_mo2_release, install_all_dependencies, TaskContext};
 use crate::config::{AppConfig, ManagedPrefixes};
-use crate::logging::{log_download, log_error, log_install};
+use crate::logging::{log_download, log_error, log_install, log_warning};
 use crate::steam::{self, SteamProton};
 use crate::utils::download_file;
+
+/// Clean up a partially-created Steam shortcut and prefix after a failed install.
+fn cleanup_failed_install(app_id: u32, prefix_path: &std::path::Path) {
+    log_warning(&format!("Cleaning up failed installation (AppID: {})", app_id));
+
+    // Remove the Steam shortcut
+    if let Err(e) = steam::remove_steam_shortcut(app_id) {
+        log_error(&format!("Failed to remove Steam shortcut during cleanup: {}", e));
+    }
+
+    // Delete the prefix (the appid folder is the parent of pfx)
+    if let Some(appid_folder) = prefix_path.parent() {
+        if appid_folder.exists() {
+            if let Err(e) = std::fs::remove_dir_all(appid_folder) {
+                log_error(&format!("Failed to remove prefix dir during cleanup: {}", e));
+            }
+        }
+    }
+
+    // Unregister if it was already registered
+    ManagedPrefixes::unregister(app_id);
+}
 
 /// Minimum disk space required for MO2 installation (in GB)
 const MIN_DISK_SPACE_GB: f64 = 5.0;
@@ -96,21 +118,44 @@ pub fn install_mo2(
         steam_result.prefix_path
     ));
 
-    check_cancelled(&ctx)?;
+    // From this point, if anything fails we must clean up the shortcut and prefix
+    let result = do_install_mo2_inner(
+        install_name, &install_path, proton, &ctx, &steam_result, &steam_path, &exe_path,
+    );
+
+    if result.is_err() {
+        cleanup_failed_install(steam_result.app_id, &steam_result.prefix_path);
+    }
+
+    result
+}
+
+/// Inner installation logic for install_mo2 (after shortcut creation).
+/// Separated so cleanup_failed_install runs on any error/cancel.
+fn do_install_mo2_inner(
+    install_name: &str,
+    install_path: &PathBuf,
+    proton: &SteamProton,
+    ctx: &TaskContext,
+    steam_result: &steam::SteamShortcutResult,
+    steam_path: &PathBuf,
+    exe_path: &std::path::Path,
+) -> Result<Mo2InstallResult, Box<dyn std::error::Error>> {
+    check_cancelled(ctx)?;
 
     // 2. Create install directory
-    ctx.set_status("Creating directories...".to_string());
+    ctx.set_status("Preparing installation folder...".to_string());
     ctx.set_progress(0.08);
 
-    fs::create_dir_all(&install_path).map_err(|e| InstallError::DirectoryCreation {
+    fs::create_dir_all(install_path).map_err(|e| InstallError::DirectoryCreation {
         path: install_path.display().to_string(),
         reason: e.to_string(),
     })?;
 
-    check_cancelled(&ctx)?;
+    check_cancelled(ctx)?;
 
     // 3. Download MO2
-    ctx.set_status("Fetching MO2 release info...".to_string());
+    ctx.set_status("Checking for latest MO2 version...".to_string());
     let release = fetch_latest_mo2_release()?;
 
     let invalid_terms = ["Linux", "pdbs", "src", "uibase", "commits"];
@@ -137,13 +182,13 @@ pub fn install_mo2(
     download_file(&asset.browser_download_url, &archive_path)?;
     log_download(&format!("MO2 downloaded to: {:?}", archive_path));
 
-    check_cancelled(&ctx)?;
+    check_cancelled(ctx)?;
 
     // 4. Extract
     ctx.set_status("Extracting MO2...".to_string());
     ctx.set_progress(0.15);
 
-    if let Err(e) = sevenz_rust::decompress_file(&archive_path, &install_path) {
+    if let Err(e) = sevenz_rust::decompress_file(&archive_path, install_path) {
         log_error(&format!("Failed to extract MO2 archive: {}", e));
         return Err(InstallError::Other {
             context: "MO2 extraction".to_string(),
@@ -167,27 +212,27 @@ pub fn install_mo2(
         .into());
     }
 
-    check_cancelled(&ctx)?;
+    check_cancelled(ctx)?;
 
     // 6. Initialize prefix and install dependencies
-    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.20, 0.90, steam_result.app_id)?;
+    install_all_dependencies(&steam_result.prefix_path, proton, ctx, 0.20, 0.90, steam_result.app_id)?;
 
     ctx.set_progress(0.92);
 
-    check_cancelled(&ctx)?;
+    check_cancelled(ctx)?;
 
     // 7. Finalize installation (creates NaK Tools folder)
     finalize_steam_installation_with_tools(
         ManagerType::MO2,
         &steam_result.prefix_path,
-        &install_path,
+        install_path,
         steam_result.app_id,
         &proton.path,
-        &ctx,
+        ctx,
     )?;
 
     // 8. Save Steam integration config
-    if let Err(e) = save_steam_config(&install_path, steam_result.app_id) {
+    if let Err(e) = save_steam_config(install_path, steam_result.app_id) {
         log_error(&format!("Warning: Failed to save Steam config: {}", e));
     }
 
@@ -209,7 +254,7 @@ pub fn install_mo2(
 
     Ok(Mo2InstallResult {
         app_id: steam_result.app_id,
-        prefix_path: steam_result.prefix_path,
+        prefix_path: steam_result.prefix_path.clone(),
     })
 }
 
@@ -266,27 +311,48 @@ pub fn setup_existing_mo2(
         steam_result.app_id
     ));
 
-    check_cancelled(&ctx)?;
+    // From this point, if anything fails we must clean up the shortcut and prefix
+    let result = do_setup_existing_inner(
+        install_name, &existing_path, proton, &ctx, &steam_result, &steam_path,
+    );
+
+    if result.is_err() {
+        cleanup_failed_install(steam_result.app_id, &steam_result.prefix_path);
+    }
+
+    result
+}
+
+/// Inner setup logic for setup_existing_mo2 (after shortcut creation).
+fn do_setup_existing_inner(
+    install_name: &str,
+    existing_path: &PathBuf,
+    proton: &SteamProton,
+    ctx: &TaskContext,
+    steam_result: &steam::SteamShortcutResult,
+    steam_path: &PathBuf,
+) -> Result<Mo2InstallResult, Box<dyn Error>> {
+    check_cancelled(ctx)?;
 
     // 2. Install dependencies
-    install_all_dependencies(&steam_result.prefix_path, proton, &ctx, 0.10, 0.85, steam_result.app_id)?;
+    install_all_dependencies(&steam_result.prefix_path, proton, ctx, 0.10, 0.85, steam_result.app_id)?;
 
     ctx.set_progress(0.90);
 
-    check_cancelled(&ctx)?;
+    check_cancelled(ctx)?;
 
     // 3. Finalize (creates NaK Tools folder)
     finalize_steam_installation_with_tools(
         ManagerType::MO2,
         &steam_result.prefix_path,
-        &existing_path,
+        existing_path,
         steam_result.app_id,
         &proton.path,
-        &ctx,
+        ctx,
     )?;
 
     // 4. Save Steam integration config
-    if let Err(e) = save_steam_config(&existing_path, steam_result.app_id) {
+    if let Err(e) = save_steam_config(existing_path, steam_result.app_id) {
         log_error(&format!("Warning: Failed to save Steam config: {}", e));
     }
 
@@ -308,6 +374,6 @@ pub fn setup_existing_mo2(
 
     Ok(Mo2InstallResult {
         app_id: steam_result.app_id,
-        prefix_path: steam_result.prefix_path,
+        prefix_path: steam_result.prefix_path.clone(),
     })
 }

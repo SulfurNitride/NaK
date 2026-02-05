@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
 
-// Log files are now written to the current working directory for easy access
+// Log files are written next to the application (CWD) for easy review and sharing
 
 static LOGGER: OnceLock<Arc<Mutex<NakLogger>>> = OnceLock::new();
 
@@ -293,11 +293,14 @@ impl Default for NakLogger {
 
 impl NakLogger {
     pub fn new() -> Self {
-        // Write log to current working directory for easy access
+        let logs_dir = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+        // Rotate old logs before creating a new one
+        rotate_logs(&logs_dir, 10);
+
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-        let log_path = std::env::current_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            .join(format!("nak_{}.log", timestamp));
+        let log_path = logs_dir.join(format!("nak_{}.log", timestamp));
 
         let log_file = OpenOptions::new()
             .create(true)
@@ -315,7 +318,7 @@ impl NakLogger {
 
         // Log where the file is being written
         if has_log_file {
-            println!("Log file: {}", log_path.display());
+            eprintln!("Log file: {}", log_path.display());
         }
 
         logger
@@ -392,5 +395,33 @@ pub fn log_warning(message: &str) {
 pub fn log_error(message: &str) {
     if let Ok(mut log) = logger().lock() {
         log.log(LogLevel::Error, message);
+    }
+}
+
+/// Remove oldest log files if there are more than `max_logs` in the directory
+fn rotate_logs(logs_dir: &std::path::Path, max_logs: usize) {
+    let Ok(entries) = std::fs::read_dir(logs_dir) else {
+        return;
+    };
+
+    let mut log_files: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("nak_") && n.ends_with(".log"))
+        })
+        .collect();
+
+    // Sort alphabetically — timestamp in filename means chronological order
+    log_files.sort();
+
+    // Remove oldest files until we're under the limit
+    while log_files.len() >= max_logs {
+        if let Some(oldest) = log_files.first() {
+            let _ = std::fs::remove_file(oldest);
+        }
+        log_files.remove(0);
     }
 }

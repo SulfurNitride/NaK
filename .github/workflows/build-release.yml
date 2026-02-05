@@ -18,7 +18,7 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     permissions:
-      contents: read # Only read access needed for building
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +38,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
       - name: Build release
         run: cargo build --release
 
@@ -50,15 +53,8 @@ jobs:
           name: nak-linux-x86_64-binary
           path: target/release/nak
 
-  release:
-    needs: build-linux
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write # Write access needed to create a release
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: nak-linux-x86_64-binary
+      - name: Upload binary to release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gh release upload "${{ github.ref_name }}" target/release/nak --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

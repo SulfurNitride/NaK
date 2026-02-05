@@ -146,8 +146,7 @@ impl AppConfig {
 
     /// Get path to tmp directory (~/.cache/nak/tmp/)
     pub fn get_tmp_path() -> PathBuf {
-        let config = Self::load();
-        config.get_cache_dir().join("tmp")
+        Self::get_default_cache_dir().join("tmp")
     }
 
     /// Get path to Prefixes directory (legacy - for migration detection only)

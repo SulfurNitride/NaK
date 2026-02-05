@@ -15,7 +15,7 @@ use std::process::{Child, Command};
 
 use super::{apply_wine_registry_settings, TaskContext};
 use crate::config::AppConfig;
-use crate::deps::{install_standard_deps, STANDARD_VERBS};
+use crate::deps::{install_standard_deps_cancellable, STANDARD_VERBS};
 use crate::game_finder::{detect_all_games, Game};
 use crate::logging::{log_install, log_warning};
 use crate::steam::{detect_steam_path_checked, SteamProton};
@@ -58,11 +58,11 @@ pub fn install_all_dependencies(
     // =========================================================================
     // 0. Initialize prefix with Proton wrapper (creates proper prefix structure)
     // =========================================================================
-    ctx.set_status("Initializing Wine prefix with Proton...".to_string());
+    ctx.set_status("Setting up Windows compatibility layer...".to_string());
     ctx.log("Initializing Wine prefix with Proton...".to_string());
     log_install("Running proton wineboot to initialize prefix");
 
-    if let Err(e) = initialize_prefix_with_proton(prefix_root, install_proton, app_id) {
+    if let Err(e) = initialize_prefix_with_proton(prefix_root, install_proton, app_id, ctx) {
         ctx.log(format!("Warning: Proton prefix init failed: {}", e));
         log_warning(&format!("Proton prefix init failed: {}", e));
         // Continue anyway - winetricks might still work
@@ -77,7 +77,7 @@ pub fn install_all_dependencies(
     // =========================================================================
     // 0.5. Clean up unwanted drive letters (keep only C: and Z:)
     // =========================================================================
-    ctx.set_status("Cleaning up Wine drive letters...".to_string());
+    ctx.set_status("Optimizing prefix configuration...".to_string());
     ctx.log("Removing unwanted drive letters (keeping C: and Z:)...".to_string());
     log_install("Cleaning up Wine drive letters");
 
@@ -93,7 +93,7 @@ pub fn install_all_dependencies(
     // =========================================================================
     // 1. Standard Dependencies via Winetricks
     // =========================================================================
-    ctx.set_status("Installing dependencies via winetricks...".to_string());
+    ctx.set_status("Installing required Windows components (this may take several minutes)...".to_string());
     ctx.log(format!(
         "Installing {} dependencies via winetricks: {}",
         STANDARD_VERBS.len(),
@@ -109,7 +109,7 @@ pub fn install_all_dependencies(
         }
     };
 
-    if let Err(e) = install_standard_deps(prefix_root, install_proton, winetricks_log_cb) {
+    if let Err(e) = install_standard_deps_cancellable(prefix_root, install_proton, winetricks_log_cb, &ctx.cancel_flag) {
         let msg = format!("Winetricks installation had issues: {}", e);
         ctx.log(format!("Warning: {}", msg));
         log_warning(&msg);
@@ -124,18 +124,18 @@ pub fn install_all_dependencies(
     // =========================================================================
     // 2. Custom .NET Runtimes (not in winetricks yet)
     // =========================================================================
-    ctx.set_status("Installing .NET 9 SDK...".to_string());
+    ctx.set_status("Installing .NET runtime (1 of 2)...".to_string());
     ctx.log("Installing .NET 9 SDK...".to_string());
 
-    if let Err(e) = install_dotnet_runtime(prefix_root, install_proton, DOTNET9_SDK_URL, "dotnet-sdk-9") {
+    if let Err(e) = install_dotnet_runtime(prefix_root, install_proton, DOTNET9_SDK_URL, "dotnet-sdk-9", ctx) {
         ctx.log(format!("Warning: .NET 9 SDK install failed: {}", e));
         log_warning(&format!(".NET 9 SDK install failed: {}", e));
     }
 
-    ctx.set_status("Installing .NET Desktop Runtime 10...".to_string());
+    ctx.set_status("Installing .NET runtime (2 of 2)...".to_string());
     ctx.log("Installing .NET Desktop Runtime 10...".to_string());
 
-    if let Err(e) = install_dotnet_runtime(prefix_root, install_proton, DOTNET_DESKTOP10_URL, "dotnet-desktop-10") {
+    if let Err(e) = install_dotnet_runtime(prefix_root, install_proton, DOTNET_DESKTOP10_URL, "dotnet-desktop-10", ctx) {
         ctx.log(format!("Warning: .NET Desktop 10 install failed: {}", e));
         log_warning(&format!(".NET Desktop 10 install failed: {}", e));
     }
@@ -149,7 +149,7 @@ pub fn install_all_dependencies(
     // =========================================================================
     // 3. Auto-detect and register installed games
     // =========================================================================
-    ctx.set_status("Detecting installed games...".to_string());
+    ctx.set_status("Detecting your installed games...".to_string());
     ctx.log("Auto-detecting installed Steam games...".to_string());
     log_install("Auto-detecting installed games for registry");
 
@@ -168,7 +168,7 @@ pub fn install_all_dependencies(
     // =========================================================================
     // 4. Registry Settings (after prefix is fully initialized)
     // =========================================================================
-    ctx.set_status("Applying Wine Registry Settings...".to_string());
+    ctx.set_status("Configuring Windows registry...".to_string());
     ctx.log("Applying Wine Registry Settings...".to_string());
     log_install("Applying Wine registry settings");
 
@@ -185,11 +185,11 @@ pub fn install_all_dependencies(
     // =========================================================================
     // 5. Set Windows 11 Mode
     // =========================================================================
-    ctx.set_status("Setting Windows 11 mode...".to_string());
+    ctx.set_status("Finalizing compatibility settings...".to_string());
     ctx.log("Setting Windows 11 mode...".to_string());
     log_install("Setting Windows 11 mode via winetricks");
 
-    if let Err(e) = set_windows_11_mode(prefix_root, install_proton) {
+    if let Err(e) = set_windows_11_mode(prefix_root, install_proton, ctx) {
         ctx.log(format!("Warning: Failed to set Windows 11 mode: {}", e));
         log_warning(&format!("Failed to set Windows 11 mode: {}", e));
     }
@@ -209,6 +209,7 @@ fn install_dotnet_runtime(
     proton: &SteamProton,
     url: &str,
     name: &str,
+    ctx: &TaskContext,
 ) -> Result<(), Box<dyn Error>> {
     let cache_dir = AppConfig::get_default_cache_dir();
     fs::create_dir_all(&cache_dir)?;
@@ -235,14 +236,15 @@ fn install_dotnet_runtime(
 
     log_install(&format!("Running {} installer...", name));
 
-    let status = Command::new(&wine_bin)
-        .arg(&installer_path)
+    let mut cmd = Command::new(&wine_bin);
+    cmd.arg(&installer_path)
         .arg("/install")
         .arg("/quiet")
         .arg("/norestart")
         .env("WINEPREFIX", prefix_root)
-        .env("WINEDLLOVERRIDES", "mshtml=d")
-        .status()?;
+        .env("WINEDLLOVERRIDES", "mshtml=d");
+
+    let status = ctx.run_cancellable(cmd)?;
 
     if !status.success() {
         return Err(format!("{} installer exited with code {:?}", name, status.code()).into());
@@ -261,6 +263,7 @@ fn initialize_prefix_with_proton(
     prefix_root: &Path,
     proton: &SteamProton,
     app_id: u32,
+    ctx: &TaskContext,
 ) -> Result<(), Box<dyn Error>> {
     // Find the proton wrapper script (not the wine binary)
     let proton_script = proton.path.join("proton");
@@ -279,8 +282,8 @@ fn initialize_prefix_with_proton(
     log_install(&format!("Initializing prefix with proton wrapper: {:?}", proton_script));
     log_install(&format!("STEAM_COMPAT_DATA_PATH={:?}", compat_data_path));
 
-    let status = Command::new(&proton_script)
-        .args(["run", "wineboot", "-u"])
+    let mut cmd = Command::new(&proton_script);
+    cmd.args(["run", "wineboot", "-u"])
         .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_root)
         .env("STEAM_COMPAT_DATA_PATH", compat_data_path)
         .env("SteamAppId", app_id.to_string())
@@ -288,8 +291,9 @@ fn initialize_prefix_with_proton(
         .env("DISPLAY", "") // Suppress GUI
         .env("WAYLAND_DISPLAY", "") // Suppress GUI
         .env("WINEDEBUG", "-all")
-        .env("WINEDLLOVERRIDES", "msdia80.dll=n;conhost.exe=d;cmd.exe=d")
-        .status()?;
+        .env("WINEDLLOVERRIDES", "msdia80.dll=n;conhost.exe=d;cmd.exe=d");
+
+    let status = ctx.run_cancellable(cmd)?;
 
     if !status.success() {
         return Err(format!("proton wineboot failed with exit code: {:?}", status.code()).into());
@@ -444,6 +448,7 @@ pub fn cleanup_prefix_drives(
 fn set_windows_11_mode(
     prefix_root: &Path,
     proton: &SteamProton,
+    ctx: &TaskContext,
 ) -> Result<(), Box<dyn Error>> {
     use crate::deps::ensure_winetricks;
 
@@ -459,13 +464,14 @@ fn set_windows_11_mode(
 
     log_install("Running winetricks win11...");
 
-    let status = Command::new(&winetricks_path)
-        .arg("-q")
+    let mut cmd = Command::new(&winetricks_path);
+    cmd.arg("-q")
         .arg("win11")
         .env("WINE", &wine_bin)
         .env("WINESERVER", &wineserver_bin)
-        .env("WINEPREFIX", prefix_root)
-        .status()?;
+        .env("WINEPREFIX", prefix_root);
+
+    let status = ctx.run_cancellable(cmd)?;
 
     if !status.success() {
         return Err(format!("winetricks win11 failed with exit code: {:?}", status.code()).into());
@@ -550,7 +556,6 @@ pub fn launch_dpi_test_app(
     Ok(child)
 }
 
-/// Kill the wineserver for a prefix (terminates all Wine processes in that prefix)
 /// Kill the wineserver for a prefix (terminates all Wine processes in that prefix)
 pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
     log_install("Killing wineserver for prefix");

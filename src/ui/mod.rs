@@ -251,7 +251,7 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
                         window.set_last_error(status.clone().into());
                         app_mut.install_wizard.step = WizardStep::Finished;
                         window.set_wizard_step(5);
-                    } else if (status.contains("Complete!") || status.contains("Installed!") || status.contains("Setup Complete!"))
+                    } else if (status.contains("Dependencies installed") || status.contains("Complete!") || status.contains("Installed!") || status.contains("Setup Complete!"))
                         && app_mut.install_wizard.step == WizardStep::ProtonSelect {
                         // Sync install results to wizard before moving to DPI setup
                         let app_id_result = app_mut.install_result_app_id.lock().ok().and_then(|g| *g);
@@ -283,6 +283,95 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
                 let err_opt = app_ref.update_error.lock().unwrap().clone();
                 if let Some(ref err) = err_opt {
                     window.set_update_error(err.clone().into());
+                }
+            }
+
+            // Third pass: marketplace async results
+            // Take all results with a single short-lived borrow, then process
+            let (registry_result, detail_result, install_result) = {
+                let app_ref = app_poll.borrow();
+                let reg = app_ref.marketplace_async.registry_result.lock().unwrap().take();
+                let det = app_ref.marketplace_async.detail_result.lock().unwrap().take();
+                let inst = app_ref.marketplace_async.install_result.lock().unwrap().take();
+                (reg, det, inst)
+            };
+
+            if let Some(result) = registry_result {
+                match result {
+                    Ok(registry) => {
+                        let names: Vec<SharedString> = registry.plugins.iter()
+                            .map(|p| SharedString::from(p.name.clone()))
+                            .collect();
+                        let descs: Vec<SharedString> = registry.plugins.iter()
+                            .map(|p| SharedString::from(p.description.clone()))
+                            .collect();
+
+                        window.set_plugin_names(ModelRc::new(VecModel::from(names)));
+                        window.set_plugin_descriptions(ModelRc::new(VecModel::from(descs)));
+                        window.set_marketplace_loading(false);
+                        window.set_marketplace_error("".into());
+
+                        // Reset detail properties when registry refreshes
+                        window.set_selected_plugin_index(-1);
+                        window.set_plugin_detail_author("".into());
+                        window.set_plugin_detail_version("".into());
+                        window.set_plugin_detail_compatible(false);
+
+                        if let Ok(mut app_mut) = app_poll.try_borrow_mut() {
+                            if app_mut.marketplace_state.is_none() {
+                                app_mut.marketplace_state = Some(MarketplaceState::default());
+                            }
+                            if let Some(ref mut state) = app_mut.marketplace_state {
+                                state.registry = Some(registry);
+                                state.manifests.clear();
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log_error(&format!("Failed to fetch marketplace: {}", e));
+                        window.set_marketplace_error(e.into());
+                        window.set_marketplace_loading(false);
+                    }
+                }
+            }
+
+            if let Some((idx, result)) = detail_result {
+                match result {
+                    Ok(manifest) => {
+                        let compatible = nak_rust::marketplace::check_version_compatible(
+                            &manifest.plugin.min_nak_version,
+                        );
+                        window.set_selected_plugin_index(idx as i32);
+                        window.set_plugin_detail_author(manifest.plugin.author.clone().into());
+                        window.set_plugin_detail_version(manifest.plugin.min_nak_version.clone().into());
+                        window.set_plugin_detail_compatible(compatible);
+                        window.set_marketplace_loading(false);
+
+                        if let Ok(mut app_mut) = app_poll.try_borrow_mut() {
+                            if app_mut.marketplace_state.is_none() {
+                                app_mut.marketplace_state = Some(MarketplaceState::default());
+                            }
+                            if let Some(ref mut state) = app_mut.marketplace_state {
+                                state.manifests.insert(idx, manifest);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log_error(&format!("Failed to fetch plugin details: {}", e));
+                        window.set_marketplace_error(e.into());
+                        window.set_marketplace_loading(false);
+                    }
+                }
+            }
+
+            if let Some(result) = install_result {
+                match result {
+                    Ok(msg) => {
+                        log_info(&msg);
+                    }
+                    Err(e) => {
+                        log_error(&format!("Plugin installation failed: {}", e));
+                    }
                 }
             }
         }
@@ -620,57 +709,65 @@ fn setup_marketplace_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                 window.set_marketplace_error("".into());
             }
 
-            // Fetch registry (blocking for simplicity)
-            match nak_rust::marketplace::fetch_registry() {
-                Ok(registry) => {
-                    if let Some(window) = window_weak.upgrade() {
-                        let names: Vec<SharedString> = registry.plugins.iter()
-                            .map(|p| SharedString::from(p.name.clone()))
-                            .collect();
-                        let descs: Vec<SharedString> = registry.plugins.iter()
-                            .map(|p| SharedString::from(p.description.clone()))
-                            .collect();
+            if let Some(app_rc) = app_weak.upgrade() {
+                let app_ref = app_rc.borrow();
+                let result_arc = app_ref.marketplace_async.registry_result.clone();
+                *result_arc.lock().unwrap() = None;
 
-                        window.set_plugin_names(ModelRc::new(VecModel::from(names)));
-                        window.set_plugin_descriptions(ModelRc::new(VecModel::from(descs)));
-                        window.set_marketplace_loading(false);
-                    }
-
-                    // Store registry in app state
-                    if let Some(app_rc) = app_weak.upgrade() {
-                        let mut app_ref = app_rc.borrow_mut();
-                        if app_ref.marketplace_state.is_none() {
-                            app_ref.marketplace_state = Some(crate::ui::MarketplaceState::default());
-                        }
-                        if let Some(ref mut state) = app_ref.marketplace_state {
-                            state.registry = Some(registry);
-                        }
-                    }
-                }
-                Err(e) => {
-                    log_error(&format!("Failed to fetch marketplace: {}", e));
-                    if let Some(window) = window_weak.upgrade() {
-                        window.set_marketplace_error(e.to_string().into());
-                        window.set_marketplace_loading(false);
-                    }
-                }
+                thread::spawn(move || {
+                    let result = nak_rust::marketplace::fetch_registry()
+                        .map_err(|e| e.to_string());
+                    *result_arc.lock().unwrap() = Some(result);
+                });
             }
         });
     }
 
     // Load plugin details
     {
-        window.on_marketplace_load_details(move |_idx| {
-            log_action(&format!("Marketplace: Load details for plugin {}", _idx));
-            // Simplified - in full implementation would fetch manifest
+        let app_weak = Rc::downgrade(app);
+        let window_weak = window.as_weak();
+        window.on_marketplace_load_details(move |idx| {
+            log_action(&format!("Marketplace: Load details for plugin {}", idx));
+
+            if let Some(app_rc) = app_weak.upgrade() {
+                let app_ref = app_rc.borrow();
+
+                // Get the folder name from the registry
+                let folder = app_ref.marketplace_state.as_ref()
+                    .and_then(|s| s.registry.as_ref())
+                    .and_then(|r| r.plugins.get(idx as usize))
+                    .map(|p| p.folder.clone());
+
+                if let Some(folder) = folder {
+                    let result_arc = app_ref.marketplace_async.detail_result.clone();
+                    *result_arc.lock().unwrap() = None;
+
+                    if let Some(window) = window_weak.upgrade() {
+                        window.set_marketplace_loading(true);
+                    }
+
+                    let plugin_idx = idx as usize;
+                    thread::spawn(move || {
+                        let result = nak_rust::marketplace::fetch_plugin_manifest(&folder)
+                            .map_err(|e| e.to_string());
+                        *result_arc.lock().unwrap() = Some((plugin_idx, result));
+                    });
+                }
+            }
         });
     }
 
     // Install plugin
     {
-        window.on_marketplace_install(move |_idx| {
-            log_action(&format!("Marketplace: Install plugin {}", _idx));
-            // Simplified - in full implementation would start install wizard
+        let app_weak = Rc::downgrade(app);
+        let window_weak = window.as_weak();
+        window.on_marketplace_install(move |idx| {
+            log_action(&format!("Marketplace: Install plugin {}", idx));
+
+            if let Some(app_rc) = app_weak.upgrade() {
+                start_plugin_installation(app_rc, idx as usize, &window_weak);
+            }
         });
     }
 }
@@ -736,12 +833,15 @@ fn setup_settings_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
         });
     }
 
-    // Delete prefix
+    // Delete prefix (now just sets confirm-delete-index in Slint, actual deletion via confirm)
+    // The on_prefix_delete callback is no longer used for actual deletion — Slint handles it.
+
+    // Confirm delete prefix (actual deletion)
     {
         let app_weak = Rc::downgrade(app);
         let window_weak = window.as_weak();
-        window.on_prefix_delete(move |idx| {
-            log_action(&format!("Settings: Delete prefix {}", idx));
+        window.on_prefix_confirm_delete(move |idx| {
+            log_action(&format!("Settings: Confirmed delete prefix {}", idx));
             let managed = ManagedPrefixes::load();
             if let Some(prefix) = managed.prefixes.get(idx as usize) {
                 match ManagedPrefixes::delete_prefix(prefix.app_id) {
@@ -756,6 +856,13 @@ fn setup_settings_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                     window.set_prefixes(build_prefix_info(&app_rc.borrow()));
                 }
             }
+        });
+    }
+
+    // Cancel delete prefix
+    {
+        window.on_prefix_cancel_delete(|| {
+            log_action("Settings: Cancelled prefix deletion");
         });
     }
 
@@ -862,8 +969,25 @@ fn setup_version_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
         window.on_restart_app(|| {
             log_action("Version: Restart app");
             if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(&exe).spawn();
-                std::process::exit(0);
+                match std::process::Command::new(&exe).spawn() {
+                    Ok(_) => std::process::exit(0),
+                    Err(e) => {
+                        log_error(&format!("Failed to restart: {}", e));
+                        // Attempt to restore from backup
+                        if let Some(dir) = exe.parent() {
+                            let backup = dir.join(".nak_backup");
+                            if backup.exists() {
+                                log_warning("Attempting to restore from backup...");
+                                if std::fs::rename(&backup, &exe).is_ok() {
+                                    if std::process::Command::new(&exe).spawn().is_ok() {
+                                        std::process::exit(0);
+                                    }
+                                }
+                                log_error("Failed to restore from backup");
+                            }
+                        }
+                    }
+                }
             }
         });
     }
@@ -993,6 +1117,7 @@ fn start_installation(app: Rc<RefCell<MyApp>>) {
     // Clone Arc fields first, before borrowing wizard mutably
     let (status_arc, busy_arc, logs_arc, progress_arc, cancel_arc, result_app_id_arc, result_prefix_path_arc);
     let (instance_name, install_path, manager_type, install_type, skip_disk_check, selected_proton_name, steam_proton);
+    let plugin_manifest;
 
     {
         let app_ref = app.borrow();
@@ -1011,6 +1136,7 @@ fn start_installation(app: Rc<RefCell<MyApp>>) {
         manager_type = wizard.manager_type.clone();
         install_type = wizard.install_type.clone();
         skip_disk_check = wizard.disk_space_override;
+        plugin_manifest = wizard.plugin_manifest.clone();
 
         selected_proton_name = match &wizard.selected_proton {
             Some(name) => name.clone(),
@@ -1077,6 +1203,29 @@ fn start_installation(app: Rc<RefCell<MyApp>>) {
             ("MO2", "Existing") => setup_existing_mo2(&instance_name, install_path, &steam_proton, ctx)
                 .map(|r| (r.app_id, r.prefix_path))
                 .map_err(|e| e.to_string()),
+            ("Plugin", _) => {
+                match plugin_manifest {
+                    Some(ref manifest) => {
+                        nak_rust::installers::install_plugin(
+                            manifest,
+                            &instance_name,
+                            install_path.clone(),
+                            &steam_proton,
+                            ctx,
+                            skip_disk_check,
+                        )
+                        .map(|r| {
+                            // Plugin installer doesn't return prefix_path, derive it
+                            let prefix_path = nak_rust::steam::find_steam_path()
+                                .map(|sp| sp.join("steamapps/compatdata").join(r.app_id.to_string()).join("pfx"))
+                                .unwrap_or_default();
+                            (r.app_id, prefix_path)
+                        })
+                        .map_err(|e| e.to_string())
+                    }
+                    None => Err("No plugin manifest available".to_string()),
+                }
+            }
             _ => Err("Unknown installation type".to_string()),
         };
 
@@ -1095,16 +1244,21 @@ fn start_installation(app: Rc<RefCell<MyApp>>) {
                 *status_arc.lock().unwrap() = "Restarting Steam...".to_string();
                 match nak_rust::steam::restart_steam() {
                     Ok(_) => {
-                        *status_arc.lock().unwrap() = "Installation Complete! Steam has been restarted.".to_string();
+                        *status_arc.lock().unwrap() = "Dependencies installed. Configuring DPI...".to_string();
                     }
                     Err(e) => {
                         log_warning(&format!("Failed to restart Steam automatically: {}", e));
-                        *status_arc.lock().unwrap() = "Installation Complete! Please restart Steam manually.".to_string();
+                        *status_arc.lock().unwrap() = "Dependencies installed. Please restart Steam manually after setup.".to_string();
                     }
                 }
             }
             Err(e) => {
-                *status_arc.lock().unwrap() = format!("Error: {}", e);
+                // Cleanup is handled inside install_mo2/setup_existing_mo2 themselves
+                if e.contains("Cancelled") {
+                    *status_arc.lock().unwrap() = "Cancelled — installation cleaned up.".to_string();
+                } else {
+                    *status_arc.lock().unwrap() = format!("Error: {}", e);
+                }
             }
         }
     });
@@ -1227,10 +1381,75 @@ fn handle_confirm_dpi(app: &mut MyApp) {
 }
 
 // ============================================================================
+// Plugin Installation
+// ============================================================================
+
+/// Set up the install wizard for a marketplace plugin, then navigate to the MO2 page
+/// so the user can choose name, path, and proton before installation starts.
+fn start_plugin_installation(app: Rc<RefCell<MyApp>>, plugin_idx: usize, window_weak: &slint::Weak<MainWindow>) {
+    let plugin_name;
+    {
+        let mut app_ref = app.borrow_mut();
+
+        // Get manifest from marketplace state
+        let manifest = app_ref.marketplace_state.as_ref()
+            .and_then(|s| s.manifests.get(&plugin_idx).cloned());
+        let manifest = match manifest {
+            Some(m) => m,
+            None => {
+                log_error("No manifest loaded for this plugin. Load details first.");
+                return;
+            }
+        };
+
+        plugin_name = manifest.plugin.name.clone();
+        log_action(&format!("Plugin install wizard: {}", plugin_name));
+
+        // Reset wizard and pre-populate for plugin install
+        app_ref.install_wizard = InstallWizard::default();
+        app_ref.install_wizard.manager_type = "Plugin".to_string();
+        app_ref.install_wizard.install_type = "New".to_string();
+        app_ref.install_wizard.name = plugin_name.clone();
+        app_ref.install_wizard.plugin_manifest = Some(manifest);
+        app_ref.install_wizard.step = WizardStep::NameInput;
+
+        // Navigate to MO2 page (which hosts the install wizard)
+        app_ref.current_page = crate::app::Page::ModManagers;
+
+        // Clear previous install state
+        *app_ref.install_status.lock().unwrap() = String::new();
+        *app_ref.install_progress.lock().unwrap() = 0.0;
+        app_ref.logs.lock().unwrap().clear();
+        app_ref.cancel_install.store(false, Ordering::Relaxed);
+    }
+
+    // Update the Slint window to reflect the navigation and wizard state
+    if let Some(window) = window_weak.upgrade() {
+        window.set_current_page(PageType::MO2);
+        window.set_wizard_step(wizard_step_to_int(WizardStep::NameInput));
+        window.set_instance_name(plugin_name.into());
+        window.set_install_path("".into());
+        window.set_install_type("New".into());
+        window.set_validation_error("".into());
+        window.set_last_error("".into());
+        window.set_force_install(false);
+        window.set_disk_override(false);
+    }
+}
+
+// ============================================================================
 // Marketplace State
 // ============================================================================
 
 #[derive(Default)]
 pub struct MarketplaceState {
     pub registry: Option<nak_rust::marketplace::Registry>,
+    pub manifests: std::collections::HashMap<usize, nak_rust::marketplace::PluginManifest>,
+}
+
+/// Shared state for async marketplace operations
+pub struct MarketplaceAsync {
+    pub registry_result: Arc<Mutex<Option<Result<nak_rust::marketplace::Registry, String>>>>,
+    pub detail_result: Arc<Mutex<Option<(usize, Result<nak_rust::marketplace::PluginManifest, String>)>>>,
+    pub install_result: Arc<Mutex<Option<Result<String, String>>>>,
 }

@@ -58,6 +58,10 @@ export component MainWindow inherits Window {
     in property <string> marketplace-error: "";
     in property <[string]> plugin-names: [];
     in property <[string]> plugin-descriptions: [];
+    in property <int> selected-plugin-index: -1;
+    in property <string> plugin-detail-author: "";
+    in property <string> plugin-detail-version: "";
+    in property <bool> plugin-detail-compatible: false;
 
     // Settings/Prefix state
     in property <[PrefixInfo]> prefixes: [];
@@ -111,6 +115,11 @@ export component MainWindow inherits Window {
     callback prefix-delete(int);
     callback prefix-remove-entry(int);
     callback prefix-change-proton(int, int);
+    callback prefix-confirm-delete(int);
+    callback prefix-cancel-delete;
+
+    // Delete confirmation state
+    in-out property <int> confirm-delete-index: -1;
 
     // Version callbacks
     callback check-for-updates;
@@ -329,6 +338,7 @@ export component MainWindow inherits Window {
                             color: Theme.text-secondary;
                             font-size: 13px;
                             horizontal-alignment: center;
+                            overflow: elide;
                         }
 
                         NakProgressBar {
@@ -342,6 +352,9 @@ export component MainWindow inherits Window {
                     vertical-stretch: 1;
 
                     if root.current-page == PageType.FirstRunSetup: FirstRunSetupPage {
+                        steam-detected: root.steam-detected;
+                        proton-count: root.proton-options.length;
+                        missing-deps: root.missing-deps;
                         get-started => { root.navigate(PageType.GettingStarted); }
                     }
 
@@ -390,6 +403,10 @@ export component MainWindow inherits Window {
                         error-message: root.marketplace-error;
                         plugin-names: root.plugin-names;
                         plugin-descriptions: root.plugin-descriptions;
+                        selected-plugin-index: root.selected-plugin-index;
+                        plugin-detail-author: root.plugin-detail-author;
+                        plugin-detail-version: root.plugin-detail-version;
+                        plugin-detail-compatible: root.plugin-detail-compatible;
 
                         refresh => { root.marketplace-refresh(); }
                         load-plugin-details(idx) => { root.marketplace-load-details(idx); }
@@ -402,7 +419,7 @@ export component MainWindow inherits Window {
 
                         open-folder(idx) => { root.prefix-open-folder(idx); }
                         update-scripts(idx) => { root.prefix-update-scripts(idx); }
-                        delete-prefix(idx) => { root.prefix-delete(idx); }
+                        delete-prefix(idx) => { root.confirm-delete-index = idx; }
                         remove-entry(idx) => { root.prefix-remove-entry(idx); }
                         change-proton(idx, proton) => { root.prefix-change-proton(idx, proton); }
                     }
@@ -436,5 +453,78 @@ export component MainWindow inherits Window {
         open-folder => { root.migration-open-folder(); }
         delete-data => { root.migration-delete-data(); }
         dismiss => { root.migration-dismiss(); }
+    }
+
+    // Delete prefix confirmation overlay
+    if root.confirm-delete-index >= 0: Rectangle {
+        background: #000000a0;
+
+        TouchArea {
+            clicked => { root.confirm-delete-index = -1; }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 460px;
+            background: Theme.bg-medium;
+            border-radius: 8px;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 15px;
+
+                Text {
+                    text: "Delete Prefix?";
+                    color: Theme.text-primary;
+                    font-size: 20px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "This will permanently delete the Wine prefix and all its contents. This cannot be undone.";
+                    color: Theme.text-secondary;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+
+                NakCard {
+                    card-color: #3c1e1e;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+
+                        Text {
+                            text: "All installed Windows components, registry entries, and data within this prefix will be lost.";
+                            color: Theme.accent-red;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    NakButton {
+                        text: "Cancel";
+                        clicked => { root.confirm-delete-index = -1; root.prefix-cancel-delete(); }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    NakButton {
+                        text: "Delete Prefix";
+                        danger: true;
+                        clicked => {
+                            root.prefix-confirm-delete(root.confirm-delete-index);
+                            root.confirm-delete-index = -1;
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -10,6 +10,10 @@ import { Theme, NakButton, NakCard, NakTextInput, NakProgressBar, SidebarButton,
 export component FirstRunSetupPage inherits Rectangle {
     callback get-started;
 
+    in property <bool> steam-detected: true;
+    in property <int> proton-count: 0;
+    in property <[string]> missing-deps: [];
+
     background: Theme.bg-dark;
 
     VerticalLayout {
@@ -84,6 +88,74 @@ export component FirstRunSetupPage inherits Rectangle {
                 Text { text: "  - Proton versions are managed through Steam"; color: Theme.text-secondary; font-size: 13px; }
                 Text { text: "  - Launch MO2 directly from Steam"; color: Theme.text-secondary; font-size: 13px; }
                 Text { text: "  - Steam overlay and controller support work"; color: Theme.text-secondary; font-size: 13px; }
+            }
+        }
+
+        // System check card
+        NakCard {
+            max-width: 550px;
+            horizontal-stretch: 0;
+            card-color: #1e2832;
+
+            VerticalLayout {
+                padding: 15px;
+                spacing: 8px;
+
+                Text {
+                    text: "System Check";
+                    color: Theme.text-primary;
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    Text {
+                        text: root.steam-detected ? "Steam: OK" : "Steam: NOT FOUND";
+                        color: root.steam-detected ? Theme.accent-green : Theme.accent-red;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    Text { text: "|"; color: Theme.text-muted; font-size: 13px; }
+
+                    Text {
+                        text: root.proton-count > 0 ? "Proton: OK (" + root.proton-count + " found)" : "Proton: NOT FOUND";
+                        color: root.proton-count > 0 ? Theme.accent-green : Theme.accent-red;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+                }
+
+                if root.missing-deps.length > 0: VerticalLayout {
+                    spacing: 4px;
+
+                    Text {
+                        text: "Missing dependencies:";
+                        color: Theme.accent-red;
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    for dep in root.missing-deps: Text {
+                        text: "  - " + dep;
+                        color: Theme.accent-red;
+                        font-size: 13px;
+                    }
+                }
+
+                if !root.steam-detected: Text {
+                    text: "Please install Steam before continuing.";
+                    color: Theme.accent-yellow;
+                    font-size: 12px;
+                }
+
+                if root.steam-detected && root.proton-count == 0: Text {
+                    text: "Install Proton Experimental or GE-Proton via Steam.";
+                    color: Theme.accent-yellow;
+                    font-size: 12px;
+                }
             }
         }
 
@@ -295,7 +367,7 @@ export component MO2Page inherits Rectangle {
                     color: Theme.text-secondary;
                     font-size: 14px;
                     horizontal-alignment: center;
-                    wrap: word-wrap;
+                    overflow: elide;
                 }
 
                 NakProgressBar {
@@ -306,6 +378,7 @@ export component MO2Page inherits Rectangle {
                 NakButton {
                     text: "Cancel";
                     danger: true;
+                    max-width: 200px;
                     clicked => { root.cancel-install(); }
                 }
             }
@@ -841,6 +914,10 @@ export component MarketplacePage inherits Rectangle {
     in property <string> error-message: "";
     in property <[string]> plugin-names: [];
     in property <[string]> plugin-descriptions: [];
+    in property <int> selected-plugin-index: -1;
+    in property <string> plugin-detail-author: "";
+    in property <string> plugin-detail-version: "";
+    in property <bool> plugin-detail-compatible: false;
 
     callback refresh;
     callback load-plugin-details(int);
@@ -901,6 +978,8 @@ export component MarketplacePage inherits Rectangle {
             }
 
             for name[idx] in root.plugin-names: NakCard {
+                card-color: idx == root.selected-plugin-index ? #283c28 : Theme.bg-medium;
+
                 VerticalLayout {
                     padding: 16px;
                     spacing: 8px;
@@ -914,8 +993,9 @@ export component MarketplacePage inherits Rectangle {
                             horizontal-stretch: 1;
                         }
 
-                        NakButton {
+                        if idx != root.selected-plugin-index: NakButton {
                             text: "Load Details";
+                            enabled: !root.is-loading;
                             clicked => { root.load-plugin-details(idx); }
                         }
                     }
@@ -925,6 +1005,47 @@ export component MarketplacePage inherits Rectangle {
                         color: Theme.text-secondary;
                         font-size: 14px;
                         wrap: word-wrap;
+                    }
+
+                    // Expanded details when this plugin is selected
+                    if idx == root.selected-plugin-index: VerticalLayout {
+                        spacing: 6px;
+
+                        Rectangle { height: 1px; background: Theme.bg-accent; }
+
+                        HorizontalLayout {
+                            spacing: 16px;
+
+                            Text {
+                                text: "Author: " + root.plugin-detail-author;
+                                color: Theme.text-secondary;
+                                font-size: 13px;
+                            }
+
+                            Text {
+                                text: "Min NaK: v" + root.plugin-detail-version;
+                                color: Theme.text-secondary;
+                                font-size: 13px;
+                            }
+
+                            Text {
+                                text: root.plugin-detail-compatible ? "Compatible" : "Incompatible";
+                                color: root.plugin-detail-compatible ? Theme.accent-green : Theme.accent-red;
+                                font-size: 13px;
+                                font-weight: 600;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+
+                            NakButton {
+                                text: "Install";
+                                primary: true;
+                                enabled: root.plugin-detail-compatible;
+                                clicked => { root.install-plugin(idx); }
+                            }
+                        }
                     }
                 }
             }

@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod deps;
+pub mod github;
 pub mod game_finder;
 pub mod installers;
 pub mod logging;

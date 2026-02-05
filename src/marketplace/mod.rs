@@ -100,22 +100,11 @@ pub fn check_version_compatible(min_version: &str) -> bool {
     version_compare::compare_to(current, min_version, version_compare::Cmp::Ge).unwrap_or(false)
 }
 
+use crate::github::GithubRelease;
+
 // ============================================================================
 // Install Functions
 // ============================================================================
-
-/// GitHub release info for downloading
-#[derive(Debug, Deserialize)]
-pub struct GithubRelease {
-    pub tag_name: String,
-    pub assets: Vec<GithubAsset>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GithubAsset {
-    pub name: String,
-    pub browser_download_url: String,
-}
 
 /// Get the download URL for a plugin based on its manifest
 /// Returns (download_url, version_tag) tuple

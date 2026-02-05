@@ -352,6 +352,13 @@ impl ShortcutsVdf {
         data.extend_from_slice(&value.to_le_bytes());
     }
 
+    /// Remove a shortcut by AppID. Returns true if found and removed.
+    pub fn remove_shortcut_by_app_id(&mut self, app_id: u32) -> bool {
+        let before = self.shortcuts.len();
+        self.shortcuts.retain(|s| s.appid != app_id);
+        self.shortcuts.len() < before
+    }
+
     /// Add a shortcut with collision-checked random AppID
     /// Removes any existing shortcut with the same name
     pub fn add_shortcut(&mut self, mut shortcut: Shortcut) -> u32 {

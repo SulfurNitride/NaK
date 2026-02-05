@@ -1283,6 +1283,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b29fccfdaeb0f9bd90da5759b1d0eaa2f6cfcfe90960124cfc83141ed4e111fd"
 
 [[package]]
+name = "ctrlc"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73736a89c4aff73035ba2ed2e565061954da00d4970fc9ac25dcc85a2a20d790"
+dependencies = [
+ "dispatch2",
+ "nix",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "cursor-icon"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2462,7 +2473,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -3080,13 +3091,13 @@ dependencies = [
 
 [[package]]
 name = "nak_rust"
-version = "4.4.0"
+version = "4.4.1"
 dependencies = [
  "chrono",
  "clap",
+ "ctrlc",
  "flate2",
  "image",
- "log",
  "rand",
  "rfd",
  "serde",

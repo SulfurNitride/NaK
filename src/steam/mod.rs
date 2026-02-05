@@ -49,9 +49,10 @@ pub fn kill_steam() -> Result<(), Box<dyn std::error::Error>> {
 pub fn start_steam() -> Result<(), Box<dyn std::error::Error>> {
     use std::process::{Command, Stdio};
 
-    // Use setsid to detach Steam from our process
+    // Use setsid to detach Steam from our process, -silent prevents the main window from popping up
     Command::new("setsid")
         .arg("steam")
+        .arg("-silent")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
@@ -214,6 +215,16 @@ pub struct SteamShortcutResult {
     pub app_id: u32,
     /// Path to the prefix (in steamapps/compatdata/<appid>/pfx)
     pub prefix_path: PathBuf,
+}
+
+/// Remove a non-Steam game shortcut by AppID
+pub fn remove_steam_shortcut(app_id: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let mut vdf = ShortcutsVdf::load()?;
+    if vdf.remove_shortcut_by_app_id(app_id) {
+        vdf.save()?;
+        crate::logging::log_info(&format!("Removed Steam shortcut for AppID {}", app_id));
+    }
+    Ok(())
 }
 
 /// Add a mod manager as a non-Steam game shortcut

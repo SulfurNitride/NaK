@@ -3,9 +3,10 @@
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use nak_rust::config::AppConfig;
+use nak_rust::logging::{log_info, log_error, log_warning};
 use nak_rust::nxm::NxmHandler;
 use nak_rust::deps::{check_command_available, ensure_cabextract, ensure_winetricks};
 use nak_rust::steam::detect_steam_path_checked;
@@ -37,7 +38,7 @@ pub enum WizardStep {
 #[derive(Clone, Debug)]
 pub struct InstallWizard {
     pub step: WizardStep,
-    pub manager_type: String, // "MO2"
+    pub manager_type: String, // "MO2" or "Plugin"
     pub install_type: String, // "New" or "Existing"
     pub name: String,
     pub path: String,
@@ -56,6 +57,8 @@ pub struct InstallWizard {
     pub available_disk_gb: f64,         // Available disk space in GB (cached)
     // Proton selection
     pub selected_proton: Option<String>, // Selected Proton config_name
+    // Plugin installation (set when installing from marketplace)
+    pub plugin_manifest: Option<nak_rust::marketplace::PluginManifest>,
 }
 
 impl Default for InstallWizard {
@@ -76,6 +79,7 @@ impl Default for InstallWizard {
             disk_space_override: false,
             available_disk_gb: 0.0,
             selected_proton: None,
+            plugin_manifest: None,
         }
     }
 }
@@ -130,6 +134,10 @@ pub struct MyApp {
 
     // Marketplace state
     pub marketplace_state: Option<crate::ui::MarketplaceState>,
+    pub marketplace_async: crate::ui::MarketplaceAsync,
+
+    // Background task handles (update checker, dep setup, etc.)
+    pub background_tasks: Vec<JoinHandle<()>>,
 }
 
 impl Default for MyApp {
@@ -139,7 +147,6 @@ impl Default for MyApp {
 
         // Ensure config directories exist (Steam-native uses ~/.config/nak/ for everything)
         // Note: We no longer create ~/NaK directories - that was for the old standalone system
-        // Note: Logs now go to current working directory for easy access
         let config_dir = AppConfig::get_config_dir();
         let _ = std::fs::create_dir_all(&config_dir);
         let _ = std::fs::create_dir_all(config_dir.join("bin"));
@@ -206,18 +213,26 @@ impl Default for MyApp {
 
             // Marketplace
             marketplace_state: None,
+            marketplace_async: crate::ui::MarketplaceAsync {
+                registry_result: Arc::new(Mutex::new(None)),
+                detail_result: Arc::new(Mutex::new(None)),
+                install_result: Arc::new(Mutex::new(None)),
+            },
+
+            // Background tasks
+            background_tasks: Vec::new(),
         };
 
         // Auto-check for updates on startup
         let update_info_arc = app.update_info.clone();
         let is_checking_arc = app.is_checking_update.clone();
-        thread::spawn(move || {
+        let update_handle = thread::spawn(move || {
             match nak_rust::updater::check_for_updates() {
                 Ok(info) => {
                     *update_info_arc.lock().unwrap() = Some(info);
                 }
                 Err(e) => {
-                    eprintln!("Failed to check for updates: {}", e);
+                    log_warning(&format!("Failed to check for updates: {}", e));
                 }
             }
             *is_checking_arc.lock().unwrap() = false;
@@ -225,12 +240,12 @@ impl Default for MyApp {
 
         // Ensure dependencies are downloaded and NXM handler is set up
         let missing_deps_for_thread = missing_deps_arc.clone();
-        thread::spawn(move || {
+        let deps_handle = thread::spawn(move || {
             // Ensure cabextract (for SteamOS/immutable systems)
             match ensure_cabextract() {
-                Ok(path) => println!("cabextract available at: {:?}", path),
+                Ok(path) => log_info(&format!("cabextract available at: {:?}", path)),
                 Err(e) => {
-                    eprintln!("Failed to ensure cabextract: {}", e);
+                    log_error(&format!("Failed to ensure cabextract: {}", e));
                     missing_deps_for_thread
                         .lock()
                         .unwrap()
@@ -240,18 +255,20 @@ impl Default for MyApp {
 
             // Ensure winetricks (downloaded to NaK bin, auto-updates)
             match ensure_winetricks() {
-                Ok(path) => println!("winetricks available at: {:?}", path),
-                Err(e) => eprintln!("Failed to ensure winetricks: {}", e),
+                Ok(path) => log_info(&format!("winetricks available at: {:?}", path)),
+                Err(e) => log_warning(&format!("Failed to ensure winetricks: {}", e)),
             }
 
             // Ensure NXM Handler
             if let Err(e) = NxmHandler::setup() {
-                eprintln!("Failed to setup NXM handler: {}", e);
+                log_warning(&format!("Failed to setup NXM handler: {}", e));
             }
         });
 
         // Check for legacy NaK data and show migration notice (once)
         let mut app = app;
+        app.background_tasks.push(update_handle);
+        app.background_tasks.push(deps_handle);
         if !app.config.steam_migration_shown {
             // Check if user has legacy NaK data (old Prefixes or ProtonGE folders)
             let legacy_prefixes = app.config.get_prefixes_path();

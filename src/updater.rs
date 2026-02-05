@@ -8,6 +8,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
+use crate::github::GithubRelease;
 use crate::logging::{log_download, log_error, log_info};
 
 const GITHUB_REPO: &str = "SulfurNitride/NaK";
@@ -22,26 +23,13 @@ pub struct UpdateInfo {
     pub is_update_available: bool,
 }
 
-#[derive(serde::Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    body: Option<String>,
-    assets: Vec<GitHubAsset>,
-}
-
-#[derive(serde::Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-}
-
 /// Check GitHub for the latest release
 pub fn check_for_updates() -> Result<UpdateInfo, Box<dyn Error>> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
     let response = ureq::get(&url)
         .set("User-Agent", "NaK-Updater")
         .call()?;
-    let release: GitHubRelease = response.into_json()?;
+    let release: GithubRelease = response.into_json()?;
 
     // Extract version number from tag (remove 'v' prefix if present)
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
@@ -132,6 +120,18 @@ pub fn install_update(download_url: &str) -> Result<(), Box<dyn Error>> {
         temp_download.clone()
     };
 
+    // Verify downloaded file is a valid ELF binary
+    {
+        let mut f = File::open(&new_binary_path)?;
+        let mut magic = [0u8; 4];
+        f.read_exact(&mut magic)?;
+        if magic != [0x7f, b'E', b'L', b'F'] {
+            let _ = fs::remove_file(&temp_download);
+            let _ = fs::remove_dir_all(&temp_extract);
+            return Err("Downloaded file is not a valid ELF binary — aborting update".into());
+        }
+    }
+
     // Make the new binary executable
     let mut perms = fs::metadata(&new_binary_path)?.permissions();
     perms.set_mode(0o755);
@@ -151,8 +151,7 @@ pub fn install_update(download_url: &str) -> Result<(), Box<dyn Error>> {
         return Err(e.into());
     }
 
-    // Clean up
-    let _ = fs::remove_file(&backup_path);
+    // Clean up temp files (keep .nak_backup — it's cleaned up on next successful startup)
     let _ = fs::remove_file(&temp_download);
     let _ = fs::remove_dir_all(&temp_extract);
 
@@ -230,6 +229,22 @@ fn find_binary_in_dir(dir: &Path) -> Result<std::path::PathBuf, Box<dyn Error>> 
     }
 
     Err("Could not find binary in update archive".into())
+}
+
+/// Clean up backup binary from a previous successful update.
+/// Call this on startup — if we got here, the new binary works fine.
+pub fn cleanup_update_backup() {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let backup = dir.join(".nak_backup");
+            if backup.exists() {
+                match fs::remove_file(&backup) {
+                    Ok(_) => log_info("Cleaned up update backup from previous version"),
+                    Err(e) => log_error(&format!("Failed to clean up update backup: {}", e)),
+                }
+            }
+        }
+    }
 }
 
 /// Check if the current executable is in a writable location

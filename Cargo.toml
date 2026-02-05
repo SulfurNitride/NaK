@@ -1,6 +1,6 @@
 [package]
 name = "nak_rust"
-version = "4.4.0"
+version = "4.4.1"
 edition = "2021"
 build = "build.rs"
 
@@ -19,8 +19,8 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 walkdir = "2"
-log = "0.4"
 ureq = { version = "2.12", features = ["json"] }
+ctrlc = "3.4"
 wait-timeout = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 flate2 = "1.0"

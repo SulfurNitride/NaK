@@ -9,6 +9,8 @@ pub mod tools;
 use std::error::Error;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::config::AppConfig;
 use crate::logging::{log_error, log_install};
@@ -111,4 +113,84 @@ pub fn install_standard_deps(
     log_callback: impl Fn(String),
 ) -> Result<(), Box<dyn Error>> {
     run_winetricks(prefix_path, proton, STANDARD_VERBS, log_callback)
+}
+
+/// Run winetricks with cancellation support.
+///
+/// Like `run_winetricks` but uses spawn + poll so the child process
+/// can be killed if the user cancels.
+pub fn run_winetricks_cancellable(
+    prefix_path: &Path,
+    proton: &SteamProton,
+    verbs: &[&str],
+    log_callback: impl Fn(String),
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<(), Box<dyn Error>> {
+    if verbs.is_empty() {
+        return Ok(());
+    }
+
+    let winetricks_path = ensure_winetricks()?;
+    ensure_cabextract()?;
+
+    let Some(wine_bin) = proton.wine_binary() else {
+        return Err("Wine binary not found in Proton".into());
+    };
+
+    let Some(wineserver_bin) = proton.wineserver_binary() else {
+        return Err("Wineserver binary not found in Proton".into());
+    };
+
+    let cache_dir = AppConfig::get_default_cache_dir();
+    std::fs::create_dir_all(&cache_dir)?;
+
+    let verbs_str = verbs.join(" ");
+    log_callback(format!("Installing dependencies via winetricks: {}", verbs_str));
+    log_install(&format!("Running winetricks with verbs: {}", verbs_str));
+
+    let nak_bin = tools::get_nak_bin_path();
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{}", nak_bin.display(), current_path);
+
+    let mut child = Command::new(&winetricks_path)
+        .arg("-q")
+        .args(verbs)
+        .env("PATH", &new_path)
+        .env("WINE", &wine_bin)
+        .env("WINESERVER", &wineserver_bin)
+        .env("WINEPREFIX", prefix_path)
+        .env("WINETRICKS_CACHE", &cache_dir)
+        .spawn()?;
+
+    loop {
+        match child.try_wait()? {
+            Some(status) => {
+                if !status.success() {
+                    let err_msg = format!("Winetricks failed with exit code: {:?}", status.code());
+                    log_error(&err_msg);
+                    return Err(err_msg.into());
+                }
+                log_install("Winetricks completed successfully");
+                return Ok(());
+            }
+            None => {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err("Cancelled".into());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+        }
+    }
+}
+
+/// Install standard deps with cancellation support
+pub fn install_standard_deps_cancellable(
+    prefix_path: &Path,
+    proton: &SteamProton,
+    log_callback: impl Fn(String),
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<(), Box<dyn Error>> {
+    run_winetricks_cancellable(prefix_path, proton, STANDARD_VERBS, log_callback, cancel_flag)
 }

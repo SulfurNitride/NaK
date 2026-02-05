@@ -18,6 +18,7 @@ use app::MyApp;
 use nak_rust::installers::{setup_existing_mo2, TaskContext};
 use nak_rust::logging::{init_logger, log_info};
 use nak_rust::steam::{find_steam_protons, SteamProton};
+use nak_rust::updater::cleanup_update_backup;
 
 /// NaK - Linux Mod Manager Tool
 ///
@@ -60,6 +61,9 @@ enum Commands {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
     init_logger();
+
+    // Clean up backup from previous update (confirms new binary works)
+    cleanup_update_backup();
 
     // Parse CLI arguments
     let cli = Cli::parse();
@@ -174,10 +178,17 @@ fn setup_mo2_cli(path: PathBuf, name: String, proton_arg: Option<String>) {
 
     // Handle Ctrl+C
     let cancel_flag_ctrlc = cancel_flag.clone();
-    std::thread::spawn(move || {
-        // Simple signal handling - in production use ctrlc crate
-        let _ = cancel_flag_ctrlc;
-    });
+    let force_quit = Arc::new(AtomicBool::new(false));
+    let force_quit_handler = force_quit.clone();
+    ctrlc::set_handler(move || {
+        if force_quit_handler.load(std::sync::atomic::Ordering::SeqCst) {
+            eprintln!("\nForce quit.");
+            std::process::exit(1);
+        }
+        eprintln!("\nCancelling... (press Ctrl+C again to force quit)");
+        cancel_flag_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
+        force_quit_handler.store(true, std::sync::atomic::Ordering::SeqCst);
+    }).expect("Failed to set Ctrl+C handler");
 
     // Run the setup
     match setup_existing_mo2(&name, path, &selected_proton, ctx) {
