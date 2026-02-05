@@ -1,4 +1,5 @@
-<img width="1700" height="1756" alt="image" src="https://github.com/user-attachments/assets/2710203f-ea4c-48b9-9c22-ccb0f6fa7084" />
+<img width="1913" height="1976" alt="image" src="https://github.com/user-attachments/assets/f453f602-568b-48e9-9cd6-7183ec13c498" />
+
 
 
 NaK, is a sodium and potassium alloy. Highly reactive.
