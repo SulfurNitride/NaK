@@ -1,16 +1,32 @@
 //! NaK - Linux Mod Manager Tool
 //!
 //! Library crate for NaK core functionality, shared between GUI and CLI.
-//! Note: UI module is only available in the GUI binary, not here.
+//!
+//! # Features
+//!
+//! - `core` (always available): game detection, Proton detection, Steam paths,
+//!   config management, logging
+//! - `full` (default): adds installers, deps, marketplace, updater, nxm,
+//!   networking, archive handling, and all heavy dependencies
 
+// Core modules - always available
 pub mod config;
-pub mod deps;
-pub mod github;
 pub mod game_finder;
-pub mod installers;
 pub mod logging;
-pub mod marketplace;
-pub mod nxm;
 pub mod steam;
+
+// Full modules - only available with the "full" feature
+#[cfg(feature = "full")]
+pub mod deps;
+#[cfg(feature = "full")]
+pub mod github;
+#[cfg(feature = "full")]
+pub mod installers;
+#[cfg(feature = "full")]
+pub mod marketplace;
+#[cfg(feature = "full")]
+pub mod nxm;
+#[cfg(feature = "full")]
 pub mod updater;
+#[cfg(feature = "full")]
 pub mod utils;
