@@ -6,7 +6,7 @@
 mod config;
 mod paths;
 mod proton;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "shortcuts", feature = "full"))]
 mod shortcuts;
 
 // Re-export path detection utilities
@@ -18,11 +18,11 @@ pub use paths::{
 // Re-export Steam integration components
 pub use config::set_compat_tool;
 pub use proton::{find_steam_protons, SteamProton};
-#[cfg(feature = "full")]
+#[cfg(any(feature = "shortcuts", feature = "full"))]
 pub use shortcuts::{Shortcut, ShortcutsVdf};
 
 use std::fs;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "shortcuts", feature = "full"))]
 use std::path::PathBuf;
 
 /// Kill Steam process gracefully, then force if needed
@@ -208,10 +208,10 @@ mod mount_tests {
 }
 
 // ============================================================================
-// High-Level API for Mod Manager Integration (requires "full" feature)
+// High-Level API for Mod Manager Integration (requires "shortcuts" feature)
 // ============================================================================
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "shortcuts", feature = "full"))]
 /// Result of adding a Steam shortcut
 #[derive(Debug, Clone)]
 pub struct SteamShortcutResult {
@@ -221,7 +221,7 @@ pub struct SteamShortcutResult {
     pub prefix_path: PathBuf,
 }
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "shortcuts", feature = "full"))]
 /// Remove a non-Steam game shortcut by AppID
 pub fn remove_steam_shortcut(app_id: u32) -> Result<(), Box<dyn std::error::Error>> {
     let mut vdf = ShortcutsVdf::load()?;
@@ -232,7 +232,7 @@ pub fn remove_steam_shortcut(app_id: u32) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "shortcuts", feature = "full"))]
 /// Add a mod manager as a non-Steam game shortcut
 ///
 /// This is the main function for integrating MO2/Vortex with Steam:
