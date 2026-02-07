@@ -15,13 +15,16 @@ pub mod game_finder;
 pub mod logging;
 pub mod steam;
 
+// Installer modules - available with "installer" or "full" feature
+// Provides prefix setup, winetricks, .NET installation, registry settings
+#[cfg(any(feature = "installer", feature = "full"))]
+pub mod deps;
+#[cfg(any(feature = "installer", feature = "full"))]
+pub mod installers;
+
 // Full modules - only available with the "full" feature
 #[cfg(feature = "full")]
-pub mod deps;
-#[cfg(feature = "full")]
 pub mod github;
-#[cfg(feature = "full")]
-pub mod installers;
 #[cfg(feature = "full")]
 pub mod marketplace;
 #[cfg(feature = "full")]

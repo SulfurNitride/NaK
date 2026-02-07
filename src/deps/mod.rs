@@ -3,6 +3,7 @@
 //! Uses winetricks for all Windows dependency installation.
 //! Winetricks handles prefix initialization, downloads, and DLL overrides automatically.
 
+#[cfg(feature = "full")]
 pub mod precache;
 pub mod tools;
 

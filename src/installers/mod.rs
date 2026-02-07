@@ -1,27 +1,37 @@
 //! Mod manager installation logic (Steam-native)
 
+// Full-only modules (need github, flate2, tar, zip, etc.)
+#[cfg(feature = "full")]
 mod common;
+#[cfg(feature = "full")]
 mod compatdata_scanner; // Deprecated: kept for reference, use game_finder instead
+#[cfg(feature = "full")]
 mod mo2;
+#[cfg(feature = "full")]
 mod plugin;
-mod prefix_setup;
+#[cfg(feature = "full")]
 pub mod symlinks;
 
+// Prefix setup - available with "installer" feature (needs ureq only)
+mod prefix_setup;
+
+#[cfg(feature = "full")]
 pub use common::{get_available_disk_space, regenerate_nak_tools_scripts, MIN_REQUIRED_DISK_SPACE_GB};
+#[cfg(feature = "full")]
 pub use mo2::{install_mo2, setup_existing_mo2};
+#[cfg(feature = "full")]
 pub use plugin::install_plugin;
 pub use prefix_setup::{
     apply_dpi, cleanup_prefix_drives,
     install_all_dependencies, kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
 };
-// Public symlinks API - used internally by create_nak_tools_folder
-// pub use symlinks::{create_game_symlinks, create_game_symlinks_auto, ensure_temp_directory};
 
 use std::error::Error;
 use std::fs;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+#[cfg(feature = "full")]
 use crate::github::GithubRelease;
 use crate::logging::log_install;
 use crate::steam::SteamProton;
@@ -345,6 +355,7 @@ pub fn apply_wine_registry_settings(
 }
 
 /// Fetch the latest MO2 release from GitHub
+#[cfg(feature = "full")]
 pub fn fetch_latest_mo2_release() -> Result<GithubRelease, Box<dyn Error>> {
     let url = "https://api.github.com/repos/ModOrganizer2/modorganizer/releases/latest";
     let res = ureq::get(url)

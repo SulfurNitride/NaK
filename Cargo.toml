@@ -20,10 +20,13 @@ default = ["full"]
 core = []
 # Shortcuts: Steam shortcut creation + prefix management (adds rand)
 shortcuts = ["dep:rand"]
+# Installer: prefix setup, winetricks, .NET, registry, game detection
+# Adds ureq for downloading tools — no GUI/archive deps
+installer = ["shortcuts", "dep:ureq"]
 # Full: everything including GUI, installers, networking, archive handling
 full = [
-    "shortcuts",
-    "dep:clap", "dep:slint", "dep:image", "dep:ureq", "dep:ctrlc",
+    "installer",
+    "dep:clap", "dep:slint", "dep:image", "dep:ctrlc",
     "dep:wait-timeout", "dep:flate2", "dep:tar", "dep:rfd",
     "dep:sevenz-rust", "dep:zip", "dep:toml",
     "dep:version-compare",
