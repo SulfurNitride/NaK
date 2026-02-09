@@ -35,11 +35,11 @@ echo ""
 echo "Prefix: $PREFIX_PATH"
 echo ""
 
-# Game configurations (Display Name|My Games Folder|Steam App ID)
+# Game configurations (Display Name|My Games Folder|Steam App IDs comma-separated)
 declare -a GAMES=(
     "Enderal|Enderal|933480"
     "Enderal Special Edition|Enderal Special Edition|976620"
-    "Fallout 3|Fallout3|22300"
+    "Fallout 3|Fallout3|22300,22370"
     "Fallout 4|Fallout4|377160"
     "Fallout 4 VR|Fallout4VR|611660"
     "Fallout New Vegas|FalloutNV|22380"
@@ -93,28 +93,38 @@ selected="${GAMES[$((choice-1))]}"
 DISPLAY_NAME="${selected%%|*}"
 rest="${selected#*|}"
 FOLDER_NAME="${rest%%|*}"
-APP_ID="${rest##*|}"
+APP_IDS="${rest##*|}"
 
 echo ""
-echo "Selected: $DISPLAY_NAME (App ID: $APP_ID)"
+echo "Selected: $DISPLAY_NAME (App ID(s): $APP_IDS)"
 
 # Find game prefix
 STEAM_PREFIX=""
-check_path="$STEAM_PATH/steamapps/compatdata/$APP_ID/pfx"
-if [ -d "$check_path" ]; then
-    STEAM_PREFIX="$check_path"
-fi
+FOUND_APP_ID=""
+
+IFS=',' read -ra APP_ID_CANDIDATES <<< "$APP_IDS"
+for APP_ID in "${APP_ID_CANDIDATES[@]}"; do
+    check_path="$STEAM_PATH/steamapps/compatdata/$APP_ID/pfx"
+    if [ -d "$check_path" ]; then
+        STEAM_PREFIX="$check_path"
+        FOUND_APP_ID="$APP_ID"
+        break
+    fi
+done
 
 # Also check library folders
 if [ -z "$STEAM_PREFIX" ] && [ -f "$STEAM_PATH/steamapps/libraryfolders.vdf" ]; then
     while IFS= read -r line; do
         if [[ "$line" =~ \"path\".*\"(.*)\" ]]; then
             lib_path="${BASH_REMATCH[1]}"
-            check_path="$lib_path/steamapps/compatdata/$APP_ID/pfx"
-            if [ -d "$check_path" ]; then
-                STEAM_PREFIX="$check_path"
-                break
-            fi
+            for APP_ID in "${APP_ID_CANDIDATES[@]}"; do
+                check_path="$lib_path/steamapps/compatdata/$APP_ID/pfx"
+                if [ -d "$check_path" ]; then
+                    STEAM_PREFIX="$check_path"
+                    FOUND_APP_ID="$APP_ID"
+                    break 2
+                fi
+            done
         fi
     done < "$STEAM_PATH/steamapps/libraryfolders.vdf"
 fi
@@ -126,6 +136,9 @@ if [ -z "$STEAM_PREFIX" ]; then
 fi
 
 echo "Found game prefix: $STEAM_PREFIX"
+if [ -n "$FOUND_APP_ID" ]; then
+    echo "Using App ID: $FOUND_APP_ID"
+fi
 
 # Get usernames
 get_username() {

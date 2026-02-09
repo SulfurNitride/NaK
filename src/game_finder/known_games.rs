@@ -203,7 +203,8 @@ pub const KNOWN_GAMES: &[KnownGame] = &[
 
 /// Find a known game by Steam App ID
 pub fn find_by_steam_id(app_id: &str) -> Option<&'static KnownGame> {
-    KNOWN_GAMES.iter().find(|g| g.steam_app_id == app_id)
+    let normalized_id = normalize_steam_id(app_id);
+    KNOWN_GAMES.iter().find(|g| g.steam_app_id == normalized_id)
 }
 
 /// Find a known game by GOG App ID
@@ -219,4 +220,26 @@ pub fn find_by_name(name: &str) -> Option<&'static KnownGame> {
     KNOWN_GAMES
         .iter()
         .find(|g| g.name.to_lowercase() == name_lower)
+}
+
+/// Normalize Steam App IDs that have equivalent variants.
+fn normalize_steam_id(app_id: &str) -> &str {
+    match app_id {
+        // Fallout 3 often appears as GOTY App ID 22370.
+        // We treat it as Fallout 3 for shared metadata/registry mapping.
+        "22370" => "22300",
+        _ => app_id,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_by_steam_id;
+
+    #[test]
+    fn fallout_3_goty_alias_maps_to_fallout_3() {
+        let game = find_by_steam_id("22370").expect("22370 should map to Fallout 3");
+        assert_eq!(game.name, "Fallout 3");
+        assert_eq!(game.steam_app_id, "22300");
+    }
 }
