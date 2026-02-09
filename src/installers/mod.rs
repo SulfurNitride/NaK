@@ -22,8 +22,8 @@ pub use mo2::{install_mo2, setup_existing_mo2};
 #[cfg(feature = "full")]
 pub use plugin::install_plugin;
 pub use prefix_setup::{
-    apply_dpi, auto_apply_game_registries, cleanup_prefix_drives, install_all_dependencies,
-    kill_wineserver, launch_dpi_test_app, DPI_PRESETS,
+    apply_dpi, apply_registry_for_game_path, auto_apply_game_registries, cleanup_prefix_drives,
+    install_all_dependencies, kill_wineserver, known_game_names, launch_dpi_test_app, DPI_PRESETS,
 };
 
 use std::error::Error;

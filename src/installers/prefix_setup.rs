@@ -16,7 +16,7 @@ use std::process::{Child, Command};
 use super::{apply_wine_registry_settings, TaskContext};
 use crate::config::AppConfig;
 use crate::deps::{install_standard_deps_cancellable, STANDARD_VERBS};
-use crate::game_finder::{detect_all_games, Game};
+use crate::game_finder::{detect_all_games, known_games, Game, Launcher};
 use crate::logging::{log_install, log_warning};
 use crate::steam::{detect_steam_path_checked, SteamProton};
 
@@ -618,6 +618,54 @@ pub fn auto_apply_game_registries(
         log_callback(format!("Auto-configured {} game(s) in registry", applied_count));
         log_install(&format!("Auto-applied registry for {} detected game(s)", applied_count));
     }
+}
+
+/// Apply a game's registry entry with a custom install path.
+///
+/// Looks up the game by name in KNOWN_GAMES, then writes the registry entry
+/// pointing to `install_path`. Use this when the game is in a custom/stock
+/// folder that auto-detection won't find.
+pub fn apply_registry_for_game_path(
+    prefix_path: &Path,
+    proton: &SteamProton,
+    game_name: &str,
+    install_path: &Path,
+    log_callback: &impl Fn(String),
+) -> Result<(), String> {
+    let Some(wine_bin) = proton.wine_binary() else {
+        return Err("Wine binary not found".to_string());
+    };
+
+    let known = known_games::find_by_name(game_name);
+    let (reg_path, reg_value) = if let Some(kg) = known {
+        (kg.registry_path, kg.registry_value)
+    } else {
+        return Err(format!("Unknown game: {game_name}"));
+    };
+
+    let fake_game = Game {
+        name: game_name.to_string(),
+        install_path: install_path.to_path_buf(),
+        app_id: known.map(|k| k.steam_app_id.to_string()).unwrap_or_default(),
+        prefix_path: None,
+        launcher: Launcher::Steam { is_flatpak: false, is_snap: false },
+        my_games_folder: known.and_then(|k| k.my_games_folder.map(String::from)),
+        appdata_local_folder: known.and_then(|k| k.appdata_local_folder.map(String::from)),
+        appdata_roaming_folder: known.and_then(|k| k.appdata_roaming_folder.map(String::from)),
+        registry_path: Some(reg_path.to_string()),
+        registry_value: Some(reg_value.to_string()),
+    };
+
+    if apply_game_registry(prefix_path, &wine_bin, &fake_game, reg_path, reg_value, log_callback) {
+        Ok(())
+    } else {
+        Err(format!("Failed to apply registry for {game_name}"))
+    }
+}
+
+/// Return the list of known game names for UI display.
+pub fn known_game_names() -> Vec<&'static str> {
+    known_games::KNOWN_GAMES.iter().map(|g| g.name).collect()
 }
 
 /// Apply registry entry for a single game
