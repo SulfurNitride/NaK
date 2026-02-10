@@ -9,12 +9,12 @@ pub mod tools;
 
 use std::error::Error;
 use std::path::Path;
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::config::AppConfig;
 use crate::logging::{log_error, log_install};
+use crate::runtime_wrap;
 use crate::steam::SteamProton;
 
 // Re-export tools
@@ -84,7 +84,7 @@ pub fn run_winetricks(
 
     // Run winetricks directly - ~/.config/nak/bin/ is accessible from
     // both native and Flatpak environments
-    let status = Command::new(&winetricks_path)
+    let status = runtime_wrap::command_for(&winetricks_path)
         .arg("-q") // Quiet mode
         .args(verbs)
         .env("PATH", &new_path)
@@ -153,7 +153,7 @@ pub fn run_winetricks_cancellable(
     let current_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{}", nak_bin.display(), current_path);
 
-    let mut child = Command::new(&winetricks_path)
+    let mut child = runtime_wrap::command_for(&winetricks_path)
         .arg("-q")
         .args(verbs)
         .env("PATH", &new_path)

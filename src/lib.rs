@@ -14,6 +14,8 @@ pub mod config;
 pub mod game_finder;
 pub mod logging;
 pub mod steam;
+#[cfg(any(feature = "installer", feature = "full"))]
+pub mod runtime_wrap;
 
 // Installer modules - available with "installer" or "full" feature
 // Provides prefix setup, winetricks, .NET installation, registry settings

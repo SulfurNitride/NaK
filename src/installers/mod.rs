@@ -281,9 +281,9 @@ pub fn apply_wine_registry_settings(
     _app_id: Option<u32>,
 ) -> Result<(), Box<dyn Error>> {
     use std::io::Write;
-    use std::process::Command;
     use crate::config::AppConfig;
     use crate::logging::{log_error, log_warning};
+    use crate::runtime_wrap;
 
     let tmp_dir = AppConfig::get_tmp_path();
     fs::create_dir_all(&tmp_dir)?;
@@ -320,7 +320,7 @@ pub fn apply_wine_registry_settings(
     log_callback("Applying Wine registry settings...".to_string());
     log_install("Running wine regedit...");
 
-    let regedit_status = Command::new(&wine_bin)
+    let regedit_status = runtime_wrap::command_for(&wine_bin)
         .arg("regedit")
         .arg(&reg_file)
         .env("WINEPREFIX", prefix_path)
@@ -364,4 +364,3 @@ pub fn fetch_latest_mo2_release() -> Result<GithubRelease, Box<dyn Error>> {
         .into_json()?;
     Ok(res)
 }
-

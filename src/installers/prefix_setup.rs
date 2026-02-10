@@ -11,13 +11,14 @@
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use std::process::{Child, Command};
+use std::process::Child;
 
 use super::{apply_wine_registry_settings, TaskContext};
 use crate::config::AppConfig;
 use crate::deps::{install_standard_deps_cancellable, STANDARD_VERBS};
 use crate::game_finder::{detect_all_games, known_games, Game, Launcher};
 use crate::logging::{log_install, log_warning};
+use crate::runtime_wrap;
 use crate::steam::{detect_steam_path_checked, SteamProton};
 
 // =============================================================================
@@ -236,7 +237,7 @@ fn install_dotnet_runtime(
 
     log_install(&format!("Running {} installer...", name));
 
-    let mut cmd = Command::new(&wine_bin);
+    let mut cmd = runtime_wrap::command_for(&wine_bin);
     cmd.arg(&installer_path)
         .arg("/install")
         .arg("/quiet")
@@ -279,12 +280,33 @@ fn initialize_prefix_with_proton(
     let compat_data_path = prefix_root.parent()
         .ok_or("Could not determine compatdata path")?;
 
-    log_install(&format!("Initializing prefix with proton wrapper: {:?}", proton_script));
     log_install(&format!("STEAM_COMPAT_DATA_PATH={:?}", compat_data_path));
 
-    let mut cmd = Command::new(&proton_script);
-    cmd.args(["run", "wineboot", "-u"])
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_root)
+    let mut cmd = if runtime_wrap::use_umu_for_prefix() {
+        if let Some(umu_run) = runtime_wrap::resolve_umu_run() {
+            log_install(&format!("Initializing prefix with umu-run: {:?}", umu_run));
+            let mut c = runtime_wrap::command_for(umu_run);
+            c.arg("wineboot").arg("-u");
+            c.env("PROTONPATH", &proton.path);
+            c.env("WINEPREFIX", prefix_root);
+            c.env("GAMEID", app_id.to_string());
+            c
+        } else {
+            log_warning(
+                "UMU prefix mode enabled but no umu-run was found; falling back to proton wrapper",
+            );
+            let mut c = runtime_wrap::command_for(&proton_script);
+            c.arg("run").arg("wineboot").arg("-u");
+            c
+        }
+    } else {
+        log_install(&format!("Initializing prefix with proton wrapper: {:?}", proton_script));
+        let mut c = runtime_wrap::command_for(&proton_script);
+        c.arg("run").arg("wineboot").arg("-u");
+        c
+    };
+
+    cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_root)
         .env("STEAM_COMPAT_DATA_PATH", compat_data_path)
         .env("SteamAppId", app_id.to_string())
         .env("SteamGameId", app_id.to_string())
@@ -383,7 +405,7 @@ fn cleanup_wine_drives(
         let reg_file = tmp_dir.join("drive_cleanup.reg");
         fs::write(&reg_file, &reg_content)?;
 
-        let status = Command::new(&wine_bin)
+        let status = runtime_wrap::command_for(&wine_bin)
             .arg("regedit")
             .arg(&reg_file)
             .env("WINEPREFIX", prefix_root)
@@ -464,7 +486,7 @@ fn set_windows_11_mode(
 
     log_install("Running winetricks win11...");
 
-    let mut cmd = Command::new(&winetricks_path);
+    let mut cmd = runtime_wrap::command_for(&winetricks_path);
     cmd.arg("-q")
         .arg("win11")
         .env("WINE", &wine_bin)
@@ -505,7 +527,7 @@ pub fn apply_dpi(
         format!("Wine binary not found for Proton '{}'", proton.name)
     })?;
 
-    let status = Command::new(&wine_bin)
+    let status = runtime_wrap::command_for(&wine_bin)
         .arg("reg")
         .arg("add")
         .arg(r"HKCU\Control Panel\Desktop")
@@ -547,7 +569,7 @@ pub fn launch_dpi_test_app(
         return Err(format!("Prefix not found: {:?}", prefix_root).into());
     }
 
-    let child = Command::new(&wine_bin)
+    let child = runtime_wrap::command_for(&wine_bin)
         .arg(app_name)
         .env("WINEPREFIX", prefix_root)
         .env("PROTON_USE_XALIA", "0")
@@ -565,7 +587,7 @@ pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
         return;
     };
 
-    let _ = Command::new(&wineserver_bin)
+    let _ = runtime_wrap::command_for(&wineserver_bin)
         .arg("-k")
         .env("WINEPREFIX", prefix_root)
         .status();
@@ -711,7 +733,7 @@ fn apply_game_registry(
     }
 
     // Apply registry
-    let status = Command::new(wine_bin)
+    let status = runtime_wrap::command_for(wine_bin)
         .arg("regedit")
         .arg(&reg_file)
         .env("WINEPREFIX", prefix_path)
@@ -740,4 +762,3 @@ fn apply_game_registry(
         }
     }
 }
-
