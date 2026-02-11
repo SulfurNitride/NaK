@@ -34,6 +34,13 @@ fn find_in_path(binary: &str) -> Option<PathBuf> {
 }
 
 pub fn resolve_umu_run() -> Option<PathBuf> {
+    // In Flatpak, umu-run must run on the host (it needs the Steam Runtime's
+    // linker and 32-bit libs).  Return the bare name so command_for() wraps it
+    // as `flatpak-spawn --host umu-run` and the host's PATH resolves it.
+    if is_flatpak() {
+        return Some(PathBuf::from("umu-run"));
+    }
+
     let bundled = env::var("NAK_BUNDLED_UMU_RUN")
         .ok()
         .map(PathBuf::from)
