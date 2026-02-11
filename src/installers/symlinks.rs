@@ -57,41 +57,47 @@ pub fn create_game_symlinks(nak_prefix: &Path, games: &[Game]) {
             continue;
         };
 
-        // Link My Games folder
-        if let Some(folder) = &game.my_games_folder {
-            if link_game_folder(
-                &my_games.join(folder),
-                game_prefix,
-                &format!("Documents/My Games/{}", folder),
-                &game.name,
-            ) {
-                linked_count += 1;
-            }
-        }
+        // Discover the game prefix's user directory
+        let game_users_dir = game_prefix.join("drive_c/users");
+        let game_username = find_prefix_username(&game_users_dir);
+        let game_user_dir = game_users_dir.join(&game_username);
 
-        // Link AppData/Local folder
-        if let Some(folder) = &game.appdata_local_folder {
-            if link_game_folder(
-                &appdata_local.join(folder),
-                game_prefix,
-                &format!("AppData/Local/{}", folder),
-                &game.name,
-            ) {
-                linked_count += 1;
-            }
-        }
+        // Scan and symlink ALL folders in the game prefix's Documents/My Games/
+        linked_count += scan_and_link_all(
+            &my_games,
+            &game_user_dir.join("Documents/My Games"),
+            "Documents/My Games",
+            &game.name,
+            game_prefix,
+        );
 
-        // Link AppData/Roaming folder
-        if let Some(folder) = &game.appdata_roaming_folder {
-            if link_game_folder(
-                &appdata_roaming.join(folder),
-                game_prefix,
-                &format!("AppData/Roaming/{}", folder),
-                &game.name,
-            ) {
-                linked_count += 1;
-            }
-        }
+        // Also link the Documents folder itself for non-My Games entries
+        // (some games put saves directly in Documents/<GameName>)
+        linked_count += scan_and_link_all(
+            &documents,
+            &game_user_dir.join("Documents"),
+            "Documents",
+            &game.name,
+            game_prefix,
+        );
+
+        // Scan and symlink ALL folders in AppData/Local/
+        linked_count += scan_and_link_all(
+            &appdata_local,
+            &game_user_dir.join("AppData/Local"),
+            "AppData/Local",
+            &game.name,
+            game_prefix,
+        );
+
+        // Scan and symlink ALL folders in AppData/Roaming/
+        linked_count += scan_and_link_all(
+            &appdata_roaming,
+            &game_user_dir.join("AppData/Roaming"),
+            "AppData/Roaming",
+            &game.name,
+            game_prefix,
+        );
     }
 
     if linked_count > 0 {
@@ -184,25 +190,77 @@ pub fn ensure_temp_directory(prefix_path: &Path) {
 // Internal Functions
 // ============================================================================
 
-/// Create a symlink from NaK prefix to a game prefix folder
-///
-/// Returns true if a symlink was created (or already existed correctly)
-fn link_game_folder(
-    nak_path: &Path,
-    game_prefix: &Path,
-    relative_path: &str,
-    game_name: &str,
-) -> bool {
-    // Build the source path in the game prefix
-    let game_users_dir = game_prefix.join("drive_c/users");
-    let game_username = find_prefix_username(&game_users_dir);
-    let source_path = game_users_dir.join(&game_username).join(relative_path);
+/// Directories to skip when scanning prefix folders for symlinking.
+/// These are Wine/Proton internal or system dirs, not game data.
+const SKIP_DIRS: &[&str] = &[
+    "Temp", "Microsoft", "wine", "Public", "root",
+    "Application Data", "Cookies", "Local Settings",
+    "NetHood", "PrintHood", "Recent", "SendTo",
+    "Start Menu", "Templates", "My Documents", "My Music",
+    "My Pictures", "My Videos", "Desktop", "Downloads",
+    "Favorites", "Links", "Saved Games", "Searches",
+    "Contacts", "3D Objects",
+];
 
-    // Only link if the source exists in the game prefix
-    if !source_path.exists() {
-        return false;
+/// Scan all subdirectories in a game prefix folder and create symlinks
+/// for each one in the corresponding NaK prefix folder.
+///
+/// Returns the number of symlinks created.
+fn scan_and_link_all(
+    nak_base: &Path,
+    game_base: &Path,
+    label: &str,
+    game_name: &str,
+    _game_prefix: &Path,
+) -> usize {
+    if !game_base.is_dir() {
+        return 0;
     }
 
+    let Ok(entries) = fs::read_dir(game_base) else {
+        return 0;
+    };
+
+    let mut count = 0;
+    for entry in entries.flatten() {
+        // Only symlink directories (game folders), not loose files
+        if !entry.path().is_dir() {
+            continue;
+        }
+
+        let folder_name = entry.file_name().to_string_lossy().to_string();
+
+        // Skip Wine/system internal directories
+        if SKIP_DIRS.iter().any(|&s| s.eq_ignore_ascii_case(&folder_name)) {
+            continue;
+        }
+
+        // Skip if it's "My Games" and we're scanning Documents (handled separately)
+        if label == "Documents" && folder_name == "My Games" {
+            continue;
+        }
+
+        let nak_path = nak_base.join(&folder_name);
+        let source_path = entry.path();
+
+        if create_symlink_if_needed(&nak_path, &source_path, game_name, label, &folder_name) {
+            count += 1;
+        }
+    }
+
+    count
+}
+
+/// Create a symlink if the target doesn't already exist or is already correct.
+///
+/// Returns true if a symlink was created (or already existed correctly).
+fn create_symlink_if_needed(
+    nak_path: &Path,
+    source_path: &Path,
+    game_name: &str,
+    label: &str,
+    folder_name: &str,
+) -> bool {
     // Check if target already exists
     if nak_path.exists() || fs::symlink_metadata(nak_path).is_ok() {
         // Check if it's already a symlink to the correct location
@@ -221,21 +279,21 @@ fn link_game_folder(
     }
 
     // Create the symlink
-    match std::os::unix::fs::symlink(&source_path, nak_path) {
+    match std::os::unix::fs::symlink(source_path, nak_path) {
         Ok(()) => {
             log_info(&format!(
-                "Linked {} -> {}",
-                nak_path.display(),
-                source_path.display()
+                "Linked {}/{} -> {} ({})",
+                label,
+                folder_name,
+                source_path.display(),
+                game_name,
             ));
             true
         }
         Err(e) => {
             log_warning(&format!(
-                "Failed to create symlink for {} ({}): {}",
-                game_name,
-                relative_path,
-                e
+                "Failed to create symlink for {} ({}/{}): {}",
+                game_name, label, folder_name, e
             ));
             false
         }
