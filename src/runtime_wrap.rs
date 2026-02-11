@@ -35,16 +35,22 @@ fn find_in_path(binary: &str) -> Option<PathBuf> {
 
 pub fn resolve_umu_run() -> Option<PathBuf> {
     if is_flatpak() {
-        // In Flatpak, umu-run must run on the host.  Try the bundled copy
-        // first (the wrapper copies it to a host-accessible location), then
-        // fall back to the bare name for host PATH resolution.
-        if let Some(bundled) = env::var("NAK_BUNDLED_UMU_RUN")
+        // In Flatpak, umu-run must run on the host via flatpak-spawn --host.
+        // Paths like /app/lib/... only exist inside the sandbox, so we need
+        // the host-accessible copy that the wrapper script places in
+        // ~/.local/share/fluorine/umu-run.
+        let host_copy = env::var("XDG_DATA_HOME")
             .ok()
             .map(PathBuf::from)
-            .filter(|p| p.exists())
-        {
-            return Some(bundled);
+            .unwrap_or_else(|| {
+                let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+                PathBuf::from(home).join(".local/share")
+            })
+            .join("fluorine/umu-run");
+        if host_copy.exists() {
+            return Some(host_copy);
         }
+        // Fall back to bare name for host PATH resolution.
         return Some(PathBuf::from("umu-run"));
     }
 
