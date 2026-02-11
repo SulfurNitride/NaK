@@ -34,10 +34,17 @@ fn find_in_path(binary: &str) -> Option<PathBuf> {
 }
 
 pub fn resolve_umu_run() -> Option<PathBuf> {
-    // In Flatpak, umu-run must run on the host (it needs the Steam Runtime's
-    // linker and 32-bit libs).  Return the bare name so command_for() wraps it
-    // as `flatpak-spawn --host umu-run` and the host's PATH resolves it.
     if is_flatpak() {
+        // In Flatpak, umu-run must run on the host.  Try the bundled copy
+        // first (the wrapper copies it to a host-accessible location), then
+        // fall back to the bare name for host PATH resolution.
+        if let Some(bundled) = env::var("NAK_BUNDLED_UMU_RUN")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|p| p.exists())
+        {
+            return Some(bundled);
+        }
         return Some(PathBuf::from("umu-run"));
     }
 
@@ -58,21 +65,49 @@ pub fn is_flatpak() -> bool {
     Path::new("/.flatpak-info").exists()
 }
 
-pub fn command_for(exe: impl AsRef<OsStr>) -> Command {
+/// Build a command to run `exe` with the given environment variables.
+///
+/// In Flatpak mode, `flatpak-spawn --host` is used and env vars are passed as
+/// `--env=KEY=VALUE` flags (the host process does NOT inherit the sandbox env).
+/// In steam-run mode, the command is wrapped with `steam-run`.
+/// Otherwise the command runs directly.
+pub fn build_command<S: AsRef<OsStr>>(
+    exe: impl AsRef<OsStr>,
+    envs: &[(&str, S)],
+) -> Command {
     if use_steam_run() {
         let mut cmd = Command::new("steam-run");
-        cmd.arg(exe);
+        cmd.arg(exe.as_ref());
+        for (key, value) in envs {
+            cmd.env(key, value.as_ref());
+        }
         return cmd;
     }
-    // Inside a Flatpak sandbox, Proton's Wine binaries are linked against
-    // the Steam Runtime's linker and can't execute directly.  Spawn them
-    // on the host via the Flatpak portal instead.
     if is_flatpak() {
         let mut cmd = Command::new("flatpak-spawn");
-        cmd.arg("--host").arg(exe);
+        cmd.arg("--host");
+        for (key, value) in envs {
+            cmd.arg(format!(
+                "--env={}={}",
+                key,
+                value.as_ref().to_string_lossy()
+            ));
+        }
+        cmd.arg(exe.as_ref());
         return cmd;
     }
-    Command::new(exe)
+    let mut cmd = Command::new(exe);
+    for (key, value) in envs {
+        cmd.env(key, value.as_ref());
+    }
+    cmd
+}
+
+/// Build a command with no extra environment variables.
+///
+/// Equivalent to `build_command(exe, &[] as &[(&str, &str)])`.
+pub fn command_for(exe: impl AsRef<OsStr>) -> Command {
+    build_command::<&str>(exe, &[])
 }
 
 pub fn bundled_umu_path_from_appdir(appdir: &Path) -> Option<PathBuf> {

@@ -320,15 +320,17 @@ pub fn apply_wine_registry_settings(
     log_callback("Applying Wine registry settings...".to_string());
     log_install("Running wine regedit...");
 
-    let regedit_status = runtime_wrap::command_for(&wine_bin)
+    let reg_envs: Vec<(&str, String)> = vec![
+        ("WINEPREFIX", prefix_path.display().to_string()),
+        ("WINE", wine_bin.display().to_string()),
+        ("WINESERVER", wineserver_bin.display().to_string()),
+        ("PATH", path_env),
+        ("WINEDLLOVERRIDES", "mshtml=d".to_string()),
+        ("PROTON_USE_XALIA", "0".to_string()),
+    ];
+    let regedit_status = runtime_wrap::build_command(&wine_bin, &reg_envs)
         .arg("regedit")
         .arg(&reg_file)
-        .env("WINEPREFIX", prefix_path)
-        .env("WINE", &wine_bin)
-        .env("WINESERVER", &wineserver_bin)
-        .env("PATH", &path_env)
-        .env("WINEDLLOVERRIDES", "mshtml=d")
-        .env("PROTON_USE_XALIA", "0")
         .status();
 
     match regedit_status {

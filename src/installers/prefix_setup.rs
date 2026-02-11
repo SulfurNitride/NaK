@@ -237,13 +237,15 @@ fn install_dotnet_runtime(
 
     log_install(&format!("Running {} installer...", name));
 
-    let mut cmd = runtime_wrap::command_for(&wine_bin);
+    let envs: Vec<(&str, String)> = vec![
+        ("WINEPREFIX", prefix_root.display().to_string()),
+        ("WINEDLLOVERRIDES", "mshtml=d".to_string()),
+    ];
+    let mut cmd = runtime_wrap::build_command(&wine_bin, &envs);
     cmd.arg(&installer_path)
         .arg("/install")
         .arg("/quiet")
-        .arg("/norestart")
-        .env("WINEPREFIX", prefix_root)
-        .env("WINEDLLOVERRIDES", "mshtml=d");
+        .arg("/norestart");
 
     let status = ctx.run_cancellable(cmd)?;
 
@@ -282,38 +284,39 @@ fn initialize_prefix_with_proton(
 
     log_install(&format!("STEAM_COMPAT_DATA_PATH={:?}", compat_data_path));
 
-    let mut cmd = if runtime_wrap::use_umu_for_prefix() {
+    // Collect all env vars upfront so build_command can forward them
+    // via --env= flags in Flatpak mode.
+    let mut envs: Vec<(&str, String)> = vec![
+        ("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_root.display().to_string()),
+        ("STEAM_COMPAT_DATA_PATH", compat_data_path.display().to_string()),
+        ("SteamAppId", app_id.to_string()),
+        ("SteamGameId", app_id.to_string()),
+        ("DISPLAY", String::new()),          // Suppress GUI
+        ("WAYLAND_DISPLAY", String::new()),  // Suppress GUI
+        ("WINEDEBUG", "-all".to_string()),
+        ("WINEDLLOVERRIDES", "msdia80.dll=n;conhost.exe=d;cmd.exe=d".to_string()),
+    ];
+
+    let (exe, args): (std::path::PathBuf, Vec<&str>) = if runtime_wrap::use_umu_for_prefix() {
         if let Some(umu_run) = runtime_wrap::resolve_umu_run() {
             log_install(&format!("Initializing prefix with umu-run: {:?}", umu_run));
-            let mut c = runtime_wrap::command_for(umu_run);
-            c.arg("wineboot").arg("-u");
-            c.env("PROTONPATH", &proton.path);
-            c.env("WINEPREFIX", prefix_root);
-            c.env("GAMEID", app_id.to_string());
-            c
+            envs.push(("PROTONPATH", proton.path.display().to_string()));
+            envs.push(("WINEPREFIX", prefix_root.display().to_string()));
+            envs.push(("GAMEID", app_id.to_string()));
+            (umu_run, vec!["wineboot", "-u"])
         } else {
             log_warning(
                 "UMU prefix mode enabled but no umu-run was found; falling back to proton wrapper",
             );
-            let mut c = runtime_wrap::command_for(&proton_script);
-            c.arg("run").arg("wineboot").arg("-u");
-            c
+            (proton_script.clone(), vec!["run", "wineboot", "-u"])
         }
     } else {
         log_install(&format!("Initializing prefix with proton wrapper: {:?}", proton_script));
-        let mut c = runtime_wrap::command_for(&proton_script);
-        c.arg("run").arg("wineboot").arg("-u");
-        c
+        (proton_script.clone(), vec!["run", "wineboot", "-u"])
     };
 
-    cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_root)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data_path)
-        .env("SteamAppId", app_id.to_string())
-        .env("SteamGameId", app_id.to_string())
-        .env("DISPLAY", "") // Suppress GUI
-        .env("WAYLAND_DISPLAY", "") // Suppress GUI
-        .env("WINEDEBUG", "-all")
-        .env("WINEDLLOVERRIDES", "msdia80.dll=n;conhost.exe=d;cmd.exe=d");
+    let mut cmd = runtime_wrap::build_command(&exe, &envs);
+    cmd.args(&args);
 
     let status = ctx.run_cancellable(cmd)?;
 
@@ -405,12 +408,14 @@ fn cleanup_wine_drives(
         let reg_file = tmp_dir.join("drive_cleanup.reg");
         fs::write(&reg_file, &reg_content)?;
 
-        let status = runtime_wrap::command_for(&wine_bin)
+        let drive_envs: Vec<(&str, String)> = vec![
+            ("WINEPREFIX", prefix_root.display().to_string()),
+            ("WINEDLLOVERRIDES", "mshtml=d".to_string()),
+            ("PROTON_USE_XALIA", "0".to_string()),
+        ];
+        let status = runtime_wrap::build_command(&wine_bin, &drive_envs)
             .arg("regedit")
             .arg(&reg_file)
-            .env("WINEPREFIX", prefix_root)
-            .env("WINEDLLOVERRIDES", "mshtml=d")
-            .env("PROTON_USE_XALIA", "0")
             .status();
 
         let _ = fs::remove_file(&reg_file);
@@ -486,12 +491,13 @@ fn set_windows_11_mode(
 
     log_install("Running winetricks win11...");
 
-    let mut cmd = runtime_wrap::command_for(&winetricks_path);
-    cmd.arg("-q")
-        .arg("win11")
-        .env("WINE", &wine_bin)
-        .env("WINESERVER", &wineserver_bin)
-        .env("WINEPREFIX", prefix_root);
+    let envs: Vec<(&str, String)> = vec![
+        ("WINE", wine_bin.display().to_string()),
+        ("WINESERVER", wineserver_bin.display().to_string()),
+        ("WINEPREFIX", prefix_root.display().to_string()),
+    ];
+    let mut cmd = runtime_wrap::build_command(&winetricks_path, &envs);
+    cmd.arg("-q").arg("win11");
 
     let status = ctx.run_cancellable(cmd)?;
 
@@ -527,7 +533,11 @@ pub fn apply_dpi(
         format!("Wine binary not found for Proton '{}'", proton.name)
     })?;
 
-    let status = runtime_wrap::command_for(&wine_bin)
+    let envs: Vec<(&str, String)> = vec![
+        ("WINEPREFIX", prefix_root.display().to_string()),
+        ("PROTON_USE_XALIA", "0".to_string()),
+    ];
+    let status = runtime_wrap::build_command(&wine_bin, &envs)
         .arg("reg")
         .arg("add")
         .arg(r"HKCU\Control Panel\Desktop")
@@ -538,8 +548,6 @@ pub fn apply_dpi(
         .arg("/d")
         .arg(dpi_value.to_string())
         .arg("/f")
-        .env("WINEPREFIX", prefix_root)
-        .env("PROTON_USE_XALIA", "0")
         .status()?;
 
     if !status.success() {
@@ -569,10 +577,12 @@ pub fn launch_dpi_test_app(
         return Err(format!("Prefix not found: {:?}", prefix_root).into());
     }
 
-    let child = runtime_wrap::command_for(&wine_bin)
+    let envs: Vec<(&str, String)> = vec![
+        ("WINEPREFIX", prefix_root.display().to_string()),
+        ("PROTON_USE_XALIA", "0".to_string()),
+    ];
+    let child = runtime_wrap::build_command(&wine_bin, &envs)
         .arg(app_name)
-        .env("WINEPREFIX", prefix_root)
-        .env("PROTON_USE_XALIA", "0")
         .spawn()?;
 
     Ok(child)
@@ -587,9 +597,11 @@ pub fn kill_wineserver(prefix_root: &Path, proton: &SteamProton) {
         return;
     };
 
-    let _ = runtime_wrap::command_for(&wineserver_bin)
+    let envs: Vec<(&str, String)> = vec![
+        ("WINEPREFIX", prefix_root.display().to_string()),
+    ];
+    let _ = runtime_wrap::build_command(&wineserver_bin, &envs)
         .arg("-k")
-        .env("WINEPREFIX", prefix_root)
         .status();
 }
 
@@ -733,12 +745,14 @@ fn apply_game_registry(
     }
 
     // Apply registry
-    let status = runtime_wrap::command_for(wine_bin)
+    let reg_envs: Vec<(&str, String)> = vec![
+        ("WINEPREFIX", prefix_path.display().to_string()),
+        ("WINEDLLOVERRIDES", "mshtml=d".to_string()),
+        ("PROTON_USE_XALIA", "0".to_string()),
+    ];
+    let status = runtime_wrap::build_command(wine_bin, &reg_envs)
         .arg("regedit")
         .arg(&reg_file)
-        .env("WINEPREFIX", prefix_path)
-        .env("WINEDLLOVERRIDES", "mshtml=d")
-        .env("PROTON_USE_XALIA", "0")
         .status();
 
     let _ = fs::remove_file(&reg_file);

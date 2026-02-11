@@ -11,6 +11,7 @@ use super::common::{check_cancelled, check_disk_space, finalize_steam_installati
 use super::{install_all_dependencies, TaskContext};
 use crate::config::{AppConfig, ManagedPrefixes};
 use crate::logging::{log_download, log_error, log_install};
+use crate::runtime_wrap;
 use crate::marketplace::{PluginManifest, get_plugin_download_url, get_installer_args, get_plugin_exe_name, get_plugin_install_type};
 use crate::steam::{self, SteamProton};
 use crate::utils::download_file;
@@ -233,12 +234,14 @@ fn run_nsis_installer(
     let compat_data_path = prefix_path.parent()
         .ok_or("Could not determine compat_data_path")?;
 
-    let mut child = Command::new(&proton_bin)
+    let envs: Vec<(&str, String)> = vec![
+        ("STEAM_COMPAT_DATA_PATH", compat_data_path.display().to_string()),
+        ("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_path.display().to_string()),
+    ];
+    let mut child = runtime_wrap::build_command(&proton_bin, &envs)
         .arg("run")
         .arg(installer_path)
         .args(&args)
-        .env("STEAM_COMPAT_DATA_PATH", compat_data_path)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", steam_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;

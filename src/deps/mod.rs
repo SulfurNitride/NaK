@@ -83,15 +83,18 @@ pub fn run_winetricks(
     let new_path = format!("{}:{}", nak_bin.display(), current_path);
 
     // Run winetricks directly - ~/.config/nak/bin/ is accessible from
-    // both native and Flatpak environments
-    let status = runtime_wrap::command_for(&winetricks_path)
+    // both native and Flatpak environments.
+    // Use build_command so env vars are forwarded via --env= flags in Flatpak.
+    let envs: Vec<(&str, String)> = vec![
+        ("PATH", new_path),
+        ("WINE", wine_bin.display().to_string()),
+        ("WINESERVER", wineserver_bin.display().to_string()),
+        ("WINEPREFIX", prefix_path.display().to_string()),
+        ("WINETRICKS_CACHE", cache_dir.display().to_string()),
+    ];
+    let status = runtime_wrap::build_command(&winetricks_path, &envs)
         .arg("-q") // Quiet mode
         .args(verbs)
-        .env("PATH", &new_path)
-        .env("WINE", &wine_bin)
-        .env("WINESERVER", &wineserver_bin)
-        .env("WINEPREFIX", prefix_path)
-        .env("WINETRICKS_CACHE", &cache_dir)
         .status()?;
 
     if !status.success() {
@@ -153,14 +156,17 @@ pub fn run_winetricks_cancellable(
     let current_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{}", nak_bin.display(), current_path);
 
-    let mut child = runtime_wrap::command_for(&winetricks_path)
+    // Use build_command so env vars are forwarded via --env= flags in Flatpak.
+    let envs: Vec<(&str, String)> = vec![
+        ("PATH", new_path),
+        ("WINE", wine_bin.display().to_string()),
+        ("WINESERVER", wineserver_bin.display().to_string()),
+        ("WINEPREFIX", prefix_path.display().to_string()),
+        ("WINETRICKS_CACHE", cache_dir.display().to_string()),
+    ];
+    let mut child = runtime_wrap::build_command(&winetricks_path, &envs)
         .arg("-q")
         .args(verbs)
-        .env("PATH", &new_path)
-        .env("WINE", &wine_bin)
-        .env("WINESERVER", &wineserver_bin)
-        .env("WINEPREFIX", prefix_path)
-        .env("WINETRICKS_CACHE", &cache_dir)
         .spawn()?;
 
     loop {
