@@ -47,10 +47,22 @@ pub fn resolve_umu_run() -> Option<PathBuf> {
     }
 }
 
+pub fn is_flatpak() -> bool {
+    Path::new("/.flatpak-info").exists()
+}
+
 pub fn command_for(exe: impl AsRef<OsStr>) -> Command {
     if use_steam_run() {
         let mut cmd = Command::new("steam-run");
         cmd.arg(exe);
+        return cmd;
+    }
+    // Inside a Flatpak sandbox, Proton's Wine binaries are linked against
+    // the Steam Runtime's linker and can't execute directly.  Spawn them
+    // on the host via the Flatpak portal instead.
+    if is_flatpak() {
+        let mut cmd = Command::new("flatpak-spawn");
+        cmd.arg("--host").arg(exe);
         return cmd;
     }
     Command::new(exe)
