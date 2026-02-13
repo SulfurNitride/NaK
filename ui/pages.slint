@@ -16,164 +16,168 @@ export component FirstRunSetupPage inherits Rectangle {
 
     background: Theme.bg-dark;
 
-    VerticalLayout {
-        alignment: center;
-        spacing: 20px;
-        padding: 40px;
+    Flickable {
+        viewport-height: max(content.preferred-height, self.height);
 
-        Text {
-            text: "Welcome to NaK!";
-            color: Theme.text-primary;
-            font-size: 32px;
-            font-weight: 700;
-            horizontal-alignment: center;
-        }
+        content := VerticalLayout {
+            alignment: center;
+            spacing: 20px;
+            padding: 40px;
 
-        Text {
-            text: "Linux Modding Helper";
-            color: Theme.text-secondary;
-            font-size: 18px;
-            horizontal-alignment: center;
-        }
-
-        Rectangle { height: 20px; }
-
-        // Info card
-        NakCard {
-            max-width: 550px;
-            horizontal-stretch: 0;
-
-            VerticalLayout {
-                padding: 20px;
-                spacing: 12px;
-
-                Text {
-                    text: "What NaK Does";
-                    color: Theme.text-primary;
-                    font-size: 16px;
-                    font-weight: 600;
-                }
-
-                Text {
-                    text: "NaK helps you install and run MO2 on Linux:";
-                    color: Theme.text-secondary;
-                    font-size: 14px;
-                }
-
-                Text { text: "  - Creates a Steam shortcut for MO2"; color: Theme.text-secondary; font-size: 14px; }
-                Text { text: "  - Installs required Windows dependencies"; color: Theme.text-secondary; font-size: 14px; }
-                Text { text: "  - Sets up game registry entries for mod detection"; color: Theme.text-secondary; font-size: 14px; }
-                Text { text: "  - Handles NXM links from Nexus Mods"; color: Theme.text-secondary; font-size: 14px; }
+            Text {
+                text: "Welcome to NaK!";
+                color: Theme.text-primary;
+                font-size: 32px;
+                font-weight: 700;
+                horizontal-alignment: center;
             }
-        }
 
-        // Steam integration note
-        NakCard {
-            max-width: 550px;
-            horizontal-stretch: 0;
-            card-color: #1e3228;
-
-            VerticalLayout {
-                padding: 15px;
-                spacing: 8px;
-
-                Text {
-                    text: "Steam Integration";
-                    color: Theme.accent-green;
-                    font-size: 14px;
-                    font-weight: 600;
-                }
-
-                Text { text: "NaK adds MO2 as a non-Steam game. This means:"; color: Theme.text-secondary; font-size: 13px; }
-                Text { text: "  - Proton versions are managed through Steam"; color: Theme.text-secondary; font-size: 13px; }
-                Text { text: "  - Launch MO2 directly from Steam"; color: Theme.text-secondary; font-size: 13px; }
-                Text { text: "  - Steam overlay and controller support work"; color: Theme.text-secondary; font-size: 13px; }
+            Text {
+                text: "Linux Modding Helper";
+                color: Theme.text-secondary;
+                font-size: 18px;
+                horizontal-alignment: center;
             }
-        }
 
-        // System check card
-        NakCard {
-            max-width: 550px;
-            horizontal-stretch: 0;
-            card-color: #1e2832;
+            Rectangle { height: 20px; }
 
-            VerticalLayout {
-                padding: 15px;
-                spacing: 8px;
+            // Info card
+            NakCard {
+                max-width: 550px;
+                horizontal-stretch: 0;
 
-                Text {
-                    text: "System Check";
-                    color: Theme.text-primary;
-                    font-size: 14px;
-                    font-weight: 600;
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+
+                    Text {
+                        text: "What NaK Does";
+                        color: Theme.text-primary;
+                        font-size: 16px;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: "NaK helps you install and run MO2 on Linux:";
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                    }
+
+                    Text { text: "  - Creates a Steam shortcut for MO2"; color: Theme.text-secondary; font-size: 14px; }
+                    Text { text: "  - Installs required Windows dependencies"; color: Theme.text-secondary; font-size: 14px; }
+                    Text { text: "  - Sets up game registry entries for mod detection"; color: Theme.text-secondary; font-size: 14px; }
+                    Text { text: "  - Handles NXM links from Nexus Mods"; color: Theme.text-secondary; font-size: 14px; }
                 }
+            }
 
-                HorizontalLayout {
+            // Steam integration note
+            NakCard {
+                max-width: 550px;
+                horizontal-stretch: 0;
+                card-color: #1e3228;
+
+                VerticalLayout {
+                    padding: 15px;
                     spacing: 8px;
 
                     Text {
-                        text: root.steam-detected ? "Steam: OK" : "Steam: NOT FOUND";
-                        color: root.steam-detected ? Theme.accent-green : Theme.accent-red;
-                        font-size: 13px;
+                        text: "Steam Integration";
+                        color: Theme.accent-green;
+                        font-size: 14px;
                         font-weight: 600;
                     }
 
-                    Text { text: "|"; color: Theme.text-muted; font-size: 13px; }
-
-                    Text {
-                        text: root.proton-count > 0 ? "Proton: OK (" + root.proton-count + " found)" : "Proton: NOT FOUND";
-                        color: root.proton-count > 0 ? Theme.accent-green : Theme.accent-red;
-                        font-size: 13px;
-                        font-weight: 600;
-                    }
-                }
-
-                if root.missing-deps.length > 0: VerticalLayout {
-                    spacing: 4px;
-
-                    Text {
-                        text: "Missing dependencies:";
-                        color: Theme.accent-red;
-                        font-size: 13px;
-                        font-weight: 600;
-                    }
-
-                    for dep in root.missing-deps: Text {
-                        text: "  - " + dep;
-                        color: Theme.accent-red;
-                        font-size: 13px;
-                    }
-                }
-
-                if !root.steam-detected: Text {
-                    text: "Please install Steam before continuing.";
-                    color: Theme.accent-yellow;
-                    font-size: 12px;
-                }
-
-                if root.steam-detected && root.proton-count == 0: Text {
-                    text: "Install Proton Experimental or GE-Proton via Steam.";
-                    color: Theme.accent-yellow;
-                    font-size: 12px;
+                    Text { text: "NaK adds MO2 as a non-Steam game. This means:"; color: Theme.text-secondary; font-size: 13px; }
+                    Text { text: "  - Proton versions are managed through Steam"; color: Theme.text-secondary; font-size: 13px; }
+                    Text { text: "  - Launch MO2 directly from Steam"; color: Theme.text-secondary; font-size: 13px; }
+                    Text { text: "  - Steam overlay and controller support work"; color: Theme.text-secondary; font-size: 13px; }
                 }
             }
-        }
 
-        Rectangle { height: 20px; }
+            // System check card
+            NakCard {
+                max-width: 550px;
+                horizontal-stretch: 0;
+                card-color: #1e2832;
 
-        NakButton {
-            text: "Get Started";
-            primary: true;
-            min-width: 200px;
-            min-height: 45px;
-            clicked => { root.get-started(); }
-        }
+                VerticalLayout {
+                    padding: 15px;
+                    spacing: 8px;
 
-        Text {
-            text: "Click above to begin setting up MO2";
-            color: Theme.text-muted;
-            font-size: 12px;
-            horizontal-alignment: center;
+                    Text {
+                        text: "System Check";
+                        color: Theme.text-primary;
+                        font-size: 14px;
+                        font-weight: 600;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+
+                        Text {
+                            text: root.steam-detected ? "Steam: OK" : "Steam: NOT FOUND";
+                            color: root.steam-detected ? Theme.accent-green : Theme.accent-red;
+                            font-size: 13px;
+                            font-weight: 600;
+                        }
+
+                        Text { text: "|"; color: Theme.text-muted; font-size: 13px; }
+
+                        Text {
+                            text: root.proton-count > 0 ? "Proton: OK (" + root.proton-count + " found)" : "Proton: NOT FOUND";
+                            color: root.proton-count > 0 ? Theme.accent-green : Theme.accent-red;
+                            font-size: 13px;
+                            font-weight: 600;
+                        }
+                    }
+
+                    if root.missing-deps.length > 0: VerticalLayout {
+                        spacing: 4px;
+
+                        Text {
+                            text: "Missing dependencies:";
+                            color: Theme.accent-red;
+                            font-size: 13px;
+                            font-weight: 600;
+                        }
+
+                        for dep in root.missing-deps: Text {
+                            text: "  - " + dep;
+                            color: Theme.accent-red;
+                            font-size: 13px;
+                        }
+                    }
+
+                    if !root.steam-detected: Text {
+                        text: "Please install Steam before continuing.";
+                        color: Theme.accent-yellow;
+                        font-size: 12px;
+                    }
+
+                    if root.steam-detected && root.proton-count == 0: Text {
+                        text: "Install Proton Experimental or GE-Proton via Steam.";
+                        color: Theme.accent-yellow;
+                        font-size: 12px;
+                    }
+                }
+            }
+
+            Rectangle { height: 20px; }
+
+            NakButton {
+                text: "Get Started";
+                primary: true;
+                min-width: 200px;
+                min-height: 45px;
+                clicked => { root.get-started(); }
+            }
+
+            Text {
+                text: "Click above to begin setting up MO2";
+                color: Theme.text-muted;
+                font-size: 12px;
+                horizontal-alignment: center;
+            }
         }
     }
 }

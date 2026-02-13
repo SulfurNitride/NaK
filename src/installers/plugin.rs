@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::Duration;
 use wait_timeout::ChildExt;
 

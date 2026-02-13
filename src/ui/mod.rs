@@ -978,10 +978,9 @@ fn setup_version_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                             let backup = dir.join(".nak_backup");
                             if backup.exists() {
                                 log_warning("Attempting to restore from backup...");
-                                if std::fs::rename(&backup, &exe).is_ok() {
-                                    if std::process::Command::new(&exe).spawn().is_ok() {
-                                        std::process::exit(0);
-                                    }
+                                if std::fs::rename(&backup, &exe).is_ok()
+                                    && std::process::Command::new(&exe).spawn().is_ok() {
+                                    std::process::exit(0);
                                 }
                                 log_error("Failed to restore from backup");
                             }
@@ -1076,11 +1075,10 @@ fn validate_path(wizard: &mut InstallWizard) {
     wizard.low_disk_space = false;
     wizard.available_disk_gb = 0.0;
 
-    if !path.exists() {
-        if wizard.install_type == "Existing" {
-            wizard.validation_error = Some("Path does not exist!".to_string());
-            return;
-        }
+    if !path.exists()
+        && wizard.install_type == "Existing" {
+        wizard.validation_error = Some("Path does not exist!".to_string());
+        return;
     }
 
     // Check disk space for new installations
@@ -1447,9 +1445,11 @@ pub struct MarketplaceState {
     pub manifests: std::collections::HashMap<usize, nak_rust::marketplace::PluginManifest>,
 }
 
+type PluginDetailResult = (usize, Result<nak_rust::marketplace::PluginManifest, String>);
+
 /// Shared state for async marketplace operations
 pub struct MarketplaceAsync {
     pub registry_result: Arc<Mutex<Option<Result<nak_rust::marketplace::Registry, String>>>>,
-    pub detail_result: Arc<Mutex<Option<(usize, Result<nak_rust::marketplace::PluginManifest, String>)>>>,
+    pub detail_result: Arc<Mutex<Option<PluginDetailResult>>>,
     pub install_result: Arc<Mutex<Option<Result<String, String>>>>,
 }

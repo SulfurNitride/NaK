@@ -2,7 +2,7 @@
 
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::common::{check_cancelled, check_disk_space, finalize_steam_installation_with_tools, get_dxvk_conf_path, InstallError, ManagerType};
 use super::{fetch_latest_mo2_release, install_all_dependencies, TaskContext};
@@ -138,7 +138,7 @@ fn do_install_mo2_inner(
     proton: &SteamProton,
     ctx: &TaskContext,
     steam_result: &steam::SteamShortcutResult,
-    steam_path: &PathBuf,
+    steam_path: &Path,
     exe_path: &std::path::Path,
 ) -> Result<Mo2InstallResult, Box<dyn std::error::Error>> {
     check_cancelled(ctx)?;
@@ -326,11 +326,11 @@ pub fn setup_existing_mo2(
 /// Inner setup logic for setup_existing_mo2 (after shortcut creation).
 fn do_setup_existing_inner(
     install_name: &str,
-    existing_path: &PathBuf,
+    existing_path: &Path,
     proton: &SteamProton,
     ctx: &TaskContext,
     steam_result: &steam::SteamShortcutResult,
-    steam_path: &PathBuf,
+    steam_path: &Path,
 ) -> Result<Mo2InstallResult, Box<dyn Error>> {
     check_cancelled(ctx)?;
 
