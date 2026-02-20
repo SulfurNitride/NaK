@@ -4,7 +4,7 @@
 //! for known game registry entries.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use super::known_games::KNOWN_GAMES;
 use super::registry::{read_registry_value, wine_path_to_linux};
@@ -16,6 +16,20 @@ const BOTTLES_PATHS: &[&str] = &[
     ".local/share/bottles/bottles",
     ".var/app/com.usebottles.bottles/data/bottles/bottles",
 ];
+
+/// Normalize a path by resolving `.` and `..` components without requiring the path to exist.
+/// Used to prevent path traversal when converting Wine registry paths.
+fn normalize_path(p: &Path) -> PathBuf {
+    let mut stack: Vec<Component<'_>> = Vec::new();
+    for component in p.components() {
+        match component {
+            Component::ParentDir => { stack.pop(); }
+            Component::CurDir => {}
+            c => stack.push(c),
+        }
+    }
+    stack.iter().collect()
+}
 
 /// Detect all games in Bottles prefixes
 pub fn detect_bottles_games() -> Vec<Game> {
@@ -82,7 +96,13 @@ fn scan_bottle(bottle_path: &Path) -> Vec<Game> {
                     // Try as a relative path within drive_c
                     if install_path_wine.starts_with("C:") || install_path_wine.starts_with("c:") {
                         let relative = install_path_wine[2..].replace('\\', "/");
-                        drive_c.join(relative.trim_start_matches('/'))
+                        let candidate = drive_c.join(relative.trim_start_matches('/'));
+                        // Normalize .. components and verify the path stays within drive_c
+                        let normalized = normalize_path(&candidate);
+                        if !normalized.starts_with(&drive_c) {
+                            continue; // path traversal detected, skip
+                        }
+                        normalized
                     } else {
                         continue;
                     }

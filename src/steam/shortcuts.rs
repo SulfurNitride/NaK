@@ -140,13 +140,13 @@ impl ShortcutsVdf {
         while pos < data.len() && data[pos] != 0x00 {
             pos += 1;
         }
-        pos += 1; // skip 0x00
+        if pos < data.len() { pos += 1; } // skip 0x00
 
         // Skip "shortcuts"
         while pos < data.len() && data[pos] != 0x00 {
             pos += 1;
         }
-        pos += 1; // skip 0x00
+        if pos < data.len() { pos += 1; } // skip 0x00
 
         // Parse each shortcut
         while pos < data.len() {
@@ -165,7 +165,7 @@ impl ShortcutsVdf {
             while pos < data.len() && data[pos] != 0x00 {
                 pos += 1;
             }
-            pos += 1;
+            if pos < data.len() { pos += 1; } // skip 0x00
 
             let mut shortcut = Shortcut::default();
 
@@ -180,7 +180,7 @@ impl ShortcutsVdf {
                     pos += 1;
                 }
                 let key = String::from_utf8_lossy(&data[key_start..pos]).to_string();
-                pos += 1; // skip null terminator
+                if pos < data.len() { pos += 1; } // skip null terminator
 
                 match value_type {
                     0x01 => {
@@ -190,7 +190,7 @@ impl ShortcutsVdf {
                             pos += 1;
                         }
                         let value = String::from_utf8_lossy(&data[val_start..pos]).to_string();
-                        pos += 1;
+                        if pos < data.len() { pos += 1; } // skip null terminator
 
                         match key.to_lowercase().as_str() {
                             "appname" => shortcut.app_name = value,
@@ -235,7 +235,7 @@ impl ShortcutsVdf {
                                     while pos < data.len() && data[pos] != 0x00 {
                                         pos += 1;
                                     }
-                                    pos += 1;
+                                    if pos < data.len() { pos += 1; } // skip null
                                     // Read tag value
                                     let tag_start = pos;
                                     while pos < data.len() && data[pos] != 0x00 {
@@ -243,12 +243,12 @@ impl ShortcutsVdf {
                                     }
                                     let tag = String::from_utf8_lossy(&data[tag_start..pos]).to_string();
                                     shortcut.tags.push(tag);
-                                    pos += 1;
+                                    if pos < data.len() { pos += 1; } // skip null
                                 } else {
                                     pos += 1;
                                 }
                             }
-                            pos += 1; // skip 0x08
+                            if pos < data.len() { pos += 1; } // skip 0x08
                         }
                     }
                     _ => {
@@ -257,7 +257,7 @@ impl ShortcutsVdf {
                     }
                 }
             }
-            pos += 1; // skip 0x08 end marker
+            if pos < data.len() { pos += 1; } // skip 0x08 end-of-shortcut marker
 
             if !shortcut.app_name.is_empty() {
                 shortcuts.push(shortcut);

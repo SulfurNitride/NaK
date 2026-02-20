@@ -1,8 +1,10 @@
 //! Application state and initialization
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use parking_lot::Mutex;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use nak_rust::config::AppConfig;
@@ -149,8 +151,13 @@ impl Default for MyApp {
         // Note: We no longer create ~/NaK directories - that was for the old standalone system
         let config_dir = AppConfig::get_config_dir();
         let _ = std::fs::create_dir_all(&config_dir);
-        let _ = std::fs::create_dir_all(config_dir.join("bin"));
-        let _ = std::fs::create_dir_all(config_dir.join("tmp"));
+        let _ = std::fs::set_permissions(&config_dir, std::fs::Permissions::from_mode(0o700));
+        let bin_dir = config_dir.join("bin");
+        let _ = std::fs::create_dir_all(&bin_dir);
+        let _ = std::fs::set_permissions(&bin_dir, std::fs::Permissions::from_mode(0o700));
+        let tmp_dir = config_dir.join("tmp");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let _ = std::fs::set_permissions(&tmp_dir, std::fs::Permissions::from_mode(0o700));
 
         // Detect Steam at startup (with logging)
         let steam_path = detect_steam_path_checked();
@@ -229,13 +236,13 @@ impl Default for MyApp {
         let update_handle = thread::spawn(move || {
             match nak_rust::updater::check_for_updates() {
                 Ok(info) => {
-                    *update_info_arc.lock().unwrap() = Some(info);
+                    *update_info_arc.lock() = Some(info);
                 }
                 Err(e) => {
                     log_warning(&format!("Failed to check for updates: {}", e));
                 }
             }
-            *is_checking_arc.lock().unwrap() = false;
+            *is_checking_arc.lock() = false;
         });
 
         // Ensure dependencies are downloaded and NXM handler is set up
@@ -248,7 +255,6 @@ impl Default for MyApp {
                     log_error(&format!("Failed to ensure cabextract: {}", e));
                     missing_deps_for_thread
                         .lock()
-                        .unwrap()
                         .push("cabextract".to_string());
                 }
             }
@@ -285,6 +291,15 @@ impl Default for MyApp {
         }
 
         app
+    }
+}
+
+impl Drop for MyApp {
+    fn drop(&mut self) {
+        // Join all background threads on shutdown so they aren't silently abandoned.
+        for handle in self.background_tasks.drain(..) {
+            let _ = handle.join();
+        }
     }
 }
 

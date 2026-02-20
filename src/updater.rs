@@ -7,12 +7,15 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::time::Duration;
 
 use crate::github::GithubRelease;
 use crate::logging::{log_download, log_error, log_info};
 
 const GITHUB_REPO: &str = "SulfurNitride/NaK";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Timeout for GitHub API and download requests (30 seconds)
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct UpdateInfo {
@@ -26,7 +29,8 @@ pub struct UpdateInfo {
 /// Check GitHub for the latest release
 pub fn check_for_updates() -> Result<UpdateInfo, Box<dyn Error>> {
     let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
-    let response = ureq::get(&url)
+    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
+    let response = agent.get(&url)
         .set("User-Agent", "NaK-Updater")
         .call()?;
     let release: GithubRelease = response.into_json()?;
@@ -98,7 +102,8 @@ pub fn install_update(download_url: &str) -> Result<(), Box<dyn Error>> {
 
     // Download the update
     log_download("Downloading NaK update...");
-    let response = ureq::get(download_url)
+    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
+    let response = agent.get(download_url)
         .set("User-Agent", "NaK-Updater")
         .call()?;
 

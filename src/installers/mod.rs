@@ -4,8 +4,6 @@
 #[cfg(feature = "full")]
 mod common;
 #[cfg(feature = "full")]
-mod compatdata_scanner; // Deprecated: kept for reference, use game_finder instead
-#[cfg(feature = "full")]
 mod mo2;
 #[cfg(feature = "full")]
 mod plugin;
@@ -158,9 +156,6 @@ pub const WINE_SETTINGS_REG: &str = r#"Windows Registry Editor Version 5.00
 @="~ HIGHDPIAWARE"
 
 [HKEY_CURRENT_USER\Software\Wine\AppDefaults\Pandora Behaviour Engine+.exe\X11 Driver]
-"Decorated"="N"
-
-[HKEY_CURRENT_USER\Software\Wine\AppDefaults\Vortex.exe\X11 Driver]
 "Decorated"="N"
 
 [HKEY_CURRENT_USER\Software\Wine\AppDefaults\SSEEdit.exe]

@@ -12,7 +12,7 @@ mod shortcuts;
 // Re-export path detection utilities
 pub use paths::{
     detect_steam_path_checked, find_steam_path, find_userdata_path,
-    get_steam_accounts,
+    get_steam_accounts, is_valid_steam_path,
 };
 
 // Re-export Steam integration components
@@ -131,7 +131,7 @@ pub fn detect_extra_mounts() -> Vec<String> {
 /// Returns something like:
 /// `DXVK_CONFIG_FILE="/path/to/dxvk.conf" STEAM_COMPAT_MOUNTS=/mnt:/media:/opt %command%`
 ///
-/// For Electron apps (like Vortex), also adds `--disable-gpu --no-sandbox` after %command%
+/// For Electron apps, also adds `--disable-gpu --no-sandbox` after %command%
 /// to fix stdout/stderr EBADF errors under Wine/Proton.
 pub fn generate_launch_options(dxvk_conf_path: Option<&std::path::Path>, is_electron_app: bool) -> String {
     let mounts = detect_extra_mounts();
@@ -235,7 +235,7 @@ pub fn remove_steam_shortcut(app_id: u32) -> Result<(), Box<dyn std::error::Erro
 #[cfg(any(feature = "shortcuts", feature = "full"))]
 /// Add a mod manager as a non-Steam game shortcut
 ///
-/// This is the main function for integrating MO2/Vortex with Steam:
+/// This is the main function for integrating a mod manager with Steam:
 /// 1. Creates/updates the shortcut in shortcuts.vdf
 /// 2. Sets the Proton compatibility tool in config.vdf
 /// 3. Returns paths for prefix creation
@@ -246,7 +246,7 @@ pub fn remove_steam_shortcut(app_id: u32) -> Result<(), Box<dyn std::error::Erro
 /// * `start_dir` - Working directory for the exe
 /// * `proton_name` - Proton config name (e.g., "GE-Proton9-20", "proton_experimental")
 /// * `dxvk_conf_path` - Optional path to dxvk.conf file for DXVK_CONFIG_FILE env var
-/// * `is_electron_app` - Whether this is an Electron app (like Vortex) needing extra flags
+/// * `is_electron_app` - Whether this is an Electron app needing extra flags
 ///
 /// # Returns
 /// `SteamShortcutResult` with AppID and prefix paths

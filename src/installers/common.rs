@@ -1,7 +1,7 @@
-//! Common installer utilities shared between MO2 and Vortex
+//! Common installer utilities shared between mod manager installers
 //!
 //! This module contains shared logic to reduce code duplication between
-//! the MO2 and Vortex installers.
+//! the various mod manager installers.
 
 use std::fs;
 use std::io::Write;
@@ -405,7 +405,7 @@ pub fn create_nak_tools_folder(
 
 /// Regenerate NaK Tools scripts for an existing instance.
 /// This updates the Wine Prefix symlink and all scripts without touching
-/// the folder structure (Prefix Documents, Vortex Data, etc.)
+/// the folder structure (Prefix Documents, etc.)
 ///
 /// Used when NaK is updated to refresh scripts with bug fixes/improvements.
 pub fn regenerate_nak_tools_scripts(
@@ -484,13 +484,31 @@ fn write_script(path: &Path, content: &str) -> Result<(), InstallError> {
         context: "Script permissions".to_string(),
         reason: e.to_string(),
     })?.permissions();
-    perms.set_mode(0o755);
+    perms.set_mode(0o700); // owner-only: scripts contain sensitive paths
     fs::set_permissions(path, perms).map_err(|e| InstallError::Other {
         context: "Script permissions".to_string(),
         reason: e.to_string(),
     })?;
 
     Ok(())
+}
+
+/// Escape a string for safe substitution inside a double-quoted bash string.
+/// Escapes backslash, dollar sign, backtick, and double-quote so that the
+/// substituted value cannot break out of the surrounding `"..."` context or
+/// trigger command substitution / variable expansion.
+fn shell_dq_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' | '$' | '`' | '"' => {
+                out.push('\\');
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Generate Fix Game Registry script for Steam-native installs
@@ -500,9 +518,9 @@ fn generate_fix_registry_script(manager_name: &str, prefix_path: &Path, proton_p
     let proton_str = crate::config::normalize_path_for_steam(&proton_path.to_string_lossy());
 
     include_str!("../scripts/fix_registry.sh")
-        .replace("{{MANAGER_NAME}}", manager_name)
-        .replace("{{PREFIX_PATH}}", &prefix_str)
-        .replace("{{PROTON_PATH}}", &proton_str)
+        .replace("{{MANAGER_NAME}}", &shell_dq_escape(manager_name))
+        .replace("{{PREFIX_PATH}}", &shell_dq_escape(&prefix_str))
+        .replace("{{PROTON_PATH}}", &shell_dq_escape(&proton_str))
 }
 
 /// Generate NXM Toggle script
@@ -513,19 +531,14 @@ fn generate_nxm_toggle_script(app_id: u32, manager_name: &str, install_dir: &Pat
     let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
     let proton_str = crate::config::normalize_path_for_steam(&proton_path.to_string_lossy());
 
-    // NXM handler exe path - Vortex uses Vortex.exe, MO2 uses nxmhandler.exe
-    let nxm_exe = if manager_name == "Vortex" {
-        format!("{}/Vortex.exe", install_str)
-    } else {
-        format!("{}/nxmhandler.exe", install_str)
-    };
+    let nxm_exe = format!("{}/nxmhandler.exe", install_str);
 
     include_str!("../scripts/nxm_toggle.sh")
-        .replace("{{APP_ID}}", &app_id.to_string())
-        .replace("{{MANAGER_NAME}}", manager_name)
-        .replace("{{NXM_EXE}}", &nxm_exe)
-        .replace("{{PREFIX_PATH}}", &prefix_str)
-        .replace("{{PROTON_PATH}}", &proton_str)
+        .replace("{{APP_ID}}", &app_id.to_string()) // u32 integer — no escaping needed
+        .replace("{{MANAGER_NAME}}", &shell_dq_escape(manager_name))
+        .replace("{{NXM_EXE}}", &shell_dq_escape(&nxm_exe))
+        .replace("{{PREFIX_PATH}}", &shell_dq_escape(&prefix_str))
+        .replace("{{PROTON_PATH}}", &shell_dq_escape(&proton_str))
 }
 
 /// Generate Steam launch script (for manual use outside Steam)
@@ -535,8 +548,8 @@ fn generate_steam_launch_script(app_id: u32, manager_name: &str) -> String {
     let game_id: u64 = ((app_id as u64) << 32) | 0x02000000;
 
     include_str!("../scripts/steam_launch.sh")
-        .replace("{{MANAGER_NAME}}", manager_name)
-        .replace("{{GAME_ID}}", &game_id.to_string())
+        .replace("{{MANAGER_NAME}}", &shell_dq_escape(manager_name))
+        .replace("{{GAME_ID}}", &game_id.to_string()) // u64 integer — no escaping needed
 }
 
 /// Generate Import Saves script
@@ -545,7 +558,7 @@ fn generate_import_saves_script(prefix_path: &Path) -> String {
     let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
 
     include_str!("../scripts/import_saves.sh")
-        .replace("{{PREFIX_PATH}}", &prefix_str)
+        .replace("{{PREFIX_PATH}}", &shell_dq_escape(&prefix_str))
 }
 
 /// Generate Winetricks GUI script for Steam-native installs
@@ -554,6 +567,6 @@ fn generate_winetricks_gui_script(prefix_path: &Path) -> String {
     let prefix_str = crate::config::normalize_path_for_steam(&prefix_path.to_string_lossy());
 
     include_str!("../scripts/winetricks.sh")
-        .replace("{{PREFIX_PATH}}", &prefix_str)
+        .replace("{{PREFIX_PATH}}", &shell_dq_escape(&prefix_str))
 }
 

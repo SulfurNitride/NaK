@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e -o pipefail
 # NaK Winetricks GUI Script
 #
 # Opens the Winetricks GUI for this mod manager's Wine prefix.

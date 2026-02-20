@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e -o pipefail
 # NaK Global NXM Handler (Direct Proton Launch)
 # Forwards nxm:// links to the active mod manager instance directly via Proton
 # This bypasses Steam's URL scheme to avoid the security confirmation dialog
@@ -110,7 +111,7 @@ if [ ! -f "$PROTON_BIN" ]; then
     echo "NaK: Configured Proton not found at: $PROTON_PATH"
     echo "NaK: Searching for alternative Proton..."
 
-    ALT_PROTON=$(find_proton)
+    ALT_PROTON=$(find_proton) || true
     if [ -n "$ALT_PROTON" ] && [ -f "$ALT_PROTON/proton" ]; then
         echo "NaK: Found alternative Proton: $ALT_PROTON"
         PROTON_PATH="$ALT_PROTON"
@@ -128,15 +129,9 @@ NXM_DIR=$(dirname "$NXM_EXE")
 if [ -f "$NXM_DIR/ModOrganizer.exe" ]; then
     MOD_MANAGER="MO2"
     PROCESS_NAME="ModOrganizer.exe"
-    NXM_ARGS=""
-elif [ -f "$NXM_DIR/Vortex.exe" ]; then
-    MOD_MANAGER="Vortex"
-    PROCESS_NAME="Vortex.exe"
-    NXM_ARGS="-d"  # Vortex requires -d flag for NXM download handling
 else
     MOD_MANAGER="Unknown"
     PROCESS_NAME=""
-    NXM_ARGS=""
 fi
 
 # Check if mod manager is already running (look for wine process with the exe name)
@@ -153,10 +148,13 @@ if [ -n "$PROCESS_NAME" ] && ! is_running; then
         APPID=$(cat "$ACTIVE_APPID_FILE")
         if [ -n "$APPID" ]; then
             # Convert 32-bit AppID to 64-bit Game ID: (appid << 32) | 0x02000000
-            GAME_ID=$(python3 -c "print(($APPID << 32) | 0x02000000)")
-
-            # Launch via Steam
-            xdg-open "steam://rungameid/$GAME_ID"
+            GAME_ID=$(python3 -c "print(($APPID << 32) | 0x02000000)") || true
+            if [ -z "$GAME_ID" ]; then
+                echo "NaK: Warning: could not compute Game ID from AppID '$APPID'"
+            else
+                # Launch via Steam
+                xdg-open "steam://rungameid/$GAME_ID"
+            fi
 
             # Wait for mod manager to start (up to 30 seconds)
             echo "NaK: Waiting for $MOD_MANAGER to start..."
@@ -187,8 +185,4 @@ export WINEDLLOVERRIDES="winemenubuilder.exe="
 echo "NaK: Handling NXM link via Proton..."
 echo "  EXE: $NXM_EXE"
 echo "  URL: $NXM_URL"
-if [ -n "$NXM_ARGS" ]; then
-    "$PROTON_BIN" run "$NXM_EXE" $NXM_ARGS "$NXM_URL"
-else
-    "$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"
-fi
+"$PROTON_BIN" run "$NXM_EXE" "$NXM_URL"

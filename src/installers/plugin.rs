@@ -19,6 +19,21 @@ use crate::utils::download_file;
 /// Minimum disk space required for plugin installation (in GB)
 const MIN_DISK_SPACE_GB: f64 = 5.0;
 
+/// Recursively copy a directory tree (fallback when rename fails across filesystems)
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &dst_path)?;
+        } else {
+            fs::copy(entry.path(), dst_path)?;
+        }
+    }
+    Ok(())
+}
+
 /// Timeout for installers (5 minutes)
 const INSTALLER_TIMEOUT_SECS: u64 = 300;
 
@@ -76,8 +91,8 @@ pub fn install_plugin(
 
     let steam_result = steam::add_mod_manager_shortcut(
         install_name,
-        exe_path.to_str().unwrap_or(""),
-        install_path.to_str().unwrap_or(""),
+        exe_path.to_str().ok_or("Exe path contains non-UTF-8 characters")?,
+        install_path.to_str().ok_or("Install path contains non-UTF-8 characters")?,
         &proton.config_name,
         Some(&dxvk_conf_path),
         is_electron,
@@ -132,20 +147,76 @@ pub fn install_plugin(
             )?;
         }
         "archive-7z" => {
-            // Extract 7z archive
-            if let Err(e) = sevenz_rust::decompress_file(&installer_path, &install_path) {
+            // Extract 7z archive.
+            // sevenz_rust doesn't expose per-entry path hooks, so we extract to a temp
+            // staging directory and then validate + move each file into install_path.
+            let staging = install_path.with_extension("_nak_staging");
+            if let Err(e) = sevenz_rust::decompress_file(&installer_path, &staging) {
                 log_error(&format!("Failed to extract archive: {}", e));
+                let _ = fs::remove_dir_all(&staging);
                 return Err(InstallError::Other {
                     context: "Archive extraction".to_string(),
                     reason: e.to_string(),
                 }.into());
             }
+            // Verify no extracted file escapes the staging dir, then move into place
+            let staging_canonical = staging.canonicalize().map_err(|e| InstallError::Other {
+                context: "Archive staging".to_string(),
+                reason: e.to_string(),
+            })?;
+            for entry in walkdir::WalkDir::new(&staging).min_depth(1) {
+                let entry = entry.map_err(|e| InstallError::Other {
+                    context: "Archive traversal check".to_string(),
+                    reason: e.to_string(),
+                })?;
+                let canonical = entry.path().canonicalize().map_err(|e| InstallError::Other {
+                    context: "Archive path canonicalization".to_string(),
+                    reason: e.to_string(),
+                })?;
+                if !canonical.starts_with(&staging_canonical) {
+                    let _ = fs::remove_dir_all(&staging);
+                    return Err(InstallError::Other {
+                        context: "Archive extraction".to_string(),
+                        reason: format!("Archive entry escapes destination: {:?}", entry.path()),
+                    }.into());
+                }
+            }
+            // Move contents from staging into install_path
+            fs::rename(&staging, &install_path).or_else(|_| {
+                // rename fails across filesystems; fall back to copy + delete
+                copy_dir_all(&staging, &install_path)
+                    .and_then(|_| fs::remove_dir_all(&staging))
+            }).map_err(|e| InstallError::Other {
+                context: "Archive staging move".to_string(),
+                reason: e.to_string(),
+            })?;
         }
         "archive-zip" => {
-            // Extract zip archive
+            // Extract zip archive with path traversal protection.
+            // zip::ZipFile::enclosed_name() already rejects absolute paths and `..`
+            // components; we additionally verify the resolved path stays within install_path.
             let file = fs::File::open(&installer_path)?;
             let mut archive = zip::ZipArchive::new(file)?;
-            archive.extract(&install_path)?;
+            for i in 0..archive.len() {
+                let mut entry = archive.by_index(i)?;
+                let outpath = match entry.enclosed_name() {
+                    Some(p) => install_path.join(p),
+                    None => continue, // path traversal attempt; skip
+                };
+                // Ensure no symlink trickery places the file outside install_path
+                if let Some(parent) = outpath.parent() {
+                    if !parent.starts_with(&install_path) {
+                        continue;
+                    }
+                    fs::create_dir_all(parent)?;
+                }
+                if entry.is_dir() {
+                    fs::create_dir_all(&outpath)?;
+                } else {
+                    let mut out_file = fs::File::create(&outpath)?;
+                    std::io::copy(&mut entry, &mut out_file)?;
+                }
+            }
         }
         other => {
             return Err(format!("Unknown install type: {}", other).into());
@@ -179,12 +250,7 @@ pub fn install_plugin(
     check_cancelled(&ctx)?;
 
     // 7. Finalize installation
-    // Use Vortex-specific handling for the Vortex plugin
-    let manager_type = if plugin_id == "vortex" {
-        ManagerType::Vortex
-    } else {
-        ManagerType::Plugin
-    };
+    let manager_type = ManagerType::Plugin;
 
     finalize_steam_installation_with_tools(
         manager_type,

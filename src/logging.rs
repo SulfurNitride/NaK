@@ -6,7 +6,8 @@ use chrono::Local;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock};
+use parking_lot::Mutex;
+use std::sync::{Arc, OnceLock};
 
 // Log files are written next to the application (CWD) for easy review and sharing
 
@@ -293,8 +294,14 @@ impl Default for NakLogger {
 
 impl NakLogger {
     pub fn new() -> Self {
-        let logs_dir = std::env::current_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        // Place logs next to the NaK binary so they're easy to find and share.
+        // Fall back to current directory if the binary path can't be determined.
+        let logs_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+            });
 
         // Rotate old logs before creating a new one
         rotate_logs(&logs_dir, 10);
@@ -363,39 +370,27 @@ fn logger() -> Arc<Mutex<NakLogger>> {
 // ============================================================================
 
 pub fn log_info(message: &str) {
-    if let Ok(mut log) = logger().lock() {
-        log.log(LogLevel::Info, message);
-    }
+    logger().lock().log(LogLevel::Info, message);
 }
 
 pub fn log_action(message: &str) {
-    if let Ok(mut log) = logger().lock() {
-        log.log(LogLevel::Action, message);
-    }
+    logger().lock().log(LogLevel::Action, message);
 }
 
 pub fn log_download(message: &str) {
-    if let Ok(mut log) = logger().lock() {
-        log.log(LogLevel::Download, message);
-    }
+    logger().lock().log(LogLevel::Download, message);
 }
 
 pub fn log_install(message: &str) {
-    if let Ok(mut log) = logger().lock() {
-        log.log(LogLevel::Install, message);
-    }
+    logger().lock().log(LogLevel::Install, message);
 }
 
 pub fn log_warning(message: &str) {
-    if let Ok(mut log) = logger().lock() {
-        log.log(LogLevel::Warning, message);
-    }
+    logger().lock().log(LogLevel::Warning, message);
 }
 
 pub fn log_error(message: &str) {
-    if let Ok(mut log) = logger().lock() {
-        log.log(LogLevel::Error, message);
-    }
+    logger().lock().log(LogLevel::Error, message);
 }
 
 /// Remove oldest log files if there are more than `max_logs` in the directory

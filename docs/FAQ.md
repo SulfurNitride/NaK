@@ -23,7 +23,7 @@ So this is my first ever FAQ, so please if there are any issues let me know!
 
 ### What is the goal?
 
-The goal itself is pretty simple: to create a unified modding experience on Linux. By removing tedious steps like manually installing VCRUN2022 or setting WINEDLLOVERRIDES. Also by making quality of life improvements, like removing window decorations from Pandora or Vortex.
+The goal itself is pretty simple: to create a unified modding experience on Linux. By removing tedious steps like manually installing VCRUN2022 or setting WINEDLLOVERRIDES. Also by making quality of life improvements, like removing window decorations from Pandora.
 
 ### How does NaK work?
 
@@ -83,7 +83,7 @@ If this doesn't work, please make a report on the [GitHub Issues](https://github
 <img width="794" height="390" alt="image" src="https://github.com/user-attachments/assets/85980fc9-1453-49c5-b37e-4b33e5e841f4" />
 
 
-**Solution:** This is a known issue with an easy fix. Inside of your mod folder (MO2 or Vortex), you will find a file called `Fix Game Registry`. You need to run this file in your terminal:
+**Solution:** This is a known issue with an easy fix. Inside of your mod folder (MO2), you will find a file called `Fix Game Registry`. You need to run this file in your terminal:
 
 ```
 ./Fix\ Game\ Registry

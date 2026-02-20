@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e -o pipefail
 # NaK Fix Game Registry Script
 # For Steam-native {{MANAGER_NAME}} installation
 #

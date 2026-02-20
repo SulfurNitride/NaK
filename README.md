@@ -6,7 +6,7 @@ BIG NOTE! I'm working on a different project, called [Fluorine Manager](https://
 
 NaK, is a sodium and potassium alloy. Highly reactive.
 
-NaK, is a modding helper. It automatically sets up MO2 and Vortex to the best of my abilities for you. Auto installs dependencies for you and sets up NXM Links as well. Includes fixes for XEdit, Synthesis, Baldur's Gate 3, Cyberpunk 2077. 
+NaK, is a modding helper. It automatically sets up MO2 to the best of my abilities for you. Auto installs dependencies for you and sets up NXM Links as well. Includes fixes for XEdit, Synthesis, Baldur's Gate 3, Cyberpunk 2077. 
 
 If you have any requests or anything just let me know or open up an issue!
 

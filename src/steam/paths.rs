@@ -4,7 +4,7 @@
 //! user data paths, and related filesystem operations.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::logging::{log_info, log_warning};
 
@@ -18,6 +18,15 @@ use crate::logging::{log_info, log_warning};
 /// Returns `None` if Steam is not found.
 #[must_use]
 pub fn find_steam_path() -> Option<PathBuf> {
+    // Check user-configured override first (set when Steam is in a non-standard location)
+    let config = crate::config::AppConfig::load();
+    if !config.custom_steam_path.is_empty() {
+        let custom = PathBuf::from(&config.custom_steam_path);
+        if is_valid_steam_path(&custom) {
+            return Some(custom);
+        }
+    }
+
     let home = std::env::var("HOME").ok()?;
 
     let steam_paths = [
@@ -30,7 +39,13 @@ pub fn find_steam_path() -> Option<PathBuf> {
     steam_paths
         .iter()
         .map(PathBuf::from)
-        .find(|p| p.exists())
+        .find(|p| is_valid_steam_path(p.as_path()))
+}
+
+/// Check whether a directory looks like a Steam installation.
+/// Requires a `steamapps` subdirectory as the minimum indicator.
+pub fn is_valid_steam_path(path: &Path) -> bool {
+    path.exists() && path.join("steamapps").exists()
 }
 
 /// Find the Steam userdata directory.

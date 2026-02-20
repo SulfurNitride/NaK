@@ -102,8 +102,8 @@ pub fn install_mo2(
     let dxvk_conf_path = get_dxvk_conf_path(&install_path);
     let steam_result = steam::add_mod_manager_shortcut(
         install_name,
-        exe_path.to_str().unwrap_or(""),
-        install_path.to_str().unwrap_or(""),
+        exe_path.to_str().ok_or("ModOrganizer.exe path contains non-UTF-8 characters")?,
+        install_path.to_str().ok_or("Install path contains non-UTF-8 characters")?,
         &proton.config_name,
         Some(&dxvk_conf_path),
         false, // MO2 is not an Electron app
@@ -240,8 +240,8 @@ fn do_install_mo2_inner(
     ManagedPrefixes::register(
         steam_result.app_id,
         install_name,
-        steam_result.prefix_path.to_str().unwrap_or(""),
-        install_path.to_str().unwrap_or(""),
+        steam_result.prefix_path.to_str().ok_or("Prefix path contains non-UTF-8 characters")?,
+        install_path.to_str().ok_or("Install path contains non-UTF-8 characters")?,
         crate::config::ManagerType::MO2,
         steam_path.to_str().unwrap_or(""),
         Some(&proton.config_name),

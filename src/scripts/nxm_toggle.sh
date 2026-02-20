@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e -o pipefail
 # NaK NXM Toggle Script
 # For Steam-native {{MANAGER_NAME}} installation (AppID: {{APP_ID}})
 #
@@ -71,15 +72,17 @@ find_all_protons() {
                 name=$(basename "$dir")
                 # Filter to Proton 10+ (skip older versions)
                 if [[ "$name" == *"GE-Proton"* ]]; then
-                    # GE-Proton: check version number
-                    local ver
-                    ver=$(echo "$name" | sed -n 's/GE-Proton\([0-9]*\).*/\1/p')
-                    [ -n "$ver" ] && [ "$ver" -lt 10 ] && continue
+                    # GE-Proton: check major version number (skip < 10)
+                    if [[ "$name" =~ GE-Proton[^0-9]*([0-9]+) ]]; then
+                        local major="${BASH_REMATCH[1]}"
+                        [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -lt 10 ] && continue
+                    fi
                 elif [[ "$name" == "Proton "* ]]; then
-                    # Steam Proton: check version
-                    local ver
-                    ver=$(echo "$name" | sed -n 's/Proton \([0-9]*\).*/\1/p')
-                    [ -n "$ver" ] && [ "$ver" -lt 10 ] && continue
+                    # Steam Proton: check major version number (skip < 10)
+                    if [[ "$name" =~ Proton\ ([0-9]+) ]]; then
+                        local major="${BASH_REMATCH[1]}"
+                        [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -lt 10 ] && continue
+                    fi
                 fi
                 PROTON_PATHS+=("${dir%/}")
                 PROTON_NAMES+=("$name")

@@ -1,8 +1,9 @@
 //! Slint UI Bridge - Connects Rust application state to Slint UI
 
 use std::path::PathBuf;
+use parking_lot::Mutex;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::rc::Rc;
@@ -146,7 +147,7 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
         window.set_proton_options(ModelRc::new(VecModel::from(proton_names)));
 
         // Missing deps
-        let missing = app_ref.missing_deps.lock().unwrap();
+        let missing = app_ref.missing_deps.lock();
         let missing_strings: Vec<SharedString> = missing.iter()
             .map(|s| SharedString::from(s.clone()))
             .collect();
@@ -219,6 +220,48 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
     // Migration popup callbacks
     setup_migration_callbacks(&window, &app);
 
+    // Browse custom Steam path callback
+    {
+        let app_weak = Rc::downgrade(&app);
+        let window_weak = window.as_weak();
+        window.on_browse_steam_path(move || {
+            log_action("Browse Steam path clicked");
+            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                if nak_rust::steam::is_valid_steam_path(&path) {
+                    if let Some(app_rc) = app_weak.upgrade() {
+                        let mut app_ref = app_rc.borrow_mut();
+                        app_ref.config.custom_steam_path = path.to_string_lossy().to_string();
+                        app_ref.config.save();
+                        log_info(&format!("Custom Steam path set to: {}", path.display()));
+
+                        // Re-detect Steam with the new custom path
+                        let steam_path = nak_rust::steam::detect_steam_path_checked();
+                        let steam_detected = steam_path.is_some();
+                        app_ref.steam_detected = steam_detected;
+                        app_ref.steam_path = steam_path;
+                        app_ref.steam_protons = nak_rust::steam::find_steam_protons();
+
+                        if let Some(window) = window_weak.upgrade() {
+                            window.set_steam_detected(steam_detected);
+                            if let Some(ref p) = app_ref.steam_path {
+                                window.set_steam_path(p.clone().into());
+                            }
+                            let proton_names: Vec<SharedString> = app_ref.steam_protons.iter()
+                                .map(|p| SharedString::from(p.name.clone()))
+                                .collect();
+                            window.set_proton_options(ModelRc::new(VecModel::from(proton_names)));
+                        }
+                    }
+                } else {
+                    log_warning(&format!(
+                        "Selected path is not a valid Steam installation (no steamapps/ subdirectory): {}",
+                        path.display()
+                    ));
+                }
+            }
+        });
+    }
+
     // Setup polling timer for state synchronization (100ms)
     let app_poll = Rc::clone(&app);
     let window_weak = window.as_weak();
@@ -229,9 +272,9 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
             let (is_installing, status, progress, current_step);
             {
                 let app_ref = app_poll.borrow();
-                is_installing = *app_ref.is_installing_manager.lock().unwrap();
-                status = app_ref.install_status.lock().unwrap().clone();
-                progress = *app_ref.install_progress.lock().unwrap();
+                is_installing = *app_ref.is_installing_manager.lock();
+                status = app_ref.install_status.lock().clone();
+                progress = *app_ref.install_progress.lock();
                 current_step = app_ref.install_wizard.step;
             }
 
@@ -254,8 +297,8 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
                     } else if (status.contains("Dependencies installed") || status.contains("Complete!") || status.contains("Installed!") || status.contains("Setup Complete!"))
                         && app_mut.install_wizard.step == WizardStep::ProtonSelect {
                         // Sync install results to wizard before moving to DPI setup
-                        let app_id_result = app_mut.install_result_app_id.lock().ok().and_then(|g| *g);
-                        let prefix_path_result = app_mut.install_result_prefix_path.lock().ok().and_then(|g| g.clone());
+                        let app_id_result = *app_mut.install_result_app_id.lock();
+                        let prefix_path_result = app_mut.install_result_prefix_path.lock().clone();
                         app_mut.install_wizard.installed_app_id = app_id_result;
                         app_mut.install_wizard.installed_prefix_path = prefix_path_result;
                         // Move to DPI setup
@@ -269,18 +312,18 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
             {
                 let app_ref = app_poll.borrow();
 
-                let update_info = app_ref.update_info.lock().unwrap().clone();
+                let update_info = app_ref.update_info.lock().clone();
                 if let Some(ref info) = update_info {
                     window.set_update_available(info.is_update_available);
                     window.set_latest_version(info.latest_version.clone().into());
                     window.set_release_notes(info.release_notes.clone().into());
                 }
 
-                window.set_is_checking_update(*app_ref.is_checking_update.lock().unwrap());
-                window.set_is_installing_update(*app_ref.is_installing_update.lock().unwrap());
-                window.set_update_installed(*app_ref.update_installed.lock().unwrap());
+                window.set_is_checking_update(*app_ref.is_checking_update.lock());
+                window.set_is_installing_update(*app_ref.is_installing_update.lock());
+                window.set_update_installed(*app_ref.update_installed.lock());
 
-                let err_opt = app_ref.update_error.lock().unwrap().clone();
+                let err_opt = app_ref.update_error.lock().clone();
                 if let Some(ref err) = err_opt {
                     window.set_update_error(err.clone().into());
                 }
@@ -290,9 +333,9 @@ pub fn run_slint_ui(app: Rc<RefCell<MyApp>>) -> Result<(), slint::PlatformError>
             // Take all results with a single short-lived borrow, then process
             let (registry_result, detail_result, install_result) = {
                 let app_ref = app_poll.borrow();
-                let reg = app_ref.marketplace_async.registry_result.lock().unwrap().take();
-                let det = app_ref.marketplace_async.detail_result.lock().unwrap().take();
-                let inst = app_ref.marketplace_async.install_result.lock().unwrap().take();
+                let reg = app_ref.marketplace_async.registry_result.lock().take();
+                let det = app_ref.marketplace_async.detail_result.lock().take();
+                let inst = app_ref.marketplace_async.install_result.lock().take();
                 (reg, det, inst)
             };
 
@@ -541,9 +584,10 @@ fn setup_mo2_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                     app_ref.install_wizard.name = window.get_instance_name().to_string();
                     app_ref.install_wizard.path = window.get_install_path().to_string();
 
-                    let proton_idx = window.get_selected_proton_index() as usize;
-                    if proton_idx < app_ref.steam_protons.len() {
-                        app_ref.install_wizard.selected_proton = Some(app_ref.steam_protons[proton_idx].config_name.clone());
+                    if let Ok(proton_idx) = usize::try_from(window.get_selected_proton_index()) {
+                        if proton_idx < app_ref.steam_protons.len() {
+                            app_ref.install_wizard.selected_proton = Some(app_ref.steam_protons[proton_idx].config_name.clone());
+                        }
                     }
                 }
 
@@ -560,7 +604,7 @@ fn setup_mo2_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                 let app_ref = app_rc.borrow();
                 log_action("MO2: Cancel installation");
                 app_ref.cancel_install.store(true, Ordering::Relaxed);
-                *app_ref.install_status.lock().unwrap() = "Cancelling...".to_string();
+                *app_ref.install_status.lock() = "Cancelling...".to_string();
             }
         });
     }
@@ -576,10 +620,10 @@ fn setup_mo2_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
 
                 app_ref.install_wizard = InstallWizard::default();
                 app_ref.install_wizard.manager_type = "MO2".to_string();
-                *app_ref.install_status.lock().unwrap() = String::new();
-                *app_ref.install_progress.lock().unwrap() = 0.0;
-                app_ref.logs.lock().unwrap().clear();
-                app_ref.dpi_test_processes.lock().unwrap().clear();
+                *app_ref.install_status.lock() = String::new();
+                *app_ref.install_progress.lock() = 0.0;
+                app_ref.logs.lock().clear();
+                app_ref.dpi_test_processes.lock().clear();
                 app_ref.cancel_install.store(false, Ordering::Relaxed);
 
                 if let Some(window) = window_weak.upgrade() {
@@ -712,12 +756,12 @@ fn setup_marketplace_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
             if let Some(app_rc) = app_weak.upgrade() {
                 let app_ref = app_rc.borrow();
                 let result_arc = app_ref.marketplace_async.registry_result.clone();
-                *result_arc.lock().unwrap() = None;
+                *result_arc.lock() = None;
 
                 thread::spawn(move || {
                     let result = nak_rust::marketplace::fetch_registry()
                         .map_err(|e| e.to_string());
-                    *result_arc.lock().unwrap() = Some(result);
+                    *result_arc.lock() = Some(result);
                 });
             }
         });
@@ -741,7 +785,7 @@ fn setup_marketplace_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
 
                 if let Some(folder) = folder {
                     let result_arc = app_ref.marketplace_async.detail_result.clone();
-                    *result_arc.lock().unwrap() = None;
+                    *result_arc.lock() = None;
 
                     if let Some(window) = window_weak.upgrade() {
                         window.set_marketplace_loading(true);
@@ -751,7 +795,7 @@ fn setup_marketplace_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                     thread::spawn(move || {
                         let result = nak_rust::marketplace::fetch_plugin_manifest(&folder)
                             .map_err(|e| e.to_string());
-                        *result_arc.lock().unwrap() = Some((plugin_idx, result));
+                        *result_arc.lock() = Some((plugin_idx, result));
                     });
                 }
             }
@@ -905,8 +949,8 @@ fn setup_version_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
             if let Some(app_rc) = app_weak.upgrade() {
                 let app_ref = app_rc.borrow();
 
-                *app_ref.is_checking_update.lock().unwrap() = true;
-                *app_ref.update_error.lock().unwrap() = None;
+                *app_ref.is_checking_update.lock() = true;
+                *app_ref.update_error.lock() = None;
 
                 let is_checking = app_ref.is_checking_update.clone();
                 let update_info = app_ref.update_info.clone();
@@ -915,13 +959,13 @@ fn setup_version_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                 thread::spawn(move || {
                     match nak_rust::updater::check_for_updates() {
                         Ok(info) => {
-                            *update_info.lock().unwrap() = Some(info);
+                            *update_info.lock() = Some(info);
                         }
                         Err(e) => {
-                            *update_error.lock().unwrap() = Some(e.to_string());
+                            *update_error.lock() = Some(e.to_string());
                         }
                     }
-                    *is_checking.lock().unwrap() = false;
+                    *is_checking.lock() = false;
                 });
             }
         });
@@ -936,13 +980,13 @@ fn setup_version_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
             if let Some(app_rc) = app_weak.upgrade() {
                 let app_ref = app_rc.borrow();
 
-                let url = app_ref.update_info.lock().unwrap()
+                let url = app_ref.update_info.lock()
                     .as_ref()
                     .and_then(|i| i.download_url.clone());
 
                 if let Some(url) = url {
-                    *app_ref.is_installing_update.lock().unwrap() = true;
-                    *app_ref.update_error.lock().unwrap() = None;
+                    *app_ref.is_installing_update.lock() = true;
+                    *app_ref.update_error.lock() = None;
 
                     let is_installing = app_ref.is_installing_update.clone();
                     let update_error = app_ref.update_error.clone();
@@ -951,13 +995,13 @@ fn setup_version_callbacks(window: &MainWindow, app: &Rc<RefCell<MyApp>>) {
                     thread::spawn(move || {
                         match nak_rust::updater::install_update(&url) {
                             Ok(_) => {
-                                *update_installed.lock().unwrap() = true;
+                                *update_installed.lock() = true;
                             }
                             Err(e) => {
-                                *update_error.lock().unwrap() = Some(e.to_string());
+                                *update_error.lock() = Some(e.to_string());
                             }
                         }
-                        *is_installing.lock().unwrap() = false;
+                        *is_installing.lock() = false;
                     });
                 }
             }
@@ -1164,14 +1208,14 @@ fn start_installation(app: Rc<RefCell<MyApp>>) {
 
     log_action(&format!("Starting {} {} for {}", install_type, manager_type, instance_name));
 
-    *result_app_id_arc.lock().unwrap() = None;
-    *result_prefix_path_arc.lock().unwrap() = None;
+    *result_app_id_arc.lock() = None;
+    *result_prefix_path_arc.lock() = None;
 
     let proton_config_name = selected_proton_name.clone();
 
-    *busy_arc.lock().unwrap() = true;
-    *status_arc.lock().unwrap() = format!("Preparing to install {}...", manager_type);
-    *progress_arc.lock().unwrap() = 0.0;
+    *busy_arc.lock() = true;
+    *status_arc.lock() = format!("Preparing to install {}...", manager_type);
+    *progress_arc.lock() = 0.0;
     cancel_arc.store(false, Ordering::Relaxed);
 
     thread::spawn(move || {
@@ -1182,15 +1226,15 @@ fn start_installation(app: Rc<RefCell<MyApp>>) {
         struct BusyGuard(Arc<Mutex<bool>>);
         impl Drop for BusyGuard {
             fn drop(&mut self) {
-                *self.0.lock().unwrap() = false;
+                *self.0.lock() = false;
             }
         }
         let _guard = BusyGuard(busy_arc.clone());
 
         let ctx = TaskContext::new(
-            move |msg| *cb_status.lock().unwrap() = msg,
-            move |msg| cb_logs.lock().unwrap().push(msg),
-            move |p| *cb_prog.lock().unwrap() = p,
+            move |msg| *cb_status.lock() = msg,
+            move |msg| cb_logs.lock().push(msg),
+            move |p| *cb_prog.lock() = p,
             cancel_arc,
         );
 
@@ -1229,33 +1273,33 @@ fn start_installation(app: Rc<RefCell<MyApp>>) {
 
         match install_result {
             Ok((app_id, prefix_path)) => {
-                *result_app_id_arc.lock().unwrap() = Some(app_id);
-                *result_prefix_path_arc.lock().unwrap() = Some(prefix_path);
+                *result_app_id_arc.lock() = Some(app_id);
+                *result_prefix_path_arc.lock() = Some(prefix_path);
 
-                *status_arc.lock().unwrap() = "Applying Proton compatibility settings...".to_string();
+                *status_arc.lock() = "Applying Proton compatibility settings...".to_string();
                 if let Err(e) = nak_rust::steam::set_compat_tool(app_id, &proton_config_name) {
                     log_warning(&format!("Failed to set Proton compat tool: {}", e));
                 } else {
                     log_info(&format!("Set Proton '{}' for AppID {}", proton_config_name, app_id));
                 }
 
-                *status_arc.lock().unwrap() = "Restarting Steam...".to_string();
+                *status_arc.lock() = "Restarting Steam...".to_string();
                 match nak_rust::steam::restart_steam() {
                     Ok(_) => {
-                        *status_arc.lock().unwrap() = "Dependencies installed. Configuring DPI...".to_string();
+                        *status_arc.lock() = "Dependencies installed. Configuring DPI...".to_string();
                     }
                     Err(e) => {
                         log_warning(&format!("Failed to restart Steam automatically: {}", e));
-                        *status_arc.lock().unwrap() = "Dependencies installed. Please restart Steam manually after setup.".to_string();
+                        *status_arc.lock() = "Dependencies installed. Please restart Steam manually after setup.".to_string();
                     }
                 }
             }
             Err(e) => {
                 // Cleanup is handled inside install_mo2/setup_existing_mo2 themselves
                 if e.contains("Cancelled") {
-                    *status_arc.lock().unwrap() = "Cancelled — installation cleaned up.".to_string();
+                    *status_arc.lock() = "Cancelled — installation cleaned up.".to_string();
                 } else {
-                    *status_arc.lock().unwrap() = format!("Error: {}", e);
+                    *status_arc.lock() = format!("Error: {}", e);
                 }
             }
         }
@@ -1301,7 +1345,7 @@ fn handle_apply_dpi(app: &mut MyApp, dpi_value: u32) {
     };
 
     kill_wineserver(&prefix_path, &proton);
-    app.dpi_test_processes.lock().unwrap().clear();
+    app.dpi_test_processes.lock().clear();
 
     if let Err(e) = apply_dpi(&prefix_path, &proton, dpi_value) {
         log_error(&format!("Failed to apply DPI: {}", e));
@@ -1337,7 +1381,7 @@ fn handle_launch_test_app(app: &mut MyApp, app_name: &str) {
 
     match launch_dpi_test_app(&prefix_path, &proton, app_name) {
         Ok(child) => {
-            app.dpi_test_processes.lock().unwrap().push(child.id());
+            app.dpi_test_processes.lock().push(child.id());
             log_info(&format!("Launched {} (PID: {})", app_name, child.id()));
         }
         Err(e) => {
@@ -1365,7 +1409,7 @@ fn handle_confirm_dpi(app: &mut MyApp) {
 
     if let Some(proton) = proton {
         kill_wineserver(&prefix_path, &proton);
-        app.dpi_test_processes.lock().unwrap().clear();
+        app.dpi_test_processes.lock().clear();
 
         if app.install_wizard.selected_dpi != 96 {
             if let Err(e) = apply_dpi(&prefix_path, &proton, app.install_wizard.selected_dpi) {
@@ -1415,9 +1459,9 @@ fn start_plugin_installation(app: Rc<RefCell<MyApp>>, plugin_idx: usize, window_
         app_ref.current_page = crate::app::Page::ModManagers;
 
         // Clear previous install state
-        *app_ref.install_status.lock().unwrap() = String::new();
-        *app_ref.install_progress.lock().unwrap() = 0.0;
-        app_ref.logs.lock().unwrap().clear();
+        *app_ref.install_status.lock() = String::new();
+        *app_ref.install_progress.lock() = 0.0;
+        app_ref.logs.lock().clear();
         app_ref.cancel_install.store(false, Ordering::Relaxed);
     }
 

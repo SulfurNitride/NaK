@@ -1,6 +1,7 @@
 //! NaK Marketplace - Plugin system for extending NaK functionality
 
 use std::error::Error;
+use std::time::Duration;
 use serde::Deserialize;
 
 /// GitHub raw URL base for the marketplace repo
@@ -66,11 +67,17 @@ pub struct PluginManifest {
 // Fetch Functions
 // ============================================================================
 
+/// HTTP timeout for marketplace requests (30 seconds)
+const MARKETPLACE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Fetch the plugin registry from GitHub
 pub fn fetch_registry() -> Result<Registry, Box<dyn Error>> {
     let url = format!("{}/registry.toml", MARKETPLACE_RAW_URL);
 
-    let response = ureq::get(&url)
+    let response = ureq::AgentBuilder::new()
+        .timeout(MARKETPLACE_TIMEOUT)
+        .build()
+        .get(&url)
         .set("User-Agent", "NaK-Rust")
         .call()?;
 
@@ -84,7 +91,10 @@ pub fn fetch_registry() -> Result<Registry, Box<dyn Error>> {
 pub fn fetch_plugin_manifest(folder: &str) -> Result<PluginManifest, Box<dyn Error>> {
     let url = format!("{}/{}/plugin.toml", MARKETPLACE_RAW_URL, folder);
 
-    let response = ureq::get(&url)
+    let response = ureq::AgentBuilder::new()
+        .timeout(MARKETPLACE_TIMEOUT)
+        .build()
+        .get(&url)
         .set("User-Agent", "NaK-Rust")
         .call()?;
 
@@ -118,7 +128,10 @@ pub fn get_plugin_download_url(manifest: &PluginManifest) -> Result<(String, Str
 
             // Fetch latest release from GitHub API
             let api_url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-            let response: GithubRelease = ureq::get(&api_url)
+            let response: GithubRelease = ureq::AgentBuilder::new()
+                .timeout(MARKETPLACE_TIMEOUT)
+                .build()
+                .get(&api_url)
                 .set("User-Agent", "NaK-Rust")
                 .call()?
                 .into_json()?;

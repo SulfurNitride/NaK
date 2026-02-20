@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e -o pipefail
 # NaK Steam Launch Script for {{MANAGER_NAME}}
 # Launches via Steam using the 64-bit game ID format for non-Steam shortcuts
 #

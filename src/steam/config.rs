@@ -16,6 +16,11 @@ use super::find_steam_path;
 /// # Notes
 /// Steam must be restarted for changes to take effect.
 pub fn set_compat_tool(app_id: u32, proton_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Validate proton_name to prevent VDF injection
+    if proton_name.is_empty() || proton_name.contains('"') || proton_name.contains('\n') || proton_name.contains('\r') {
+        return Err(format!("Invalid Proton name: {:?}", proton_name).into());
+    }
+
     let steam_path = find_steam_path()
         .ok_or("Steam not found")?;
 
@@ -100,7 +105,9 @@ fn find_section_content(section: &str) -> Option<&str> {
     let mut depth = 0;
     let mut end = start;
 
-    for (i, c) in section[start..].chars().enumerate() {
+    // Use char_indices() so `i` is a byte offset, not a char count.
+    // Using chars().enumerate() would give char counts, which break slicing on non-ASCII.
+    for (i, c) in section[start..].char_indices() {
         match c {
             '{' => depth += 1,
             '}' => {
@@ -112,6 +119,10 @@ fn find_section_content(section: &str) -> Option<&str> {
             }
             _ => {}
         }
+    }
+
+    if depth != 0 {
+        return None; // unmatched braces
     }
 
     Some(&section[start..=end])

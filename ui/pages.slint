@@ -9,6 +9,7 @@ import { Theme, NakButton, NakCard, NakTextInput, NakProgressBar, SidebarButton,
 
 export component FirstRunSetupPage inherits Rectangle {
     callback get-started;
+    callback browse-steam-path;
 
     in property <bool> steam-detected: true;
     in property <int> proton-count: 0;
@@ -148,10 +149,21 @@ export component FirstRunSetupPage inherits Rectangle {
                         }
                     }
 
-                    if !root.steam-detected: Text {
-                        text: "Please install Steam before continuing.";
-                        color: Theme.accent-yellow;
-                        font-size: 12px;
+                    if !root.steam-detected: VerticalLayout {
+                        spacing: 6px;
+
+                        Text {
+                            text: "Steam not found. Install Steam, or point NaK to your Steam folder:";
+                            color: Theme.accent-yellow;
+                            font-size: 12px;
+                            wrap: word-wrap;
+                        }
+
+                        NakButton {
+                            text: "Set Steam Path...";
+                            min-height: 32px;
+                            clicked => { root.browse-steam-path(); }
+                        }
                     }
 
                     if root.steam-detected && root.proton-count == 0: Text {

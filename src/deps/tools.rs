@@ -10,6 +10,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Maximum size for downloaded scripts/archives (10 MB)
+const MAX_DOWNLOAD_BYTES: u64 = 10 * 1024 * 1024;
+
 use crate::config::AppConfig;
 use crate::logging::{log_error, log_info, log_warning};
 
@@ -67,8 +70,22 @@ pub fn ensure_winetricks() -> Result<PathBuf, Box<dyn Error>> {
 
     match ureq::get(WINETRICKS_URL).call() {
         Ok(response) => {
+            // Reject suspiciously large responses before reading body
+            if let Some(len) = response.header("Content-Length")
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                if len > MAX_DOWNLOAD_BYTES {
+                    return Err(format!(
+                        "Winetricks download too large: {} bytes (max {})",
+                        len, MAX_DOWNLOAD_BYTES
+                    ).into());
+                }
+            }
             let mut new_content = Vec::new();
-            response.into_reader().read_to_end(&mut new_content)?;
+            response.into_reader().take(MAX_DOWNLOAD_BYTES).read_to_end(&mut new_content)?;
+            if new_content.len() as u64 >= MAX_DOWNLOAD_BYTES {
+                return Err("Winetricks download exceeded size limit".into());
+            }
 
             // Check if content differs from existing file
             let should_update = if winetricks_path.exists() {
@@ -162,15 +179,12 @@ pub fn ensure_cabextract() -> Result<PathBuf, Box<dyn Error>> {
         .status()?;
 
     if !status.success() {
-        // Fallback: try with python's zipfile
-        let _ = Command::new("python3")
-            .arg("-c")
-            .arg(format!(
-                "import zipfile; zipfile.ZipFile('{}').extractall('{}')",
-                zip_path.display(),
-                bin_dir.display()
-            ))
-            .status();
+        // Fallback: extract using the zip crate (safe, no shell interpolation)
+        if let Ok(file) = fs::File::open(&zip_path) {
+            if let Ok(mut archive) = zip::ZipArchive::new(file) {
+                let _ = archive.extract(&bin_dir);
+            }
+        }
     }
 
     // Clean up zip file

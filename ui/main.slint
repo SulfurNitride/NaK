@@ -132,6 +132,9 @@ export component MainWindow inherits Window {
     callback migration-delete-data;
     callback migration-dismiss;
 
+    // Steam path override
+    callback browse-steam-path;
+
     HorizontalLayout {
         // Sidebar - hidden during first run
         if root.current-page != PageType.FirstRunSetup: Rectangle {
@@ -172,6 +175,12 @@ export component MainWindow inherits Window {
                             color: #ff9696;
                             font-size: 11px;
                             wrap: word-wrap;
+                        }
+
+                        NakButton {
+                            text: "Set Steam Path...";
+                            min-height: 24px;
+                            clicked => { root.browse-steam-path(); }
                         }
                     }
                 }
@@ -356,6 +365,7 @@ export component MainWindow inherits Window {
                         proton-count: root.proton-options.length;
                         missing-deps: root.missing-deps;
                         get-started => { root.navigate(PageType.GettingStarted); }
+                        browse-steam-path => { root.browse-steam-path(); }
                     }
 
                     if root.current-page == PageType.GettingStarted: GettingStartedPage {

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e -o pipefail
 # NaK Import Saves Script
 # Imports game saves from your Steam game prefix into this mod manager prefix.
 #
@@ -67,7 +68,7 @@ find_steam_path() {
     return 1
 }
 
-STEAM_PATH=$(find_steam_path)
+STEAM_PATH=$(find_steam_path) || true
 if [ -z "$STEAM_PATH" ]; then
     echo "ERROR: Could not find Steam installation"
     exit 1

@@ -1,10 +1,17 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 fn get_home() -> String {
-    std::env::var("HOME").unwrap_or_default()
+    // Use dirs::home_dir() which handles edge cases (HOME unset, empty, etc.)
+    dirs::home_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| {
+            eprintln!("Warning: could not determine home directory; paths may be wrong");
+            String::new()
+        })
 }
 
 /// Normalize a path for compatibility with pressure-vessel/Steam container.
@@ -51,6 +58,11 @@ pub struct AppConfig {
     /// If empty/not set, uses the most recently active account
     #[serde(default)]
     pub selected_steam_account: String,
+    /// Custom Steam installation path override.
+    /// Used when Steam is installed in a non-standard location (e.g. BTRFS subvolume)
+    /// that auto-detection cannot find. If set and valid, takes priority over auto-detection.
+    #[serde(default)]
+    pub custom_steam_path: String,
 }
 
 impl Default for AppConfig {
@@ -62,6 +74,7 @@ impl Default for AppConfig {
             steam_migration_shown: false,
             cache_location: String::new(),
             selected_steam_account: String::new(),
+            custom_steam_path: String::new(),
         }
     }
 }
@@ -116,7 +129,9 @@ impl AppConfig {
             let _ = fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(path, json);
+            let _ = fs::write(&path, json);
+            // Restrict config file to owner-only (may contain account info)
+            let _ = fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
         }
     }
 
@@ -165,7 +180,6 @@ impl AppConfig {
 pub enum ManagerType {
     MO2,
     Plugin,
-    Vortex,
 }
 
 impl std::fmt::Display for ManagerType {
@@ -173,7 +187,6 @@ impl std::fmt::Display for ManagerType {
         match self {
             ManagerType::MO2 => write!(f, "MO2"),
             ManagerType::Plugin => write!(f, "Plugin"),
-            ManagerType::Vortex => write!(f, "Vortex"),
         }
     }
 }
@@ -184,7 +197,6 @@ impl ManagerType {
         match self {
             ManagerType::MO2 => "MO2",
             ManagerType::Plugin => "Plugin",
-            ManagerType::Vortex => "Vortex",
         }
     }
 }
@@ -200,7 +212,7 @@ pub struct ManagedPrefix {
     pub prefix_path: String,
     /// Path to the mod manager installation
     pub install_path: String,
-    /// Type of mod manager (MO2 or Vortex)
+    /// Type of mod manager (MO2, Plugin, or other mod managers)
     pub manager_type: ManagerType,
     /// Steam library path where this prefix lives
     pub library_path: String,
@@ -351,19 +363,30 @@ impl ManagedPrefixes {
         if let Some(prefix) = prefixes.get_by_app_id(app_id) {
             let pfx_path = PathBuf::from(&prefix.prefix_path);
 
+            // Refuse to delete symlinks — they could point outside the expected directory
+            if pfx_path.is_symlink() {
+                return Err("Refusing to delete prefix: path is a symlink".to_string());
+            }
+
             // The appid folder is the parent of the pfx folder
             // Structure: steamapps/compatdata/{app_id}/pfx/
             // We want to delete the entire {app_id} folder, not just pfx
             if let Some(appid_folder) = pfx_path.parent() {
-                if appid_folder.exists() {
-                    fs::remove_dir_all(appid_folder)
-                        .map_err(|e| format!("Failed to delete prefix: {}", e))?;
+                if appid_folder.is_symlink() {
+                    return Err("Refusing to delete prefix: parent path is a symlink".to_string());
+                }
+                // Don't check exists() first — just attempt removal and treat NotFound as success
+                match fs::remove_dir_all(appid_folder) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(format!("Failed to delete prefix: {}", e)),
                 }
             } else {
                 // Fallback: if no parent, just delete the pfx folder
-                if pfx_path.exists() {
-                    fs::remove_dir_all(&pfx_path)
-                        .map_err(|e| format!("Failed to delete prefix: {}", e))?;
+                match fs::remove_dir_all(&pfx_path) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(format!("Failed to delete prefix: {}", e)),
                 }
             }
 

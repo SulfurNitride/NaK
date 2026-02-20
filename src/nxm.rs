@@ -8,10 +8,27 @@ use std::error::Error;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::AppConfig;
 use crate::logging::{log_install, log_warning};
+
+/// Write data to a file atomically by writing to a sibling `.tmp` file and renaming.
+/// On failure, the `.tmp` file is cleaned up.
+fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    let result = (|| {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(data)?;
+        f.flush()?;
+        drop(f);
+        fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
 
 pub struct NxmHandler;
 
@@ -47,13 +64,11 @@ impl NxmHandler {
             }
         }
 
-        // Create the NXM handler script (Direct Proton launch version)
+        // Create the NXM handler script (Direct Proton launch version) — atomic write
         let script_content = include_str!("scripts/nxm_handler.sh");
-
-        let mut file = fs::File::create(&script_path)?;
-        file.write_all(script_content.as_bytes())?;
+        atomic_write(&script_path, script_content.as_bytes())?;
         let mut perms = fs::metadata(&script_path)?.permissions();
-        perms.set_mode(0o755);
+        perms.set_mode(0o700);
         fs::set_permissions(&script_path, perms)?;
 
         // Create Desktop Entry
@@ -78,8 +93,7 @@ NoDisplay=false
             script_path.to_string_lossy()
         );
 
-        let mut dfile = fs::File::create(&desktop_path)?;
-        dfile.write_all(desktop_content.as_bytes())?;
+        atomic_write(&desktop_path, desktop_content.as_bytes())?;
 
         // Update desktop database so the app appears in application pickers
         // This is required for new installations - without it, the app won't
@@ -187,7 +201,7 @@ NoDisplay=false
             let _ = fs::create_dir_all(parent);
         }
 
-        let _ = fs::write(path, new_content);
+        let _ = atomic_write(path, new_content.as_bytes());
     }
 
     /// Fix Flatpak browser permissions for NXM handling
