@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::known_games::find_by_gog_id;
+use super::known_games::{find_by_epic_id, find_by_gog_id, find_by_title};
 use super::{Game, HeroicStore, Launcher};
 use crate::logging::{log_info, log_warning};
 
@@ -202,11 +202,16 @@ fn detect_epic_games(heroic_path: &Path) -> Vec<Game> {
                 }
 
                 // Get title
-                let name = game_obj
+                let title = game_obj
                     .get("title")
                     .and_then(|v| v.as_str())
-                    .unwrap_or(app_name)
-                    .to_string();
+                    .unwrap_or(app_name);
+
+                // Look up known game info: try Epic AppName first, then title match
+                let known_game = find_by_epic_id(app_name)
+                    .or_else(|| find_by_title(title));
+
+                let name = title.to_string();
 
                 // Get Wine prefix
                 let prefix_path = get_heroic_game_prefix(heroic_path, app_name);
@@ -219,11 +224,11 @@ fn detect_epic_games(heroic_path: &Path) -> Vec<Game> {
                     launcher: Launcher::Heroic {
                         store: HeroicStore::Epic,
                     },
-                    my_games_folder: None,
-                    appdata_local_folder: None,
-                    appdata_roaming_folder: None,
-                    registry_path: None,
-                    registry_value: None,
+                    my_games_folder: known_game.and_then(|g| g.my_games_folder.map(String::from)),
+                    appdata_local_folder: known_game.and_then(|g| g.appdata_local_folder.map(String::from)),
+                    appdata_roaming_folder: known_game.and_then(|g| g.appdata_roaming_folder.map(String::from)),
+                    registry_path: known_game.map(|g| g.registry_path.to_string()),
+                    registry_value: known_game.map(|g| g.registry_value.to_string()),
                 });
             }
         }

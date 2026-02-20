@@ -31,7 +31,10 @@ use std::path::PathBuf;
 
 pub use bottles::detect_bottles_games;
 pub use heroic::detect_heroic_games;
-pub use known_games::{find_by_gog_id, find_by_name, find_by_steam_id, KnownGame, KNOWN_GAMES};
+pub use known_games::{
+    find_by_epic_id, find_by_gog_id, find_by_name, find_by_steam_id, find_by_title, KnownGame,
+    KNOWN_GAMES,
+};
 pub use registry::{read_registry_value, wine_path_to_linux};
 pub use steam::{detect_steam_games, find_game_install_path, find_game_prefix_path, get_known_game};
 
@@ -204,33 +207,49 @@ impl GameScanResult {
 // Public API
 // ============================================================================
 
-/// Detect all installed games from all supported launchers
+/// Detect all installed games from all supported launchers.
 ///
-/// This function scans:
-/// - Steam (native, Flatpak, Snap) via appmanifest_*.acf parsing
-/// - Heroic (GOG, Epic) via installed.json
-/// - Bottles via registry scanning
+/// Games are detected in priority order: Steam → Heroic (GOG → Epic) → Bottles.
+/// When the same game is found from multiple launchers, the higher-priority
+/// detection is kept and duplicates are skipped. This ensures registry entries
+/// (which are shared across storefronts) prefer Steam paths, then GOG, then Epic.
 ///
 /// Returns a `GameScanResult` containing all found games.
 pub fn detect_all_games() -> GameScanResult {
     let mut result = GameScanResult::default();
 
-    // Detect Steam games
+    // Detect in priority order: Steam first, then GOG (via Heroic), then Epic, then Bottles.
     let steam_games = detect_steam_games();
     result.steam_count = steam_games.len();
     result.games.extend(steam_games);
 
-    // Detect Heroic games
     let heroic_games = detect_heroic_games();
     result.heroic_count = heroic_games.len();
     result.games.extend(heroic_games);
 
-    // Detect Bottles games
     let bottles_games = detect_bottles_games();
     result.bottles_count = bottles_games.len();
     result.games.extend(bottles_games);
 
+    // Deduplicate: keep the first occurrence of each game (by registry_path),
+    // which respects the detection order (Steam > GOG > Epic > Bottles).
+    deduplicate_games(&mut result);
+
     result
+}
+
+/// Remove duplicate game detections, keeping the first (highest-priority) entry.
+/// Two games are considered duplicates if they have the same registry_path.
+fn deduplicate_games(result: &mut GameScanResult) {
+    let mut seen_registry_paths = std::collections::HashSet::new();
+    result.games.retain(|game| {
+        if let Some(ref reg_path) = game.registry_path {
+            seen_registry_paths.insert(reg_path.clone())
+        } else {
+            // Games without registry paths are always kept (no risk of conflict)
+            true
+        }
+    });
 }
 
 /// Detect only Steam games
