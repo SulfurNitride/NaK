@@ -1,4 +1,4 @@
-BIG NOTE! I'm working on a different project, called [Fluorine Manager](https://github.com/SulfurNitride/Fluorine-Manager) so I probably won't update NaK as much anymore. Fluorine Manager is a native Linux MO2 port.
+BIG NOTE! NAK has been replaced by my linux port of MO2 called [Fluorine Manager](https://github.com/SulfurNitride/Fluorine-Manager). This repo will now be archived.
 
 <img width="1913" height="1976" alt="image" src="https://github.com/user-attachments/assets/f453f602-568b-48e9-9cd6-7183ec13c498" />
 
